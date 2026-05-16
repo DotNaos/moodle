@@ -115,15 +115,38 @@ export function PDFDocumentViewer({
     });
   }, [courseId, currentPage, currentViewImageDataURL, materialId, onStateChange, pageCount, pages, title]);
 
-  useEffect(() => {
-    if (!scrollCommand || !pageCount) {
+  const syncCurrentPageFromScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
-    const page = Math.min(Math.max(scrollCommand.page, 1), pageCount);
-    pageRefs.current[page]?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setCurrentPage(page);
-  }, [pageCount, scrollCommand]);
+    const containerRect = container.getBoundingClientRect();
+    let nextPage: number | null = null;
+    let nextDistance = Number.POSITIVE_INFINITY;
+
+    Object.entries(pageRefs.current).forEach(([page, element]) => {
+      if (!element) {
+        return;
+      }
+
+      const pageRect = element.getBoundingClientRect();
+      const visible = pageRect.bottom > containerRect.top && pageRect.top < containerRect.bottom;
+      if (!visible) {
+        return;
+      }
+
+      const distance = Math.abs(pageRect.top - containerRect.top);
+      if (distance < nextDistance) {
+        nextDistance = distance;
+        nextPage = Number(page);
+      }
+    });
+
+    if (nextPage) {
+      setCurrentPage(nextPage);
+    }
+  }, []);
 
   const captureCurrentView = useCallback(() => {
     const container = containerRef.current;
@@ -188,6 +211,42 @@ export function PDFDocumentViewer({
     }
     captureTimeoutRef.current = window.setTimeout(captureCurrentView, 120);
   }, [captureCurrentView]);
+
+  const scrollToPage = useCallback((page: number): boolean => {
+    const container = containerRef.current;
+    const pageElement = pageRefs.current[page];
+    if (!container || !pageElement) {
+      return false;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const pageRect = pageElement.getBoundingClientRect();
+    container.scrollTop += pageRect.top - containerRect.top;
+    setCurrentPage(page);
+    scheduleCurrentViewCapture();
+    return true;
+  }, [scheduleCurrentViewCapture]);
+
+  useEffect(() => {
+    if (!scrollCommand || !pageCount) {
+      return;
+    }
+
+    const page = Math.min(Math.max(scrollCommand.page, 1), pageCount);
+    let attempts = 0;
+    let animationFrame = 0;
+
+    const run = () => {
+      attempts += 1;
+      if (scrollToPage(page) || attempts >= 10) {
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(run);
+    };
+
+    animationFrame = window.requestAnimationFrame(run);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [pageCount, scrollCommand, scrollToPage]);
 
   useEffect(() => {
     return () => {
@@ -391,14 +450,16 @@ export function PDFDocumentViewer({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
-        onScroll={scheduleCurrentViewCapture}
+        onScroll={() => {
+          syncCurrentPageFromScroll();
+          scheduleCurrentViewCapture();
+        }}
       >
         <div className="mx-auto flex w-fit min-w-full flex-col items-center gap-5">
           {pageNumbers.map((page) => (
             <PDFPageCanvas
               key={page}
               container={containerRef.current}
-              onCurrentPage={setCurrentPage}
               onRendered={(pageContext) =>
                 setPages((current) => ({ ...current, [pageContext.page]: pageContext }))
               }
@@ -418,7 +479,6 @@ export function PDFDocumentViewer({
 
 function PDFPageCanvas({
   container,
-  onCurrentPage,
   onRendered,
   pageNumber,
   pdf,
@@ -426,7 +486,6 @@ function PDFPageCanvas({
   zoom,
 }: {
   container: HTMLDivElement | null;
-  onCurrentPage: (page: number) => void;
   onRendered: (page: PDFPageContext) => void;
   pageNumber: number;
   pdf: PDFDocumentProxy;
@@ -440,24 +499,6 @@ function PDFPageCanvas({
     setPageRef(pageRef.current);
     return () => setPageRef(null);
   }, [setPageRef]);
-
-  useEffect(() => {
-    const element = pageRef.current;
-    if (!element || !container) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          onCurrentPage(pageNumber);
-        }
-      },
-      { root: container, threshold: 0.55 },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [container, onCurrentPage, pageNumber]);
 
   useEffect(() => {
     let cancelled = false;
