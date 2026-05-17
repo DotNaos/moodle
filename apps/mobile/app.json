@@ -64,6 +64,7 @@
     "owner": "omiq",
     "plugins": [
       "expo-updates",
+      "@sentry/react-native/expo",
       "expo-secure-store"
     ]
   }

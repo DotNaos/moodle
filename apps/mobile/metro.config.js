@@ -3,11 +3,19 @@ const path = require('node:path');
 const {
     wrapWithReanimatedMetroConfig,
 } = require('react-native-reanimated/metro-config');
+const {
+    unstableBeforeAssetSerializationDebugIdPlugin,
+    withSentryFramesCollapsed,
+} = require('@sentry/react-native/metro');
 const { withUniwindConfig } = require('uniwind/metro');
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
-const config = getDefaultConfig(projectRoot);
+const config = getDefaultConfig(projectRoot, {
+    unstable_beforeAssetSerializationPlugins: [
+        unstableBeforeAssetSerializationDebugIdPlugin,
+    ],
+});
 
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [
@@ -41,4 +49,4 @@ wrappedConfig.resolver.resolveRequest = (context, moduleName, platform) => {
     return context.resolveRequest(context, moduleName, platform);
 };
 
-module.exports = wrappedConfig;
+module.exports = withSentryFramesCollapsed(wrappedConfig);

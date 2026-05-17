@@ -1,26 +1,33 @@
+import { recordError, recordInfo } from './observability';
+
 const REDACTED = "[redacted]";
 const SENSITIVE_PATTERN = /\b(qrlogin|privatetoken|wstoken|token)=([^&\s"]+)/gi;
 const MOBILE_LINK_PATTERN = /moodlemobile:\/\/\S+/gi;
 
 export function logDevError(scope: string, error: unknown, details: Record<string, unknown> = {}) {
-  if (!isDevBuild()) {
-    return;
-  }
-
   const payload = sanitizeForLog({
     ...details,
     error: serializeError(error),
-  });
+  }) as Record<string, unknown>;
+
+  recordError(scope, error, payload);
+
+  if (!isDevBuild()) {
+    return;
+  }
 
   console.error(`[MoodleClient] ${scope}`, payload);
 }
 
 export function logDevInfo(scope: string, details: Record<string, unknown> = {}) {
+  const payload = sanitizeForLog(details) as Record<string, unknown>;
+  recordInfo(scope, payload);
+
   if (!isDevBuild()) {
     return;
   }
 
-  console.info(`[MoodleClient] ${scope}`, sanitizeForLog(details));
+  console.info(`[MoodleClient] ${scope}`, payload);
 }
 
 export function sanitizeForLog(value: unknown): unknown {

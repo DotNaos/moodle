@@ -58,12 +58,16 @@ import {
     loadStoredConnection,
     storeConnection,
 } from './src/storage';
+import {
+    setObservabilityUser,
+    wrapWithObservability,
+} from './src/observability';
 import { palette, styles } from './src/styles';
 import type { AppView, ScannerMode } from './src/types';
 
 declare const __DEV__: boolean;
 
-export default function App() {
+function App() {
     const [permission, requestPermission] = useCameraPermissions();
     const [activeView, setActiveView] = useState<AppView>('courses');
     const [scannerMode, setScannerMode] = useState<ScannerMode>(null);
@@ -167,6 +171,7 @@ export default function App() {
 
     useEffect(() => {
         if (!connection) {
+            setObservabilityUser(null);
             setSiteInfo(null);
             setCourses([]);
             setSelectedCourseId(null);
@@ -174,6 +179,7 @@ export default function App() {
             return;
         }
 
+        setObservabilityUser(connection.moodleUserId);
         void refreshDashboard(connection);
     }, [connection]);
 
@@ -802,6 +808,8 @@ export default function App() {
         </GestureHandlerRootView>
     );
 }
+
+export default wrapWithObservability(App);
 
 function getScreenTitle(view: AppView): string {
     switch (view) {

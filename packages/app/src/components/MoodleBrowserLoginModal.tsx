@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { X } from '../icons';
+import { logDevError } from '../debug';
 import { MOODLE_BROWSER_LOGIN_SCRIPT } from '../moodleBrowserLoginScript';
 import { palette, styles } from '../styles';
 
@@ -32,6 +33,23 @@ type WebViewMessageEvent = {
 type WebViewNavigation = {
     url?: string;
     loading?: boolean;
+};
+
+type WebViewErrorEvent = {
+    nativeEvent?: {
+        code?: number;
+        description?: string;
+        domain?: string;
+        url?: string;
+    };
+};
+
+type WebViewHttpErrorEvent = {
+    nativeEvent?: {
+        statusCode?: number;
+        description?: string;
+        url?: string;
+    };
 };
 
 type MoodleBrowserLoginModalProps = Readonly<{
@@ -200,7 +218,8 @@ export function MoodleBrowserLoginModal(props: MoodleBrowserLoginModalProps) {
         }
     }
 
-    function handleError(message: string) {
+    function handleError(message: string, details: Record<string, unknown> = {}) {
+        logDevError('Moodle browser login failed', new Error(message), details);
         updateStatus(message);
         props.onError(message);
     }
@@ -263,10 +282,27 @@ const NativeMoodleWebView = React.forwardRef<
         onLoadEnd: () => void;
         onMessage: (event: WebViewMessageEvent) => void;
         onNavigationStateChange: (navigation: WebViewNavigation) => void;
-        onError: (message: string) => void;
+        onError: (message: string, details?: Record<string, unknown>) => void;
     }>
 >(function NativeMoodleWebView(props, ref) {
     const NativeWebView = require('react-native-webview').WebView;
+    function handleLoadError(event: WebViewErrorEvent) {
+        props.onError('Moodle login could not be loaded.', {
+            code: event.nativeEvent?.code,
+            description: event.nativeEvent?.description,
+            domain: event.nativeEvent?.domain,
+            url: event.nativeEvent?.url,
+        });
+    }
+
+    function handleHttpError(event: WebViewHttpErrorEvent) {
+        props.onError('Moodle login returned an HTTP error.', {
+            statusCode: event.nativeEvent?.statusCode,
+            description: event.nativeEvent?.description,
+            url: event.nativeEvent?.url,
+        });
+    }
+
     return (
         <NativeWebView
             ref={ref}
@@ -274,7 +310,8 @@ const NativeMoodleWebView = React.forwardRef<
             onLoadEnd={props.onLoadEnd}
             onMessage={props.onMessage}
             onNavigationStateChange={props.onNavigationStateChange}
-            onError={() => props.onError('Moodle login could not be loaded.')}
+            onError={handleLoadError}
+            onHttpError={handleHttpError}
             sharedCookiesEnabled
             thirdPartyCookiesEnabled
             incognito
