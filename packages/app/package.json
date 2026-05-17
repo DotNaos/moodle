@@ -10,6 +10,7 @@
     },
     "peerDependencies": {
         "@gorhom/bottom-sheet": "^5.2.10",
+        "@sentry/react-native": "~7.2.0",
         "expo": "~54.0.33",
         "expo-camera": "~17.0.10",
         "expo-constants": "~18.0.13",
@@ -34,6 +35,7 @@
     },
     "devDependencies": {
         "@gorhom/bottom-sheet": "^5.2.10",
+        "@sentry/react-native": "~7.2.0",
         "@types/react": "~19.1.0",
         "expo": "~54.0.33",
         "expo-camera": "~17.0.10",

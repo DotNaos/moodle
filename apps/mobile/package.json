@@ -13,6 +13,7 @@
         "@expo/metro-runtime": "~6.1.2",
         "@gorhom/bottom-sheet": "^5.2.10",
         "@moodle-clients/app": "workspace:*",
+        "@sentry/react-native": "~7.2.0",
         "expo": "~54.0.33",
         "expo-camera": "~17.0.10",
         "expo-constants": "~18.0.13",
