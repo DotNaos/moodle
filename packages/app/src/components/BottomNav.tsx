@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
     Bot,
@@ -25,8 +26,11 @@ type BottomNavProps = {
 };
 
 export function BottomNav(props: BottomNavProps) {
+    const insets = useSafeAreaInsets();
+    const bottomPadding = Math.max(insets.bottom - 20, 14);
+
     return (
-        <View style={styles.bottomNav}>
+        <View style={[styles.bottomNav, { paddingBottom: bottomPadding }]}>
             {navItems.map((item) => {
                 const active = props.activeView === item.id;
                 const Icon = item.icon;
