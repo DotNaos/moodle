@@ -3,18 +3,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
     Bot,
-    BookOpen,
     CalendarDays,
+    House,
     UserRound,
-    Video,
     type IconComponent,
 } from '../icons';
 import { palette, styles } from '../styles';
 import type { AppView } from '../types';
 
 const navItems: Array<{ id: AppView; label: string; icon: IconComponent }> = [
-    { id: 'courses', label: 'Courses', icon: BookOpen },
-    { id: 'videos', label: 'Videos', icon: Video },
+    { id: 'courses', label: 'Home', icon: House },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'codex', label: 'Codex', icon: Bot },
     { id: 'profile', label: 'Profile', icon: UserRound },
@@ -28,11 +26,13 @@ type BottomNavProps = {
 export function BottomNav(props: BottomNavProps) {
     const insets = useSafeAreaInsets();
     const bottomPadding = Math.max(insets.bottom - 20, 14);
+    const activeView =
+        props.activeView === 'videos' ? 'courses' : props.activeView;
 
     return (
         <View style={[styles.bottomNav, { paddingBottom: bottomPadding }]}>
             {navItems.map((item) => {
-                const active = props.activeView === item.id;
+                const active = activeView === item.id;
                 const Icon = item.icon;
 
                 return (

@@ -1,7 +1,7 @@
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Linking,
     Platform,
@@ -53,6 +53,7 @@ import {
     parseMobilePairTarget,
     type MobilePairTarget,
 } from './src/pairing';
+import { getFS26ReplayCourses } from './src/replay';
 import { ConnectScreen } from './src/screens/ConnectScreen';
 import { CalendarScreen } from './src/screens/CalendarScreen';
 import { CodexScreen } from './src/screens/CodexScreen';
@@ -111,6 +112,7 @@ function App() {
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(
         null,
     );
+    const [videoCourseId, setVideoCourseId] = useState<number | null>(null);
     const [courseContentsById, setCourseContentsById] = useState<
         Record<number, MoodleCourseSection[]>
     >({});
@@ -603,6 +605,10 @@ function App() {
     const currentSections = selectedCourseId
         ? (courseContentsById[selectedCourseId] ?? [])
         : [];
+    const courseIdsWithVideos = useMemo(
+        () => new Set(getFS26ReplayCourses(courses).map((course) => course.id)),
+        [courses],
+    );
     const hasCamera = Platform.OS === 'web' || (permission?.granted ?? false);
     const connected = connection !== null;
     const showBottomNav = connected;
@@ -740,6 +746,7 @@ function App() {
                                         currentCourse={currentCourse}
                                         loadingDashboard={loadingDashboard}
                                         loadingCourseId={loadingCourseId}
+                                        courseIdsWithVideos={courseIdsWithVideos}
                                         onOpenConnect={() =>
                                             setActiveView('profile')
                                         }
@@ -758,6 +765,10 @@ function App() {
                                         onBackToCourses={() =>
                                             setSelectedCourseId(null)
                                         }
+                                        onOpenCourseVideos={(courseId) => {
+                                            setVideoCourseId(courseId);
+                                            setActiveView('videos');
+                                        }}
                                         onOpenFile={(file) => {
                                             if (!connection) {
                                                 return;
@@ -772,9 +783,13 @@ function App() {
                                         connection={connection}
                                         courses={courses}
                                         loadingCourses={loadingDashboard}
+                                        initialCourseId={videoCourseId}
                                         onOpenConnect={() =>
                                             setActiveView('profile')
                                         }
+                                        onBackToCourse={() => {
+                                            setActiveView('courses');
+                                        }}
                                     />
                                 ) : null}
 
@@ -1006,7 +1021,7 @@ export default wrapWithObservability(App);
 function getScreenTitle(view: AppView): string {
     switch (view) {
         case 'courses':
-            return 'Courses';
+            return 'Home';
         case 'videos':
             return 'Videos';
         case 'calendar':
@@ -1029,7 +1044,7 @@ function getScreenSubtitle(view: AppView, connected: boolean): string {
 
     switch (view) {
         case 'courses':
-            return '';
+            return 'Calendar and courses.';
         case 'videos':
             return 'FS26 Webex recordings.';
         case 'calendar':

@@ -9,7 +9,9 @@ export type VideosScreenProps = {
     readonly connection: MoodleConnection | null;
     readonly courses: MoodleCourse[];
     readonly loadingCourses: boolean;
+    readonly initialCourseId?: number | null;
     readonly onOpenConnect: () => void;
+    readonly onBackToCourse?: () => void;
 };
 
 export type CourseRecordingState = {

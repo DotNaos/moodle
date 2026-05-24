@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Pressable,
@@ -15,9 +15,16 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { CourseArtwork } from '../components/CourseArtwork';
-import { EmptyState, ScreenSection } from '../components/ui';
+import { EmptyState, ScreenSection, SecondaryButton } from '../components/ui';
+import {
+    fetchCalendarEvents,
+    formatCalendarDateRange,
+    upcomingCalendarEvents,
+    type CalendarEvent,
+} from '../calendar';
+import { findEventCourse } from '../courseMatching';
 import { sanitizeCourseName, stripHtml } from '../format';
-import { ChevronLeft, ChevronRight, FileText } from '../icons';
+import { CalendarDays, ChevronLeft, ChevronRight, FileText, RefreshCw, Video } from '../icons';
 import type {
     MoodleConnection,
     MoodleCourse,
@@ -25,6 +32,7 @@ import type {
     MoodleCourseModule,
     MoodleCourseSection,
 } from '../moodle';
+import { loadCalendarUrl } from '../storage';
 import { palette, styles } from '../styles';
 
 type CoursesScreenProps = {
@@ -34,9 +42,11 @@ type CoursesScreenProps = {
     readonly currentCourse: MoodleCourse | null;
     readonly loadingDashboard: boolean;
     readonly loadingCourseId: number | null;
+    readonly courseIdsWithVideos: ReadonlySet<number>;
     readonly onOpenConnect: () => void;
     readonly onSelectCourse: (courseId: number) => void;
     readonly onBackToCourses: () => void;
+    readonly onOpenCourseVideos: (courseId: number) => void;
     readonly onOpenFile: (file: MoodleCourseFile) => void;
 };
 
@@ -44,7 +54,9 @@ type CourseDetailProps = {
     readonly course: MoodleCourse;
     readonly sections: MoodleCourseSection[];
     readonly loading: boolean;
+    readonly hasVideos: boolean;
     readonly onBack: () => void;
+    readonly onOpenVideos: () => void;
     readonly onOpenFile: (file: MoodleCourseFile) => void;
 };
 
@@ -90,52 +102,53 @@ export function CoursesScreen(props: CoursesScreenProps) {
     }
 
     if (props.currentCourse) {
+        const course = props.currentCourse;
         return (
             <CourseDetail
-                course={props.currentCourse}
+                course={course}
                 sections={props.sections}
-                loading={props.loadingCourseId === props.currentCourse.id}
+                loading={props.loadingCourseId === course.id}
+                hasVideos={props.courseIdsWithVideos.has(course.id)}
                 onBack={props.onBackToCourses}
+                onOpenVideos={() => props.onOpenCourseVideos(course.id)}
                 onOpenFile={props.onOpenFile}
             />
         );
     }
 
-    let coursesContent: React.ReactNode;
+    let courseListContent: React.ReactNode;
 
     if (props.loadingDashboard) {
-        coursesContent = (
+        courseListContent = (
             <View style={styles.loadingPanel}>
                 <ActivityIndicator color={palette.text} />
             </View>
         );
     } else if (groupedCourses.length > 0) {
-        coursesContent = (
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                <View style={styles.courseListOuter}>
-                    {groupedCourses.map((group) => (
-                        <View key={group.name} style={styles.courseGroup}>
-                            <Text style={styles.groupTitlePlain}>
-                                {group.name}
-                            </Text>
-                            <View style={styles.plainList}>
-                                {group.courses.map((course) => (
-                                    <CourseListRow
-                                        key={course.id}
-                                        course={course}
-                                        onPress={() =>
-                                            props.onSelectCourse(course.id)
-                                        }
-                                    />
-                                ))}
-                            </View>
+        courseListContent = (
+            <View style={styles.courseListOuter}>
+                {groupedCourses.map((group) => (
+                    <View key={group.name} style={styles.courseGroup}>
+                        <Text style={styles.groupTitlePlain}>
+                            {group.name}
+                        </Text>
+                        <View style={styles.plainList}>
+                            {group.courses.map((course) => (
+                                <CourseListRow
+                                    key={course.id}
+                                    course={course}
+                                    onPress={() =>
+                                        props.onSelectCourse(course.id)
+                                    }
+                                />
+                            ))}
                         </View>
-                    ))}
-                </View>
-            </ScrollView>
+                    </View>
+                ))}
+            </View>
         );
     } else {
-        coursesContent = (
+        courseListContent = (
             <EmptyState
                 title="No courses"
                 body="Refresh Moodle once the session is connected."
@@ -143,7 +156,17 @@ export function CoursesScreen(props: CoursesScreenProps) {
         );
     }
 
-    return <ScreenSection>{coursesContent}</ScreenSection>;
+    return (
+        <ScreenSection>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                <HomeCalendarPreview
+                    courses={props.courses}
+                    onOpenCourse={props.onSelectCourse}
+                />
+                {courseListContent}
+            </ScrollView>
+        </ScreenSection>
+    );
 }
 
 function CourseDetail(props: CourseDetailProps) {
@@ -228,6 +251,16 @@ function CourseDetail(props: CourseDetailProps) {
                             numberOfLines={3}>
                             {sanitizeCourseName(props.course.fullName)}
                         </Text>
+                        {props.hasVideos ? (
+                            <View style={styles.courseHeaderActions}>
+                                <SecondaryButton
+                                    label="Videos"
+                                    icon={Video}
+                                    fullWidth={false}
+                                    onPress={props.onOpenVideos}
+                                />
+                            </View>
+                        ) : null}
                     </View>
                 </View>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -235,6 +268,141 @@ function CourseDetail(props: CourseDetailProps) {
                 </ScrollView>
             </Animated.View>
         </GestureDetector>
+    );
+}
+
+function HomeCalendarPreview(props: {
+    readonly courses: MoodleCourse[];
+    readonly onOpenCourse: (courseId: number) => void;
+}) {
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [hasCalendar, setHasCalendar] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    useEffect(() => {
+        let mounted = true;
+        void loadHomeCalendar();
+
+        async function loadHomeCalendar() {
+            setLoading(true);
+            setErrorMessage('');
+            try {
+                const calendarUrl = await loadCalendarUrl();
+                if (!mounted) {
+                    return;
+                }
+                setHasCalendar(Boolean(calendarUrl));
+                if (!calendarUrl) {
+                    setEvents([]);
+                    return;
+                }
+                const nextEvents = await fetchCalendarEvents(calendarUrl);
+                if (mounted) {
+                    setEvents(nextEvents);
+                }
+            } catch (error) {
+                if (mounted) {
+                    setEvents([]);
+                    setErrorMessage(
+                        error instanceof Error
+                            ? error.message
+                            : 'Calendar could not be loaded.',
+                    );
+                }
+            } finally {
+                if (mounted) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const upcomingEvents = upcomingCalendarEvents(events).slice(0, 3);
+
+    return (
+        <View style={styles.homeCalendarPanel}>
+            <View style={styles.homeCalendarHeader}>
+                <View style={styles.homeCalendarTitleRow}>
+                    <CalendarDays color={palette.text} size={18} />
+                    <Text style={styles.sectionTitle}>Calendar</Text>
+                </View>
+                <RefreshCw color={palette.subtle} size={16} />
+            </View>
+
+            {loading ? (
+                <Text style={styles.cardBody}>Loading calendar...</Text>
+            ) : null}
+
+            {!loading && !hasCalendar ? (
+                <Text style={styles.cardBody}>
+                    Add your FHGR calendar in the Calendar tab.
+                </Text>
+            ) : null}
+
+            {!loading && errorMessage ? (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+            ) : null}
+
+            {!loading && hasCalendar && upcomingEvents.length === 0 ? (
+                <Text style={styles.cardBody}>No upcoming events.</Text>
+            ) : null}
+
+            {!loading && upcomingEvents.length > 0 ? (
+                <View style={styles.homeCalendarList}>
+                    {upcomingEvents.map((event) => (
+                        <HomeCalendarEventRow
+                            key={event.uid}
+                            event={event}
+                            course={findEventCourse(event, props.courses)}
+                            onOpenCourse={props.onOpenCourse}
+                        />
+                    ))}
+                </View>
+            ) : null}
+        </View>
+    );
+}
+
+function HomeCalendarEventRow(props: {
+    readonly event: CalendarEvent;
+    readonly course: MoodleCourse | null;
+    readonly onOpenCourse: (courseId: number) => void;
+}) {
+    return (
+        <Pressable
+            disabled={!props.course}
+            onPress={() => {
+                if (props.course) {
+                    props.onOpenCourse(props.course.id);
+                }
+            }}
+            style={({ pressed }) => [
+                styles.homeCalendarRow,
+                pressed && styles.pressed,
+            ]}>
+            <View style={styles.calendarDateBlock}>
+                <Text style={styles.calendarDateDay}>
+                    {dayLabel(props.event.startsAt)}
+                </Text>
+                <Text style={styles.calendarDateMonth}>
+                    {monthLabel(props.event.startsAt)}
+                </Text>
+            </View>
+            <View style={styles.calendarEventBody}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                    {props.event.title}
+                </Text>
+                <Text style={styles.rowSubtitle} numberOfLines={1}>
+                    {formatCalendarDateRange(props.event)}
+                </Text>
+            </View>
+            {props.course ? <ChevronRight color={palette.subtle} size={18} /> : null}
+        </Pressable>
     );
 }
 
@@ -338,6 +506,24 @@ function FileRow(props: FileRowProps) {
             <ChevronRight color={palette.subtle} size={18} />
         </Pressable>
     );
+}
+
+function dayLabel(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '--';
+    }
+    return new Intl.DateTimeFormat('de-CH', { day: '2-digit' }).format(date);
+}
+
+function monthLabel(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    return new Intl.DateTimeFormat('de-CH', { month: 'short' })
+        .format(date)
+        .replace('.', '');
 }
 
 function groupCourses(

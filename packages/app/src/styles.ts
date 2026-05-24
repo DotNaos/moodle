@@ -235,6 +235,35 @@ const baseStyles = StyleSheet.create({
   calendarList: {
     gap: 8,
   },
+  homeCalendarPanel: {
+    backgroundColor: palette.surface,
+    borderRadius: 24,
+    gap: 12,
+    padding: 14,
+  },
+  homeCalendarHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  homeCalendarTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  homeCalendarList: {
+    gap: 4,
+  },
+  homeCalendarRow: {
+    alignItems: "center",
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 62,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
   calendarEventRow: {
     alignItems: "center",
     borderBottomColor: palette.border,
@@ -486,6 +515,13 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
+  },
+  courseHeaderActions: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    paddingTop: 8,
   },
   buttonBase: {
     alignItems: "center",

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -45,6 +45,7 @@ export function VideosScreen(props: VideosScreenProps) {
     const [bridgeRequest, setBridgeRequest] =
         useState<ActiveWebexBridgeRequest | null>(null);
     const nextLoadIdRef = useRef(1);
+    const openedInitialCourseIdRef = useRef<number | null>(null);
     const latestLoadIdByCourseRef = useRef<Record<number, number>>({});
     const retainedRecordingsByLoadIdRef = useRef<Record<number, ReplayRecording[]>>({});
     const selectedCourse =
@@ -53,6 +54,26 @@ export function VideosScreen(props: VideosScreenProps) {
         replayCourses.find((course) => course.imageUrl) ??
         replayCourses[0] ??
         null;
+
+    useEffect(() => {
+        const initialCourseId = props.initialCourseId ?? null;
+        if (
+            initialCourseId === null ||
+            openedInitialCourseIdRef.current === initialCourseId
+        ) {
+            return;
+        }
+
+        const course = replayCourses.find(
+            (candidate) => candidate.id === initialCourseId,
+        );
+        if (!course) {
+            return;
+        }
+
+        openedInitialCourseIdRef.current = initialCourseId;
+        openCourse(course);
+    }, [props.initialCourseId, replayCourses]);
 
     async function ensureRecordings(
         course: ReplayCourse,
@@ -259,7 +280,10 @@ export function VideosScreen(props: VideosScreenProps) {
                 <CourseEpisodes
                     course={selectedCourse}
                     state={recordingsByCourse[selectedCourse.id]}
-                    onBack={() => setSelectedCourseId(null)}
+                    onBack={() => {
+                        setSelectedCourseId(null);
+                        props.onBackToCourse?.();
+                    }}
                     onPlay={setSelectedRecording}
                     onRetry={() => void ensureRecordings(selectedCourse, true, true)}
                 />

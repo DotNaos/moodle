@@ -18,6 +18,7 @@ export const ChevronRight = icons.ChevronRight;
 export const Clipboard = icons.Clipboard;
 export const CircleHelp = icons.CircleHelp;
 export const FileText = icons.FileText;
+export const House = icons.House;
 export const Link2 = icons.Link2;
 export const LogIn = icons.LogIn;
 export const Keyboard = icons.Keyboard;
