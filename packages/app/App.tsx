@@ -612,9 +612,7 @@ function App() {
             <SafeAreaProvider>
                 <HeroUINativeProvider
                     config={{ devInfo: { stylingPrinciples: false } }}>
-                    <SafeAreaView
-                        style={styles.safeArea}
-                        edges={['top', 'left', 'right']}>
+                    <SafeAreaView style={styles.safeArea}>
                         <StatusBar style="light" />
                         <View style={styles.appShell}>
                             {(connected || activeView === 'codex') && (

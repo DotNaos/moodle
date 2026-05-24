@@ -7,19 +7,21 @@ export const navigationAndMediaStyles = StyleSheet.create({
     backgroundColor: palette.background,
     flexDirection: "row",
     gap: 8,
-    paddingHorizontal: 18,
-    paddingTop: 8,
+    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingTop: 10,
   },
   navItemButton: {
     alignItems: "center",
-    borderRadius: 18,
+    borderRadius: 24,
     flex: 1,
-    gap: 5,
+    gap: 4,
     justifyContent: "center",
-    minHeight: 58,
-    paddingVertical: 6,
+    minHeight: 60,
+    paddingVertical: 9,
   },
   navItemButtonActive: {
+    backgroundColor: palette.text,
   },
   navItemButtonPressed: {
     opacity: 0.7,
@@ -35,8 +37,8 @@ export const navigationAndMediaStyles = StyleSheet.create({
   navMarker: {
     backgroundColor: "transparent",
     borderRadius: 999,
-    height: 2,
-    width: 18,
+    height: 3,
+    width: 20,
   },
   navMarkerActive: {
     backgroundColor: palette.blue,
@@ -47,7 +49,7 @@ export const navigationAndMediaStyles = StyleSheet.create({
     fontWeight: "800",
   },
   navLabelActive: {
-    color: palette.text,
+    color: palette.ink,
   },
   sectionCard: {
     gap: 10,

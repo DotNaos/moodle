@@ -1,5 +1,4 @@
 import { Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
     Bot,
@@ -26,14 +25,8 @@ type BottomNavProps = {
 };
 
 export function BottomNav(props: BottomNavProps) {
-    const insets = useSafeAreaInsets();
-
     return (
-        <View
-            style={[
-                styles.bottomNav,
-                { paddingBottom: Math.max(insets.bottom, 14) + 8 },
-            ]}>
+        <View style={styles.bottomNav}>
             {navItems.map((item) => {
                 const active = props.activeView === item.id;
                 const Icon = item.icon;
@@ -49,15 +42,9 @@ export function BottomNav(props: BottomNavProps) {
                         onPress={() => props.onChangeView(item.id)}
                         accessibilityLabel={item.label}
                         accessibilityRole="button">
-                        <View
-                            style={[
-                                styles.navMarker,
-                                active && styles.navMarkerActive,
-                            ]}
-                        />
                         <Icon
                             color={
-                                active ? palette.text : palette.subtle
+                                active ? palette.ink : palette.subtle
                             }
                             size={21}
                         />
