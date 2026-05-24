@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
     formatCalendarDateRange,
+    mergeConsecutiveCalendarEvents,
     parseCalendar,
     upcomingCalendarEvents,
 } from '../src/calendar';
@@ -59,5 +60,68 @@ END:VCALENDAR`);
         );
 
         expect(upcoming.map((event) => event.uid)).toEqual(['future']);
+    });
+
+    test('merges consecutive blocks for the same course on the same day', () => {
+        const events = parseCalendar(`BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:first
+SUMMARY:Data Science und Informatik bei Banken
+DTSTART:20260528T071500Z
+DTEND:20260528T084500Z
+END:VEVENT
+BEGIN:VEVENT
+UID:second
+SUMMARY:Data Science und Informatik bei Banken
+DTSTART:20260528T090000Z
+DTEND:20260528T103000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:third
+SUMMARY:High Performance Computing
+DTSTART:20260528T113000Z
+DTEND:20260528T130000Z
+END:VEVENT
+END:VCALENDAR`);
+
+        const merged = mergeConsecutiveCalendarEvents(events);
+
+        expect(merged.map((event) => event.title)).toEqual([
+            'Data Science und Informatik bei Banken',
+            'High Performance Computing',
+        ]);
+        expect(merged[0]?.startsAt).toBe(events[0]?.startsAt);
+        expect(merged[0]?.endsAt).toBe(events[1]?.endsAt);
+    });
+
+    test('does not merge a course when another course is scheduled in between', () => {
+        const events = parseCalendar(`BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:first
+SUMMARY:Data Science und Informatik bei Banken
+DTSTART:20260528T071500Z
+DTEND:20260528T084500Z
+END:VEVENT
+BEGIN:VEVENT
+UID:middle
+SUMMARY:High Performance Computing
+DTSTART:20260528T090000Z
+DTEND:20260528T103000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:last
+SUMMARY:Data Science und Informatik bei Banken
+DTSTART:20260528T113000Z
+DTEND:20260528T130000Z
+END:VEVENT
+END:VCALENDAR`);
+
+        const merged = mergeConsecutiveCalendarEvents(events);
+
+        expect(merged.map((event) => event.uid)).toEqual([
+            'first',
+            'middle',
+            'last',
+        ]);
     });
 });

@@ -80,6 +80,31 @@ export function upcomingCalendarEvents(
     });
 }
 
+export function mergeConsecutiveCalendarEvents(
+    events: readonly CalendarEvent[],
+): CalendarEvent[] {
+    const mergedEvents: CalendarEvent[] = [];
+
+    for (const event of events) {
+        const previous = mergedEvents.at(-1);
+        if (!previous || !shouldMergeCalendarEvents(previous, event)) {
+            mergedEvents.push(event);
+            continue;
+        }
+
+        mergedEvents[mergedEvents.length - 1] = {
+            ...previous,
+            uid: `${previous.uid}+${event.uid}`,
+            endsAt: laterCalendarTimestamp(
+                previous.endsAt ?? previous.startsAt,
+                event.endsAt ?? event.startsAt,
+            ),
+        };
+    }
+
+    return mergedEvents;
+}
+
 export function formatCalendarDateRange(event: CalendarEvent): string {
     const startsAt = new Date(event.startsAt);
     if (Number.isNaN(startsAt.getTime())) {
@@ -119,6 +144,40 @@ export function formatCalendarDateRange(event: CalendarEvent): string {
     }).format(endsAt);
 
     return `${startDate}, ${startTime}-${endTime}`;
+}
+
+function shouldMergeCalendarEvents(
+    previous: CalendarEvent,
+    next: CalendarEvent,
+): boolean {
+    return (
+        !previous.allDay &&
+        !next.allDay &&
+        normalizeCalendarTitle(previous.title) ===
+            normalizeCalendarTitle(next.title) &&
+        calendarDayKey(previous.startsAt) === calendarDayKey(next.startsAt)
+    );
+}
+
+function normalizeCalendarTitle(value: string): string {
+    return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('de-CH');
+}
+
+function calendarDayKey(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value.slice(0, 10);
+    }
+
+    return new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(date);
+}
+
+function laterCalendarTimestamp(left: string, right: string): string {
+    return left >= right ? left : right;
 }
 
 function eventFromRaw(raw: RawCalendarEvent): CalendarEvent | null {

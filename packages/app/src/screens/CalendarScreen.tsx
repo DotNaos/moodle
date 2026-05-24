@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 import {
     fetchCalendarEvents,
     formatCalendarDateRange,
+    mergeConsecutiveCalendarEvents,
     upcomingCalendarEvents,
     type CalendarEvent,
 } from '../calendar';
@@ -61,7 +62,7 @@ export function CalendarScreen(props: CalendarScreenProps) {
     }, []);
 
     const upcomingEvents = useMemo(
-        () => upcomingCalendarEvents(events).slice(0, 80),
+        () => mergeConsecutiveCalendarEvents(upcomingCalendarEvents(events)).slice(0, 80),
         [events],
     );
     const changed = calendarUrl.trim() !== savedUrl.trim();

@@ -19,6 +19,7 @@ import { EmptyState, ScreenSection, SecondaryButton } from '../components/ui';
 import {
     fetchCalendarEvents,
     formatCalendarDateRange,
+    mergeConsecutiveCalendarEvents,
     upcomingCalendarEvents,
     type CalendarEvent,
 } from '../calendar';
@@ -322,7 +323,9 @@ function HomeCalendarPreview(props: {
         };
     }, []);
 
-    const upcomingEvents = upcomingCalendarEvents(events).slice(0, 3);
+    const upcomingEvents = mergeConsecutiveCalendarEvents(
+        upcomingCalendarEvents(events),
+    ).slice(0, 3);
 
     return (
         <View style={styles.homeCalendarPanel}>
