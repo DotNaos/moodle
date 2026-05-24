@@ -33,9 +33,10 @@ export function ProfileScreen(props: ProfileScreenProps) {
     const runtimeVersion = formatUpdateValue(
         props.updateDiagnostics.runtimeVersion,
     );
-    const buildDate = formatBuildDate(props.updateDiagnostics.buildDate);
+    const buildTimestamp = formatTimestamp(props.updateDiagnostics.buildDate);
     const commitHash = formatCommitHash(props.updateDiagnostics.commitHash);
     const updateId = formatCommitHash(props.updateDiagnostics.updateId);
+    const updateTimestamp = formatTimestamp(props.updateDiagnostics.createdAt);
 
     if (!props.connection) {
         return (
@@ -90,9 +91,14 @@ export function ProfileScreen(props: ProfileScreenProps) {
                 </Text>
                 <Text style={styles.cardBody}>Channel: {updateChannel}</Text>
                 <Text style={styles.cardBody}>Runtime: {runtimeVersion}</Text>
-                <Text style={styles.cardBody}>Build: {buildDate}</Text>
+                <Text style={styles.cardBody}>
+                    Build timestamp: {buildTimestamp}
+                </Text>
                 <Text style={styles.cardBody}>Commit: {commitHash}</Text>
                 <Text style={styles.cardBody}>Update: {updateId}</Text>
+                <Text style={styles.cardBody}>
+                    Update timestamp: {updateTimestamp}
+                </Text>
                 <View style={styles.actionRow}>
                     <SecondaryButton
                         label={
@@ -129,7 +135,7 @@ function formatCommitHash(value: string | null): string {
     return normalized.length > 12 ? normalized.slice(0, 12) : normalized;
 }
 
-function formatBuildDate(value: string | null): string {
+function formatTimestamp(value: string | null): string {
     const normalized = value?.trim();
     if (!normalized) {
         return 'not set';
@@ -140,5 +146,5 @@ function formatBuildDate(value: string | null): string {
         return normalized;
     }
 
-    return date.toISOString().replace('T', ' ').slice(0, 16);
+    return date.toISOString().replace('T', ' ').replace('.000Z', ' UTC');
 }
