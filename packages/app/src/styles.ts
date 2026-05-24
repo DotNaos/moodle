@@ -1,5 +1,6 @@
 import { StyleSheet } from "react-native";
 import { palette } from "./palette";
+import { calendarStyles } from "./styles.calendar";
 import { formAndOverlayStyles } from "./styles.formAndOverlay";
 import { navigationAndMediaStyles } from "./styles.navigationAndMedia";
 
@@ -205,105 +206,6 @@ const baseStyles = StyleSheet.create({
     color: palette.muted,
     fontSize: 14,
     lineHeight: 22,
-  },
-  calendarHero: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 24,
-    flexDirection: "row",
-    gap: 14,
-    padding: 16,
-  },
-  calendarHeroIcon: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    height: 52,
-    justifyContent: "center",
-    width: 52,
-  },
-  calendarSettings: {
-    gap: 12,
-  },
-  calendarLoading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 10,
-  },
-  calendarList: {
-    gap: 8,
-  },
-  homeCalendarPanel: {
-    backgroundColor: palette.surface,
-    borderRadius: 24,
-    gap: 12,
-    padding: 14,
-  },
-  homeCalendarHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  homeCalendarTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  homeCalendarList: {
-    gap: 4,
-  },
-  homeCalendarRow: {
-    alignItems: "center",
-    borderRadius: 18,
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 62,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-  },
-  calendarEventRow: {
-    alignItems: "center",
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: 14,
-    minHeight: 76,
-    paddingHorizontal: 4,
-    paddingVertical: 12,
-  },
-  calendarDateBlock: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 16,
-    height: 52,
-    justifyContent: "center",
-    width: 54,
-  },
-  calendarDateDay: {
-    color: palette.text,
-    fontSize: 19,
-    fontWeight: "900",
-    lineHeight: 22,
-  },
-  calendarDateMonth: {
-    color: palette.subtle,
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  calendarEventBody: {
-    flex: 1,
-    gap: 3,
-  },
-  calendarCourseHint: {
-    color: palette.blue,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
   },
   bridgeApprovalPanel: {
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -642,6 +544,7 @@ const baseStyles = StyleSheet.create({
 
 export const styles = {
   ...baseStyles,
+  ...calendarStyles,
   ...formAndOverlayStyles,
   ...navigationAndMediaStyles,
 };

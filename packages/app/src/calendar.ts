@@ -105,6 +105,22 @@ export function mergeConsecutiveCalendarEvents(
     return mergedEvents;
 }
 
+export function firstCalendarDayEvents(
+    events: readonly CalendarEvent[],
+): CalendarEvent[] {
+    const firstEvent = events[0];
+    if (!firstEvent) {
+        return [];
+    }
+
+    const firstDay = calendarDayKey(firstEvent.startsAt);
+    return events.filter((event) => calendarDayKey(event.startsAt) === firstDay);
+}
+
+export function getCalendarDayKey(value: string): string {
+    return calendarDayKey(value);
+}
+
 export function formatCalendarDateRange(event: CalendarEvent): string {
     const startsAt = new Date(event.startsAt);
     if (Number.isNaN(startsAt.getTime())) {
@@ -169,11 +185,11 @@ function calendarDayKey(value: string): string {
         return value.slice(0, 10);
     }
 
-    return new Intl.DateTimeFormat('en-CA', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).format(date);
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('-');
 }
 
 function laterCalendarTimestamp(left: string, right: string): string {

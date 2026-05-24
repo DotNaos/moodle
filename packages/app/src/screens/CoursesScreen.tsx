@@ -18,6 +18,7 @@ import { CourseArtwork } from '../components/CourseArtwork';
 import { EmptyState, ScreenSection, SecondaryButton } from '../components/ui';
 import {
     fetchCalendarEvents,
+    firstCalendarDayEvents,
     formatCalendarDateRange,
     mergeConsecutiveCalendarEvents,
     upcomingCalendarEvents,
@@ -323,9 +324,9 @@ function HomeCalendarPreview(props: {
         };
     }, []);
 
-    const upcomingEvents = mergeConsecutiveCalendarEvents(
-        upcomingCalendarEvents(events),
-    ).slice(0, 3);
+    const upcomingEvents = firstCalendarDayEvents(
+        mergeConsecutiveCalendarEvents(upcomingCalendarEvents(events)),
+    );
 
     return (
         <View style={styles.homeCalendarPanel}>
