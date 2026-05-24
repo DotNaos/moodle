@@ -197,7 +197,7 @@ export const replayStyles = StyleSheet.create({
     },
     episodeThumbFallback: {
         alignItems: 'center',
-        backgroundColor: 'rgba(140,199,255,0.08)',
+        backgroundColor: 'rgba(255,255,255,0.08)',
         flex: 1,
         justifyContent: 'center',
     },
@@ -299,7 +299,7 @@ export const replayStyles = StyleSheet.create({
     },
     bridgeLoginIcon: {
         alignItems: 'center',
-        backgroundColor: 'rgba(140,199,255,0.12)',
+        backgroundColor: 'rgba(255,255,255,0.10)',
         borderRadius: 22,
         height: 56,
         justifyContent: 'center',

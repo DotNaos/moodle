@@ -51,7 +51,7 @@ export function BottomNav(props: BottomNavProps) {
                         accessibilityRole="button">
                         <Icon
                             color={
-                                active ? palette.blue : palette.subtle
+                                active ? palette.ink : palette.subtle
                             }
                             size={21}
                         />

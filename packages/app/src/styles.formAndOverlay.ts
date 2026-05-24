@@ -260,7 +260,7 @@ export const formAndOverlayStyles = StyleSheet.create({
   },
   codexAssistantAvatar: {
     alignItems: "center",
-    backgroundColor: "rgba(140,199,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderRadius: 9999,
     height: 32,
     justifyContent: "center",

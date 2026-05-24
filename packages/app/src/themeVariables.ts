@@ -3,7 +3,7 @@ import { Uniwind } from 'uniwind';
 import { palette } from './palette';
 
 const darkHoverThemeVariables = {
-    '--color-default-hover': '#202a36',
+    '--color-default-hover': '#1a1a1a',
     '--color-accent-hover': palette.blue,
     '--color-success-hover': palette.green,
     '--color-warning-hover': palette.amber,

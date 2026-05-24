@@ -20,7 +20,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0c0a09"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "bundleIdentifier": "com.dotnaos.moodleclient",
@@ -39,7 +39,7 @@
       "package": "com.dotnaos.moodleclient",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0c0a09"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,

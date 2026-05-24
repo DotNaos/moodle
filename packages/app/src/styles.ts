@@ -19,10 +19,10 @@ const baseStyles = StyleSheet.create({
     backgroundColor: palette.surfaceRaised,
   },
   surfaceFrameReady: {
-    backgroundColor: "rgba(140,199,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   heroSurface: {
-    backgroundColor: "#101720",
+    backgroundColor: palette.surface,
   },
   appShell: {
     flex: 1,
@@ -208,7 +208,7 @@ const baseStyles = StyleSheet.create({
   },
   calendarHero: {
     alignItems: "center",
-    backgroundColor: "rgba(140,199,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 24,
     flexDirection: "row",
     gap: 14,
@@ -216,7 +216,7 @@ const baseStyles = StyleSheet.create({
   },
   calendarHeroIcon: {
     alignItems: "center",
-    backgroundColor: "rgba(140,199,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.10)",
     borderRadius: 18,
     height: 52,
     justifyContent: "center",
@@ -561,7 +561,7 @@ const baseStyles = StyleSheet.create({
   },
   courseAvatar: {
     alignItems: "center",
-    backgroundColor: "#223041",
+    backgroundColor: "rgba(255,255,255,0.10)",
     borderRadius: 14,
     height: 42,
     justifyContent: "center",

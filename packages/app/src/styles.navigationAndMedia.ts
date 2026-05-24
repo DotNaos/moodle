@@ -4,22 +4,23 @@ import { palette } from "./palette";
 
 export const navigationAndMediaStyles = StyleSheet.create({
   bottomNav: {
-    backgroundColor: "rgba(11,15,20,0.96)",
+    backgroundColor: palette.background,
     flexDirection: "row",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingTop: 8,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
   },
   navItemButton: {
     alignItems: "center",
-    borderRadius: 14,
+    borderRadius: 24,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    paddingVertical: 8,
+    minHeight: 60,
+    paddingVertical: 9,
   },
   navItemButtonActive: {
-    backgroundColor: palette.blueSoft,
+    backgroundColor: palette.text,
   },
   navItemButtonPressed: {
     opacity: 0.7,
@@ -47,7 +48,7 @@ export const navigationAndMediaStyles = StyleSheet.create({
     fontWeight: "800",
   },
   navLabelActive: {
-    color: palette.text,
+    color: palette.ink,
   },
   sectionCard: {
     gap: 10,
