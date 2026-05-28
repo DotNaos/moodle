@@ -10,6 +10,8 @@ declare const process:
           env?: {
               EXPO_PUBLIC_SENTRY_DSN?: string;
               EXPO_PUBLIC_SENTRY_ENVIRONMENT?: string;
+              EXPO_PUBLIC_MOODLE_CLIENT_BUILD_DATE?: string;
+              EXPO_PUBLIC_MOODLE_CLIENT_COMMIT_HASH?: string;
           };
       }
     | undefined;
@@ -46,6 +48,8 @@ export function initObservability(): void {
     Sentry.setTags({
         platform: Platform.OS,
         appVersion: getAppVersion(),
+        appCommitHash: getBuildInfoString('commitHash') ?? 'unknown',
+        appBuildDate: getBuildInfoString('buildDate') ?? 'unknown',
         expoRuntimeVersion: Updates.runtimeVersion ?? 'unknown',
         expoChannel: Updates.channel ?? 'unknown',
         expoUpdateId: Updates.updateId ?? 'embedded',
@@ -57,6 +61,16 @@ export function initObservability(): void {
         Sentry.setTag('expoUpdateGroup', updateGroup);
         Sentry.setTag('expoUpdateUrl', getExpoUpdateUrl(updateGroup));
     }
+
+    recordInfo('Observability initialized', {
+        release: getReleaseName(),
+        environment: getEnvironment(),
+        platform: Platform.OS,
+        expoChannel: Updates.channel ?? 'unknown',
+        expoUpdateId: Updates.updateId ?? 'embedded',
+        appCommitHash: getBuildInfoString('commitHash') ?? 'unknown',
+        appBuildDate: getBuildInfoString('buildDate') ?? 'unknown',
+    });
 }
 
 export function wrapWithObservability<P extends Record<string, unknown>>(
@@ -81,7 +95,13 @@ export function recordInfo(
         message: scopeName,
         data: attributes,
     });
-    Sentry.logger.info(scopeName, attributes);
+    Sentry.logger?.info?.(scopeName, attributes);
+    Sentry.withScope((scope) => {
+        scope.setLevel('info');
+        scope.setTag('moodle.scope', scopeName);
+        scope.setContext('moodle.details', attributes);
+        Sentry.captureMessage(scopeName);
+    });
 }
 
 export function recordError(
@@ -100,7 +120,7 @@ export function recordError(
         message: scopeName,
         data: attributes,
     });
-    Sentry.logger.error(scopeName, attributes);
+    Sentry.logger?.error?.(scopeName, attributes);
     Sentry.withScope((scope) => {
         scope.setTag('moodle.scope', scopeName);
         scope.setContext('moodle.details', attributes);
@@ -136,6 +156,28 @@ function getAppVersion(): string {
     return Constants.expoConfig?.version ?? '0.0.0';
 }
 
+function getBuildInfoString(key: 'buildDate' | 'commitHash'): string | null {
+    if (key === 'buildDate') {
+        const value = process?.env?.EXPO_PUBLIC_MOODLE_CLIENT_BUILD_DATE?.trim();
+        if (value) {
+            return value;
+        }
+    }
+
+    if (key === 'commitHash') {
+        const value = process?.env?.EXPO_PUBLIC_MOODLE_CLIENT_COMMIT_HASH?.trim();
+        if (value) {
+            return value;
+        }
+    }
+
+    return (
+        readNestedString(Constants.expoConfig?.extra, [key]) ||
+        readNestedString(Updates.manifest, ['extra', key]) ||
+        readNestedString(Updates.manifest, ['extra', 'expoClient', 'extra', key])
+    );
+}
+
 function getExpoUpdateGroup(): string | null {
     const manifest = Updates.manifest;
     if (!manifest || typeof manifest !== 'object') {
@@ -145,6 +187,20 @@ function getExpoUpdateGroup(): string | null {
     const metadata = getRecordValue(manifest, 'metadata');
     const updateGroup = getRecordValue(metadata, 'updateGroup');
     return typeof updateGroup === 'string' ? updateGroup : null;
+}
+
+function readNestedString(value: unknown, path: string[]): string | null {
+    let current = value;
+    for (const segment of path) {
+        if (!current || typeof current !== 'object') {
+            return null;
+        }
+        current = (current as Record<string, unknown>)[segment];
+    }
+
+    return typeof current === 'string' && current.trim()
+        ? current.trim()
+        : null;
 }
 
 function getExpoUpdateUrl(updateGroup: string): string {
