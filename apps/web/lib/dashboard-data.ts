@@ -30,6 +30,24 @@ export type Material = {
   uploadedAt?: string;
 };
 
+export type WebexRecording = {
+  recordingDate: string;
+  recordingName: string;
+  streamUrl: string;
+  sourceUrl?: string;
+  recordingUuid: string;
+  coverUrl?: string;
+  sessionTitle: string;
+  durationSeconds?: number;
+};
+
+export type WebexRecordingState = {
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  recordings: WebexRecording[];
+};
+
 export type CategoryOption = {
   key: string;
   label: string;

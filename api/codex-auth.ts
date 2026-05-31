@@ -159,7 +159,7 @@ function getCodexBinary(): string {
 }
 
 function getCodexEnvironment(): NodeJS.ProcessEnv {
-  const nextEnvironment: NodeJS.ProcessEnv = {};
+  const nextEnvironment: Record<string, string> = {};
   Object.entries(process.env).forEach(([key, value]) => {
     if (!value || key === "OPENAI_API_KEY" || key === "CODEX_API_KEY") {
       return;
@@ -167,7 +167,7 @@ function getCodexEnvironment(): NodeJS.ProcessEnv {
     nextEnvironment[key] = value;
   });
   nextEnvironment.CODEX_HOME = CODEX_HOME;
-  return nextEnvironment;
+  return nextEnvironment as NodeJS.ProcessEnv;
 }
 
 function findDeviceCode(value: string): string | null {

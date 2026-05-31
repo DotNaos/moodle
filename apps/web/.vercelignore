@@ -10,7 +10,5 @@ dist
 **/dist
 .next
 **/.next
-apps/mobile/ios
-apps/mobile/android
 *.tsbuildinfo
 *.log

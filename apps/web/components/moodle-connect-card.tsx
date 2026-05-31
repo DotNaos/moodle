@@ -1,11 +1,13 @@
 "use client";
 
-import { CheckCircle2, Copy, Loader2, QrCode, RefreshCw, Smartphone } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, QrCode, RefreshCw, Smartphone } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { getMobileClientDownloadUrl } from "@/lib/mobile-client";
 
 type MoodleConnectCardProps = {
   onConnected: () => void;
@@ -26,12 +28,16 @@ type BridgeStatusResponse = {
 type BridgeState = "starting" | "waiting" | "connected" | "failed";
 
 export function MoodleConnectCard({ onConnected }: MoodleConnectCardProps) {
+  const mobileClientDownloadUrl = getMobileClientDownloadUrl();
   const [state, setState] = useState<BridgeState>("starting");
   const [bridgeUrl, setBridgeUrl] = useState("");
   const [challenge, setChallenge] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [credentialLoading, setCredentialLoading] = useState(false);
 
   const startBridge = useCallback(async () => {
     setState("starting");
@@ -124,17 +130,70 @@ export function MoodleConnectCard({ onConnected }: MoodleConnectCardProps) {
     }
   }
 
+  async function submitCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCredentialLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/moodle/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not connect Moodle account.");
+      }
+      setPassword("");
+      setState("connected");
+      onConnected();
+    } catch (loginError) {
+      setError(getErrorMessage(loginError));
+    } finally {
+      setCredentialLoading(false);
+    }
+  }
+
   return (
     <section className="mx-auto grid w-full max-w-5xl gap-6 rounded-[2rem] bg-card p-6 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-center lg:p-8">
       <div className="flex flex-col gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <QrCode aria-hidden />
+          <KeyRound aria-hidden />
         </div>
         <div className="flex flex-col gap-2">
           <h2 className="text-3xl font-semibold tracking-tight">Connect Moodle</h2>
           <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-            Open Moodle Client on your iPhone, scan this bridge QR, then approve sharing your Moodle login.
+            Sign in once with your FHGR Moodle login. The server creates the same mobile token the app would provide and
+            stores that token session, not your password.
           </p>
+        </div>
+        <form className="flex flex-col gap-2" onSubmit={submitCredentials}>
+          <Input
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="FHGR username"
+            autoComplete="username"
+          />
+          <Input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password"
+            type="password"
+            autoComplete="current-password"
+          />
+          <Button type="submit" disabled={credentialLoading || !username.trim() || !password}>
+            {credentialLoading ? <Loader2 className="animate-spin" aria-hidden /> : <KeyRound aria-hidden />}
+            Sign in
+          </Button>
+        </form>
+        <div className="flex flex-col gap-2 pt-2">
+          <p className="text-sm text-muted-foreground">Already using the iPhone app?</p>
+          <Button asChild variant="secondary" className="w-fit">
+            <a href={mobileClientDownloadUrl} target="_blank" rel="noreferrer">
+              <ExternalLink aria-hidden />
+              Download Moodle Client
+            </a>
+          </Button>
         </div>
         {error ? <Alert>{error}</Alert> : null}
       </div>
@@ -162,8 +221,8 @@ export function MoodleConnectCard({ onConnected }: MoodleConnectCardProps) {
             {getStatusLabel(state)}
           </div>
           <p className="text-sm leading-6 text-muted-foreground">
-            The QR only contains this website origin and a short-lived one-time challenge. Your Moodle token is sent back
-            only after you approve it on the phone.
+            The QR flow still works if your phone already has the mobile token. Otherwise, use the sign-in form on the
+            left.
           </p>
           {expiresAt ? (
             <p className="text-xs text-muted-foreground">

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import type {
   PDFPageContext,
   PDFScrollCommand,
@@ -443,7 +444,10 @@ export function PDFDocumentViewer({
       </div>
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-5 [touch-action:none] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing"
+        className={cn(
+          "min-h-0 flex-1 overflow-auto overscroll-contain px-3 py-4 data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4 sm:py-5",
+          zoom > 1.01 ? "[touch-action:none]" : "[touch-action:pan-y_pinch-zoom]",
+        )}
         data-pannable={zoom > 1.01}
         data-panning={panning}
         onPointerCancel={stopDragging}

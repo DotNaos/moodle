@@ -75,9 +75,9 @@ export function APIKeyMenu() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="secondary">
+        <Button className="h-11 px-4" type="button" variant="secondary">
           <KeyRound data-icon="inline-start" aria-hidden />
-          API key
+          <span className="hidden sm:inline">API key</span>
           <ChevronDown data-icon="inline-end" aria-hidden />
         </Button>
       </DropdownMenuTrigger>

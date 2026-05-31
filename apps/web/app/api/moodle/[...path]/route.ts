@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 
 import { decodeMoodleSession, encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
+import { getMoodleCacheConfig, readMoodleCache, writeMoodleCache } from "@/lib/moodle-cache";
 import {
   getMoodleInternalSecret,
   MOODLE_SERVICES_URL,
@@ -35,7 +36,21 @@ export async function GET(request: Request, context: RouteContext) {
 
   const params = await context.params;
   const upstreamPath = params.path?.map(encodeURIComponent).join("/") ?? "";
-  const search = new URL(request.url).search;
+  const requestUrl = new URL(request.url);
+  const search = upstreamSearch(requestUrl.searchParams);
+  const cacheConfig = getMoodleCacheConfig(userId, upstreamPath, requestUrl.searchParams);
+  if (cacheConfig) {
+    const cached = await readMoodleCache(cacheConfig, userId);
+    if (cached.hit) {
+      return Response.json(cached.value, {
+        headers: {
+          "cache-control": "private, max-age=30",
+          "x-moodle-cache": "HIT"
+        }
+      });
+    }
+  }
+
   const upstreamUrl = `${MOODLE_SERVICES_URL}/api/${upstreamPath}${search}`;
 
   let upstreamResponse = await fetch(upstreamUrl, {
@@ -70,10 +85,29 @@ export async function GET(request: Request, context: RouteContext) {
     headers.set("content-type", "application/json");
   }
 
+  if (cacheConfig && upstreamResponse.ok && headers.get("content-type")?.includes("application/json")) {
+    const payload = await readServiceJSON<unknown>(upstreamResponse);
+    await writeMoodleCache(cacheConfig, userId, payload);
+    return Response.json(payload, {
+      status: upstreamResponse.status,
+      headers: {
+        "cache-control": "private, max-age=30",
+        "x-moodle-cache": "MISS"
+      }
+    });
+  }
+
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
     headers,
   });
+}
+
+function upstreamSearch(searchParams: URLSearchParams): string {
+  const forwarded = new URLSearchParams(searchParams);
+  forwarded.delete("cache");
+  const text = forwarded.toString();
+  return text ? `?${text}` : "";
 }
 
 function proxyRequestHeaders(request: Request): Record<string, string> {
@@ -92,6 +126,9 @@ export async function POST(request: Request, context: RouteContext) {
   const route = params.path?.join("/") ?? "";
   if (route === "keys") {
     return createAPIKey(request);
+  }
+  if (route === "webex/credentials") {
+    return saveWebexCredentials(request);
   }
   if (route !== "session/restore") {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -112,6 +149,36 @@ export async function POST(request: Request, context: RouteContext) {
     user: restored.user,
     apiKeyRecord: restored.apiKeyRecord,
   });
+}
+
+async function saveWebexCredentials(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const cookieStore = await cookies();
+  let session = decodeMoodleSession(cookieStore.get(MOODLE_SESSION_COOKIE)?.value, userId);
+  if (!session) {
+    const restored = await restoreMoodleSession(userId);
+    if (!restored.ok) {
+      return moodleNotConnectedResponse(restored.error);
+    }
+    session = restored.session;
+  }
+
+  const body = await request.text();
+  const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/webex/credentials`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": request.headers.get("content-type") ?? "application/json",
+      "X-Moodle-App-Key": session.apiKey,
+    },
+    body: body || "{}",
+  });
+  const payload = await readServiceJSON<unknown>(upstreamResponse);
+  return Response.json(payload, { status: upstreamResponse.status || 502 });
 }
 
 async function createAPIKey(request: Request) {

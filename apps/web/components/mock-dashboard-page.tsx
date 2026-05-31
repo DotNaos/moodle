@@ -5,12 +5,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CourseThumbnail, MaterialRow } from "@/components/dashboard-ui";
+import { StudyModeActions, type StudyMode } from "@/components/study-mode-actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { mockCourses, mockMaterialsByCourseId, mockUser } from "@/lib/mock-moodle";
 import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
-import type { Material } from "@/lib/dashboard-data";
+import type { Material, WebexRecording } from "@/lib/dashboard-data";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
+import { EMPTY_STUDY_OUTLINE, type StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 type MockMessage = {
@@ -19,11 +21,41 @@ type MockMessage = {
   text: string;
 };
 
+const mockRecordings: WebexRecording[] = [
+  {
+    recordingDate: "2026-05-26",
+    recordingName: "Mock Webex Recording",
+    recordingUuid: "mock-webex-recording-1",
+    sessionTitle: "High Performance Computing",
+    streamUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+  {
+    recordingDate: "2026-05-19",
+    recordingName: "Mock Webex Recording",
+    recordingUuid: "mock-webex-recording-2",
+    sessionTitle: "Parallel workloads",
+    streamUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+];
+
+const mockRecordingState = {
+  loading: false,
+  loaded: true,
+  error: null,
+  recordings: mockRecordings,
+};
+
 export function MockDashboardPage() {
   useHideClerkDevOverlay();
 
   const [selectedCourseId, setSelectedCourseId] = useState(String(mockCourses[0]?.id ?? ""));
-  const [selectedMaterialId, setSelectedMaterialId] = useState(mockMaterialsByCourseId[selectedCourseId]?.[0]?.id ?? null);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(mockMaterialsByCourseId[selectedCourseId]?.[0]?.id ?? null);
+  const [studyMode, setStudyMode] = useState<StudyMode>("materials");
+  const [codexOpen, setCodexOpen] = useState(true);
+  const [selectedRecording, setSelectedRecording] = useState<WebexRecording | null>(mockRecordings[0] ?? null);
+  const [selectedScriptSectionId, setSelectedScriptSectionId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
   const [pdfState, setPDFState] = useState<PDFViewState | null>(null);
   const [pdfScrollCommand, setPDFScrollCommand] = useState<PDFScrollCommand | null>(null);
 
@@ -38,10 +70,12 @@ export function MockDashboardPage() {
     const nextMaterials = mockMaterialsByCourseId[courseId] ?? [];
     setSelectedCourseId(courseId);
     setSelectedMaterialId(nextMaterials[0]?.id ?? null);
+    setStudyMode("materials");
   }
 
   function openMaterial(material: Material) {
     setSelectedMaterialId(material.id);
+    setStudyMode("materials");
   }
 
   return (
@@ -95,6 +129,35 @@ export function MockDashboardPage() {
                 })}
               </div>
 
+              <div className="mt-6">
+                <StudyModeActions
+                  studyMode={studyMode}
+                  onMaterials={() => {
+                    setCodexOpen(false);
+                    setSelectedTaskId(null);
+                    setSelectedScriptSectionId(null);
+                    setStudyMode("materials");
+                  }}
+                  onTasks={() => {
+                    setCodexOpen(false);
+                    setSelectedMaterialId(null);
+                    setSelectedScriptSectionId(null);
+                    setStudyMode("tasks");
+                  }}
+                  onScript={() => {
+                    setCodexOpen(false);
+                    setSelectedMaterialId(null);
+                    setSelectedTaskId(null);
+                    setStudyMode("script");
+                  }}
+                  onRecordings={() => {
+                    setCodexOpen(false);
+                    setSelectedMaterialId(null);
+                    setStudyMode("recordings");
+                  }}
+                />
+              </div>
+
               <div className="mt-6 flex flex-col gap-2">
                 <h3 className="px-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Materials</h3>
                 {materials.map((material) => (
@@ -112,8 +175,26 @@ export function MockDashboardPage() {
           <CourseMainPanel
             course={selectedCourse}
             courseId={selectedCourseId}
+            materials={materials}
             material={selectedMaterial}
+            recordingsState={mockRecordingState}
+            selectedRecording={selectedRecording}
+            selectedScriptSectionId={selectedScriptSectionId}
+            selectedTaskId={selectedTaskId}
+            studyMode={studyMode}
+            onOpenResource={(resourceId) => {
+              const material = materials.find((item) => item.id === resourceId);
+              if (material) {
+                openMaterial(material);
+              }
+            }}
             onPDFStateChange={setPDFState}
+            onLoadRecordings={() => undefined}
+            onPlayRecording={setSelectedRecording}
+            onSelectedScriptSectionIdChange={setSelectedScriptSectionId}
+            onSelectedTaskIdChange={setSelectedTaskId}
+            onSignInWebexBrowser={async () => undefined}
+            onStudyOutlineChange={setStudyOutline}
             pdfScrollCommand={pdfScrollCommand}
           />
 

@@ -88,7 +88,7 @@ export function MaterialRow({
   return (
     <div
       className={cn(
-        "group flex min-h-14 items-center justify-between gap-2 rounded-2xl px-3 py-2 transition-colors",
+        "group flex min-h-14 w-full min-w-0 items-center justify-between gap-2 rounded-2xl px-3 py-2 transition-colors",
         active ? "bg-primary text-primary-foreground" : "hover:bg-secondary hover:text-secondary-foreground",
       )}
     >
