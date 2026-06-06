@@ -62,6 +62,7 @@ export function MoodleSidebar({
   onHomeViewChange,
   onMaterials,
   onQueryChange,
+  onFormula,
   onRecordings,
   onScript,
   onSelectCourse,
@@ -97,6 +98,7 @@ export function MoodleSidebar({
   onHomeViewChange: (value: "courses" | "calendar") => void;
   onMaterials: () => void;
   onQueryChange: (value: string) => void;
+  onFormula: () => void;
   onRecordings: () => void;
   onScript: () => void;
   onSelectCourse: (courseId: string) => void;
@@ -193,6 +195,7 @@ export function MoodleSidebar({
               studyOutline={studyOutline}
               onBackToCourses={onBackToCourses}
               onMaterials={onMaterials}
+              onFormula={onFormula}
               onRecordings={onRecordings}
               onScript={onScript}
               onSelectMaterial={onSelectMaterial}
@@ -412,6 +415,7 @@ function MaterialNavigation({
   studyOutline,
   onBackToCourses,
   onMaterials,
+  onFormula,
   onRecordings,
   onScript,
   onSelectMaterial,
@@ -429,6 +433,7 @@ function MaterialNavigation({
   studyOutline: StudyOutline;
   onBackToCourses: () => void;
   onMaterials: () => void;
+  onFormula: () => void;
   onRecordings: () => void;
   onScript: () => void;
   onSelectMaterial: (material: Material) => void;
@@ -445,6 +450,7 @@ function MaterialNavigation({
       <StudyModeActions
         studyMode={studyMode}
         onMaterials={onMaterials}
+        onFormula={onFormula}
         onTasks={onTasks}
         onScript={onScript}
         onRecordings={onRecordings}
@@ -616,6 +622,7 @@ function RecordingOutline() {
 function courseModeTitle(studyMode: StudyMode): string {
   if (studyMode === "tasks") return "Aufgaben";
   if (studyMode === "script") return "Script";
+  if (studyMode === "formula") return "Formeln";
   if (studyMode === "recordings") return "Aufzeichnungen";
   return "Materialien";
 }

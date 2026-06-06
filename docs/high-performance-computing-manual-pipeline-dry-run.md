@@ -6,6 +6,26 @@ This document records a manual classification pass through the Moodle course
 The purpose is not to generate the final script yet. The purpose is to learn how
 the pipeline should classify real Moodle material before we automate it.
 
+## Target Product Shape
+
+The course output should have two separate website areas.
+
+```text
+High Performance Computing
+├─ Script page
+│  ├─ generated from the script tree B_V
+│  ├─ provides the table of contents
+│  └─ explains the topics in a clean learning order
+│
+└─ Tasks page
+   ├─ generated from the task tree B_A
+   ├─ lists assignment sheets, tasks, and solution states
+   └─ links tasks back to the matching script topics
+```
+
+The task page is not a subsection of the script. It is a separate page that
+uses the script tree as a reference target.
+
 ## Finishing Criteria For This Pass
 
 - Read the real Moodle course page, not only the file list.
@@ -151,6 +171,27 @@ low_ocr_solution
   image-first.
 ```
 
+## Non-PDF Activity Classification
+
+These activities are visible on the Moodle course page but are not returned by
+`moodle list files`.
+
+| Section | Moodle activity | Role label | Classification |
+| --- | --- | --- | --- |
+| Allgemeine Informationen | Nachrichten | `communication` | Course announcement/news forum. |
+| Allgemeine Informationen | Modulbeschreibungen | `course_info_link` | Module description reference, not lecture or task content. |
+| Allgemeine Informationen | Semesterinformation | `course_info_link` | Semester organization reference, not lecture or task content. |
+| Allgemeine Informationen | Anleitung GPU-Server | `course_info_link` | Infrastructure documentation; useful support material. |
+| Allgemeine Informationen | Ankündigungen | `communication` | Announcement forum. |
+| Allgemeine Informationen | Diskussionsforum | `communication` | General discussion forum. |
+| Allgemeine Informationen | Webex | `meeting_tool` | Live/recorded teaching tool, not source text. |
+| Einführung and later sections | Lernziele / Präsenz / Selbststudium labels | `section_label` | Section context and learning goals. |
+| Nachrichtengekoppelte Systeme | Zugang zum CDS-Cluster | `support_link` | Practical infrastructure link for MPI/cluster tasks. |
+
+These resources should stay in the course model because they explain context and
+workflow. They should not be fed directly into the lecture-script generator
+unless a later rule explicitly promotes them.
+
 ## PDF Classification
 
 All 29 Moodle file resources were inspected with PDF text extraction. The
@@ -264,6 +305,19 @@ B_V: Lecture / script tree
 └─ Applications
    ├─ source: Teil 06
    └─ spans: matrix operations, iterative solvers, sorting
+```
+
+This tree is the source for the script table of contents:
+
+```text
+Script TOC
+├─ Course logistics
+├─ Architecture and performance foundations
+├─ Network topologies
+├─ Parallelization foundations
+├─ Message-passing systems
+├─ Shared-memory systems
+└─ Applications
 ```
 
 ## Resulting Task Tree

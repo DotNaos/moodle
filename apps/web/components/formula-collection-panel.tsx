@@ -9,24 +9,39 @@ import type { Course } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import { renderFormulaMarkdownHTML } from "@/lib/formula-renderer";
 import { cn } from "@/lib/utils";
-import type { ScriptPDFMappingItem, TaskViewResponse } from "@/components/task-study-panel";
+import { buildScriptPDFMapping, type ScriptPDFMappingItem, type TaskViewResponse } from "@/components/task-study-panel";
 
 type FormulaCollectionPanelProps = {
   course: Course;
+  courseId: string;
+  onTaskViewChange?: (view: TaskViewResponse) => void;
   pdfMapping: ScriptPDFMappingItem[];
   view: TaskViewResponse | null;
 };
 
 export function FormulaCollectionPanel({
   course,
+  courseId,
+  onTaskViewChange,
   pdfMapping,
   view,
 }: FormulaCollectionPanelProps) {
   const [markdown, setMarkdown] = useState("");
+  const [loadedView, setLoadedView] = useState<TaskViewResponse | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [loadingView, setLoadingView] = useState(false);
   const [exporting, setExporting] = useState<"download" | "print" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const resolvedView = view ?? loadedView;
+  const resolvedPDFMapping = useMemo(
+    () => pdfMapping.length > 0
+      ? pdfMapping
+      : resolvedView
+        ? buildScriptPDFMapping(resolvedView.scriptMarkdown, resolvedView.resources)
+        : [],
+    [pdfMapping, resolvedView],
+  );
   const title = `${courseTitle(course)} Formelsammlung`;
   const subtitle = "Generated from Moodle script and course PDFs.";
   const previewHTML = useMemo(() => renderFormulaMarkdownHTML(markdown), [markdown]);
@@ -34,23 +49,39 @@ export function FormulaCollectionPanel({
 
   useEffect(() => {
     setMarkdown("");
+    setLoadedView(null);
     setError(null);
     setMessage(null);
   }, [course.id]);
 
   async function generateFormulaCollection() {
-    if (!view?.scriptMarkdown.trim()) {
-      setError("Erstelle oder aktualisiere zuerst das Script, damit Codex die Formelsammlung aus dem Kurs ableiten kann.");
-      return;
-    }
     setGenerating(true);
     setError(null);
+    setMessage(resolvedView?.scriptMarkdown.trim() ? "Codex erstellt die Formelsammlung..." : "Lade Script-Daten für die Formelsammlung...");
+    let nextView = resolvedView;
+    try {
+      nextView = await ensureFormulaView();
+    } catch (loadError) {
+      setError(getErrorMessage(loadError));
+      setGenerating(false);
+      return;
+    }
+
+    if (!nextView.scriptMarkdown.trim()) {
+      setError("Das Script ist noch leer. Aktualisiere den Kursinhalt und starte die Formelsammlung erneut.");
+      setGenerating(false);
+      return;
+    }
+
+    const nextPDFMapping = resolvedPDFMapping.length > 0
+      ? resolvedPDFMapping
+      : buildScriptPDFMapping(nextView.scriptMarkdown, nextView.resources);
     setMessage("Codex erstellt die Formelsammlung...");
     try {
       const response = await runCodex(buildFormulaPrompt({
         course,
-        pdfMapping,
-        view,
+        pdfMapping: nextPDFMapping,
+        view: nextView,
       }));
       const generatedMarkdown = response.finalResponse.trim();
       if (!generatedMarkdown) {
@@ -59,13 +90,52 @@ export function FormulaCollectionPanel({
       setMarkdown(generatedMarkdown);
       setMessage("Formelsammlung erstellt. Du kannst sie jetzt als PDF herunterladen oder zum Drucken öffnen.");
     } catch (generateError) {
-      const fallbackMarkdown = buildExtractedFormulaCollection({ course, pdfMapping, view });
+      const fallbackMarkdown = buildExtractedFormulaCollection({ course, pdfMapping: nextPDFMapping, view: nextView });
       setMarkdown(fallbackMarkdown);
       setError(null);
       setMessage(`${formatCodexGenerationError(generateError)} Ich habe deshalb eine Formelsammlung direkt aus dem Script erstellt.`);
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function ensureFormulaView(): Promise<TaskViewResponse> {
+    if (resolvedView?.scriptMarkdown.trim()) {
+      return resolvedView;
+    }
+
+    setLoadingView(true);
+    try {
+      try {
+        return await loadFormulaView(false);
+      } catch (loadError) {
+        if (!getErrorMessage(loadError).includes("Dataset not found")) {
+          throw loadError;
+        }
+        await taskForgeRequest(`/courses/${encodeURIComponent(courseId)}/compile`, {
+          method: "POST",
+          body: JSON.stringify({ scriptOnly: true }),
+        });
+        return await loadFormulaView(false);
+      }
+    } finally {
+      setLoadingView(false);
+    }
+  }
+
+  async function loadFormulaView(includeFallbackCompile: boolean): Promise<TaskViewResponse> {
+    if (includeFallbackCompile) {
+      await taskForgeRequest(`/courses/${encodeURIComponent(courseId)}/compile`, {
+        method: "POST",
+        body: JSON.stringify({ scriptOnly: true }),
+      });
+    }
+    const nextView = await taskForgeRequest<TaskViewResponse>(
+      `/courses/${encodeURIComponent(courseId)}/task-view?includeScript=1`,
+    );
+    setLoadedView(nextView);
+    onTaskViewChange?.(nextView);
+    return nextView;
   }
 
   async function exportPDF(action: "download" | "print") {
@@ -138,10 +208,10 @@ export function FormulaCollectionPanel({
         <section className="mt-6 border-b border-border pb-6">
           <div className="flex items-baseline justify-between gap-3">
             <h4 className="text-sm font-semibold text-foreground">Ausgangsmaterial</h4>
-            <span className="shrink-0 text-xs text-muted-foreground">{pdfMapping.length} PDFs</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{resolvedPDFMapping.length} PDFs</span>
           </div>
           <ol className="mt-3 grid gap-2 sm:grid-cols-2">
-            {pdfMapping.length > 0 ? pdfMapping.slice(0, 8).map((item) => (
+            {resolvedPDFMapping.length > 0 ? resolvedPDFMapping.slice(0, 8).map((item) => (
               <li key={item.resourceId} className="flex min-w-0 gap-2 text-sm leading-6">
                 <span className="w-7 shrink-0 text-xs font-medium tabular-nums text-muted-foreground">{String(item.order).padStart(2, "0")}</span>
                 <span className="min-w-0">
@@ -150,7 +220,9 @@ export function FormulaCollectionPanel({
                 </span>
               </li>
             )) : (
-              <li className="text-sm text-muted-foreground">Noch keine PDF-Zuordnung im Script gefunden.</li>
+              <li className="text-sm text-muted-foreground">
+                {loadingView ? "Lade PDF-Zuordnung..." : "Noch keine PDF-Zuordnung im Script gefunden."}
+              </li>
             )}
           </ol>
         </section>
@@ -436,6 +508,24 @@ async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
     throw new Error(payload.error ?? `Codex failed with ${response.status}.`);
   }
   return { finalResponse: payload.finalResponse ?? "" };
+}
+
+async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api/task-forge${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => null) as { error?: string } | T | null;
+  if (!response.ok) {
+    const errorMessage = payload && typeof payload === "object" && "error" in payload
+      ? String(payload.error)
+      : `Task Forge failed with ${response.status}.`;
+    throw new Error(errorMessage);
+  }
+  return payload as T;
 }
 
 function safeFilename(value: string): string {

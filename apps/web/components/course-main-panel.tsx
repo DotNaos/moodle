@@ -99,8 +99,14 @@ export function CourseMainPanel({
   if (studyMode === "formula") {
     return (
       <section className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:min-h-0 lg:overflow-hidden lg:rounded-[2rem]">
-        {course ? (
-          <FormulaCollectionPanel course={course} pdfMapping={pdfMapping} view={taskView} />
+        {course && courseId ? (
+          <FormulaCollectionPanel
+            course={course}
+            courseId={courseId}
+            onTaskViewChange={setTaskView}
+            pdfMapping={pdfMapping}
+            view={taskView}
+          />
         ) : (
           <NoCourseSelected />
         )}

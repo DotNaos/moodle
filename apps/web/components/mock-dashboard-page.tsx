@@ -150,6 +150,13 @@ export function MockDashboardPage() {
                     setSelectedTaskId(null);
                     setStudyMode("script");
                   }}
+                  onFormula={() => {
+                    setCodexOpen(false);
+                    setSelectedMaterialId(null);
+                    setSelectedTaskId(null);
+                    setSelectedScriptSectionId(null);
+                    setStudyMode("formula");
+                  }}
                   onRecordings={() => {
                     setCodexOpen(false);
                     setSelectedMaterialId(null);

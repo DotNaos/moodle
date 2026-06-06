@@ -199,6 +199,8 @@ export default function Home() {
   const mobileTab: MobileMoodleTab = codexOpen
     ? studyMode === "recordings"
       ? "recordings"
+      : studyMode === "formula"
+        ? "formula"
       : studyMode === "tasks"
         ? "tasks"
         : studyMode === "script"
@@ -208,6 +210,8 @@ export default function Home() {
       ? "tasks"
       : studyMode === "script"
         ? "script"
+        : studyMode === "formula"
+          ? "formula"
         : studyMode === "recordings"
           ? "recordings"
           : "materials";
@@ -216,6 +220,7 @@ export default function Home() {
   const mobileShowsMainPanel =
     mobileTab === "tasks" ||
     mobileTab === "script" ||
+    mobileTab === "formula" ||
     studyMode === "recordings" ||
     (mobileTab === "materials" && mobileMaterialPreviewOpen);
 
@@ -514,6 +519,14 @@ export default function Home() {
                     setSelectedScriptSectionId(null);
                     setStudyMode("materials");
                   }}
+                  onFormula={() => {
+                    setCodexOpen(false);
+                    setSelectedMaterialId(null);
+                    setSelectedTaskId(null);
+                    setSelectedScriptSectionId(null);
+                    setMobileMaterialPreviewOpen(false);
+                    setStudyMode("formula");
+                  }}
                   onRecordings={() => {
                     setCodexOpen(false);
                     setMobileMaterialPreviewOpen(false);
@@ -663,6 +676,15 @@ export default function Home() {
                   setSelectedMaterialId(null);
                   setSelectedTaskId(null);
                   setStudyMode("script");
+                }}
+                onFormula={() => {
+                  setCodexOpen(false);
+                  setMobileMaterialPreviewOpen(false);
+                  setNavigationMode("materials");
+                  setSelectedMaterialId(null);
+                  setSelectedTaskId(null);
+                  setSelectedScriptSectionId(null);
+                  setStudyMode("formula");
                 }}
                 onRecordings={() => {
                   setCodexOpen(false);
