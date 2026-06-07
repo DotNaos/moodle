@@ -1,0 +1,1101 @@
+---
+title: "Teil 05"
+course: "High Performance Computing"
+kind: "slides"
+resource_id: "947745"
+source_pdf: "../../.raw/materials/05-speichergekoppelte-systeme/01-teil-05.pdf"
+ai_used: false
+conversion: semantic-mdx-with-assets
+text_source: pdftotext-layout
+asset_source: pdftohtml-xml-images
+text_quality: machine_extracted
+page_count: 58
+asset_count: 2
+visual_only_pages: []
+---
+
+# Teil 05
+
+<!-- source-page: 1 -->
+
+## High-Performance Computing
+(CDS-110)
+
+Prof. Dr. rer. nat. habil. Ralf-Peter Mundani
+DAViS
+
+
+<figure>
+  <img src="./05-teil-05.assets/image-page-001-001.jpg" alt="Teil 05 asset from source page 1" />
+</figure>
+
+
+<!-- source-page: 2 -->
+
+- overview
+
+  - cache coherence
+  - memory consistency
+  - dependency analysis
+
+Technology is dominated by two types of people:
+those who understand what they do not manage,
+and those who manage what they do not understand.
+—Archibald Putt
+
+
+<!-- source-page: 3 -->
+
+## Course Goals
+- upon successful completion of this course, you should be able to
+  - appreciate and understand
+    - basics of cache coherence strategies
+    - different memory consistency models
+  - develop an ability to analyse nested loops and identify loop dependencies
+  - apply multithreading strategies in order to write concurrent code
+
+
+<figure>
+  <img src="./05-teil-05.assets/image-page-003-002.jpg" alt="Teil 05 asset from source page 3" />
+</figure>
+
+
+<!-- source-page: 4 -->
+
+## Cache Coherence
+- reminder: memory hierarchy
+  - memory hierarchy
+    - exploitation of program characteristics such as locality
+    - compromise between costs and performance
+    - components with different speeds and capacities
+
+single access
+
+access speed
+register
+
+cache               block access
+
+main memory                 page access
+
+background memory
+
+capacity
+serial access
+archive memory
+
+
+<!-- source-page: 5 -->
+
+## Cache Coherence
+- reminder: cache
+  - cache memory
+    - fast access buffer between main memory and processor
+    - provides copies of current (main) memory content for fast access
+during program execution
+
+  - cache management
+      - tries to provide always those data that processor needs for the next
+computation step
+      - due to small capacity certain strategies for load and update operations
+of cache content necessary
+
+cache memory (m << n)
+cache-line Li i = 0, ..., m-1
+0                                          n-1
+main memory
+block Bj j = 0, ..., n-1       mapping Bj to Li
+0                m-1
+
+
+<!-- source-page: 6 -->
+
+## Cache Coherence
+- reminder: cache (cont’d)
+  - for any memory access the cache controller checks if
+(1) the respective memory content has a copy stored in cache
+(2) this cache entry is labelled as valid
+  - check-up leads to a
+      - cache hit: (1) and (2) are fulfilled => access served by cache
+      - cache miss: (1) and / or (2) are not fulfilled
+      - read miss
+      - data is read from memory and a copy stored in cache
+      - cache entry is labelled as valid
+      - write miss: update strategy decides whether
+      - the respective block is loaded (from memory) into cache
+and becomes updated due to write access
+      - only memory is updated and cache stays unmodified
+
+
+<!-- source-page: 7 -->
+
+## Cache Coherence
+- definitions
+  - processors with local cache that have independent access to a shared
+memory cause validity problems, i.e. several copies of the same memory
+block exist that contain different values
+  - cache management is called
+    - coherent: a read access always provides a memory block’s value from
+its last write access
+    - consistent: all copies of a memory block in main memory and local
+caches are identical (i.e. coherence implicitly given)
+  - inconsistencies between cache and main memory occur when updates are
+only performed in cache but not in main memory (so called copy-back or
+write-back cache policy, in contrast to write-through cache policy)
+  - drawback: consistency is very expensive
+
+
+<!-- source-page: 8 -->
+
+## Cache Coherence
+- definitions (cont’d)
+  - hence, inconsistencies (to some extent) can be acceptable if at least cache
+coherence is assured (e.g. temporary variables)
+    - write-update protocol
+      - an update of a copy in one cache requires also the update of all
+other copies in other caches
+      - update can be delayed, at the latest with next access
+    - write-invalidate protocol
+      - exclusive write access of a processor to shared data that should be
+updated has to be assured
+      - before the update of a copy in one cache all other copies in other
+caches are labelled as invalid
+  - in general, write-invalidate protocol together with copy-back cache policy
+used for SMP systems
+
+
+<!-- source-page: 9 -->
+
+## Cache Coherence
+- definitions (cont’d)
+  - example: write-invalidate protocol / write-through cache policy
+
+1, 3                                                 2
+P1 :              P2 :             P3 :
+
+A=4
+5               B=7             A= 4
+☠
+
+network / bus
+4
+
+1.   P1 gets exclusive access for A
+A=4
+5         2.   invalidation of other copies of A
+B=7         3.   P1 writes to A
+4.   update of A in main memory
+
+
+<!-- source-page: 10 -->
+
+## Cache Coherence
+- bus snooping
+  - processors with local cache are attached to a shared main memory via a
+bus (e.g. SMP system)
+  - each processor ‘listens’ to all addresses sent over the bus by other
+processors and compares them to its own cache-lines
+  - in case one cache-line matches this address, bus logic executes the
+following steps dependent from the cache-line’s state
+    - unmodified cache-line
+      - in case of a write access the cache-line becomes invalid
+    - modified cache-line
+      - bus logic interrupts the transaction and writes the modified
+cache-line to the main memory
+      - afterwards, the initial transaction is executed again
+  - MESI protocol frequently used with bus snooping
+
+
+<!-- source-page: 11 -->
+
+## Cache Coherence
+- MESI protocol
+  - cache coherence protocol (write-invalidate) for bus snooping
+  - each cache-line is assigned one of the following states
+    - exclusive modified (M): cache-line is the only copy in any of the caches
+and was modified due to a write access
+    - exclusive unmodified (E): cache-line is the only copy in any of the
+caches and was transferred for read access
+    - shared unmodified (S): copies of this cache-line reside in more than
+one cache and were transferred for read access
+    - invalid (I): cache-line is invalid
+  - for write-through cache policy only the states shared unmodified and
+invalid are relevant
+
+
+<!-- source-page: 12 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - state: invalid
+    - due to read / write access a valid copy is loaded into cache
+    - other processes (snoop hit on a read) send signal SHARED if they have
+a valid copy
+    - read miss: read miss shared (RMS) or read miss exclusive (RME) leads
+to state transition to S or E, resp.
+    - write miss (WM): state transition to M
+
+I                       S
+RMS
+
+WM
+
+M                        E
+
+
+<!-- source-page: 13 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - state: shared unmodified
+    - read hit (RH) / snoop hit on a read (SHR): state is unchanged =>
+process sends signal SHARED in case of SHR
+    - write hit (WH): state transition to M
+    - snoop hit on a write (SHW): state transition to I
+
+RH / SHR
+SHW
+I                       S
+
+M                       E
+
+
+<!-- source-page: 14 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - state: exclusive unmodified
+    - RH: state is unchanged => no bus usage necessary
+    - SHR: process sends signal SHARED => state transition to S
+    - SHW: state transition to I
+    - WH: state transition to M => no bus usage necessary
+
+I                       S
+
+SHR
+
+M                       E
+WH                  RH
+
+
+<!-- source-page: 15 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - state: exclusive modified
+    - RH / WH: state is unchanged => no bus usage necessary
+    - SHR / SHW: other process is notified via signal RETRY that a copy-back
+of this cache-line to main memory is necessary => state transition to I
+or S in case of SHW or SHR, resp.
+
+I                   S
+
+SHW
+
+M                       E
+RH / WH
+
+
+<!-- source-page: 16 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - putting it all together
+
+SHW          RH / SHR
+I              S
+RMS
+
+RH: read hit
+SHW       WM         SHR               RMS: read miss shared
+RME: read miss exclusive
+WH: write hit
+M                  E
+WH                      WM: write miss
+RH / WH                              RH
+SHR: snoop hit on a read
+SHW: snoop hit on a write
+
+
+<!-- source-page: 17 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - example: SMP system with two processors
+    - subsequent read / write access to same cache-line
+
+P1 wants to read cache-line…
+
+P1 :                                    P2 :
+EI       A=4
+☠                             I       A=☠
+
+    - read miss                           -   snoop hit on a read
+    - load valid copy from main
+memory
+    - state transition I -> E
+
+
+<!-- source-page: 18 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - example: SMP system with two processors
+    - subsequent read / write access to same cache-line
+
+P2 wants to read cache-line…
+
+P1 :                                    P2 :
+ES        A=4                           SI       A= 4
+☠
+
+    - snoop hit on a read                 -   read miss
+    - send signal SHARED                  -   load valid copy from main
+    - state transition E -> S                  memory
+      - state transition I -> S
+
+
+<!-- source-page: 19 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - example: SMP system with two processors
+    - subsequent read / write access to same cache-line
+
+P1 wants to write cache-line…
+
+P1 :                                     P2 :
+M
+S         A=4
+7                            SI        A= 4
+☠
+
+    - write hit                           -   snoop hit on a write
+    - update cache-line                   -   invalidate cache-line
+    - state transition S -> M                  (i.e. state transition S -> I)
+
+
+<!-- source-page: 20 -->
+
+## Cache Coherence
+- MESI protocol (cont’d)
+  - example: SMP system with two processors
+    - subsequent read / write access to same cache-line
+
+P2 wants to read cache-line…
+
+P1 :                                      P2 :
+M
+ES       A=7                            SI        A= 7
+☠
+
+    - snoop hit on a read                 -   read miss
+    - send signal RETRY                   -   STOP
+    - copy back cache-line and
+```pseudo
+state transition M -> E
+```
+    - snoop hit on a read                 -   read miss
+    - send signal SHARED                  -   load valid copy from main
+    - state transition E -> S                  memory
+      - state transition I -> S
+
+
+<!-- source-page: 21 -->
+
+- overview
+
+  - cache coherence ✓
+  - memory consistency
+  - dependency analysis
+
+
+<!-- source-page: 22 -->
+
+## Memory Consistency
+- motivation
+  - data transfer between cache and registers managed via load-store-unit
+(LSU) of the processor => cache coherence takes effect at the time when
+LSU performs read / write access to cache memory
+  - in general, modern microprocessors reorder load and store operations for
+performance improvement
+  - example
+    - load operations are executed immediately
+    - store operations are internally buffered (FIFO)
+
+address               register value
+
+write
+load                              buffer
+LSU
+
+
+<!-- source-page: 23 -->
+
+## Memory Consistency
+- motivation (cont’d)
+  - hence, a subsequent load operation can pass a waiting store operation in
+case they have different addresses (to avoid that a load operation reads
+obsolete values from cache while current values (still to be written) reside
+in the write buffer)
+  - further improvement: non-blocking cache / lock-up free cache
+    - in case of a cache miss, execution can be continued with subsequent
+operations (accessing different cache-lines) without waiting for the
+blocked operation to be finished
+  - consequence of both strategies: modified order of execution
+  - nevertheless, due to local address comparison of affected values there is
+no impact on computed result of a program on the monoprocessor system
+  - what happens on the multiprocessor systems?
+
+
+<!-- source-page: 24 -->
+
+## Memory Consistency
+- motivation (cont’d)
+  - even cache coherence is assured for SMP systems, reordering of
+operations and / or non-blocking caches might lead to unwanted results
+during program execution
+  - example (DEKKER’s algorithm)
+```pseudo
+x <- 0; y <- 0
+```
+process p1:                       process p2:
+```pseudo
+x<-1                               y<-1
+if y = 0 then do A1 fi            if x = 0 then do A2 fi
+```
+
+  - four different possibilities
+    - A1 will be executed, A2 will not be executed
+    - A2 will be executed, A1 will not be executed
+    - A1 and A2 will not be executed
+    - A1 and A2 will be executed (unexpected from programmer)
+
+
+<!-- source-page: 25 -->
+
+## Memory Consistency
+- motivation (cont’d)
+  - intuitively, we would expect that
+    - updates of variables take effect everywhere at the same time
+    - temporal order of memory accesses is retained
+  - but in reality
+    - we would need a global clock with very high precision
+    - write operations are not atomic (i.e. new values don’t take effect
+everywhere at the same time)
+    - write accesses have different latencies due to network => race
+between single memory accesses (e.g. local / remote read operations
+subsequent to a write operation might get different values)
+  - hence, further thoughts about memory consistency are necessary
+
+
+<!-- source-page: 26 -->
+
+## Memory Consistency
+- notation
+  - one line for each processor’s memory accesses
+  - time proceeds from left to right
+  - memory / synchronisation operations
+    - R(x)val : read variable x, obtain value val
+    - W(x)val : add value val to variable x
+    - } : synchronisation point
+    - AQ(L) : acquire lock L for entering critical section
+    - RL(L) : release lock L for leaving critical section
+  - all variables are assumed to be initialised to 0
+  - example (≈ x = x + 1)
+P1: R(x)0 W(x)1 R(x)1
+---------------------->
+
+
+<!-- source-page: 27 -->
+
+## Memory Consistency
+- reminder: strict consistency
+  - definition: any read on a data item x returns a value corresponding to the
+result of the most recent write on x
+  - main aspect is precise serialisation on all memory accesses
+  - example: C) is not valid under strict consistency
+
+P1: W(x)1                               P1:       W(x)1
+A) ---------------------->              B) ---------------------->
+P2:       R(x)1 R(x)1                   P2: R(x)0       R(x)1
+
+P1: W(x)1
+C) ---------------------->
+P2:       R(x)0 R(x)1
+
+
+<!-- source-page: 28 -->
+
+## Memory Consistency
+- sequential consistency
+  - slightly weaker model than strict consistency
+  - definition by LAMPORT (1979)
+“The result of any execution is the same as if the operations of all the processors were
+executed [on a monoprocessor] in some sequential order, and the operations of each
+individual processor appear in this sequence in the order specified by its program.”
+
+  - that means
+    - order of operations to be retained on individual processor
+    - any overlap of orders of operations is acceptable as long as the same
+overlap is visible on each processor
+    - no global clock necessary
+  - in other words => a correct sequentialisation of all accesses w/o change of
+local ordering can found
+
+
+<!-- source-page: 29 -->
+
+## Memory Consistency
+- sequential consistency (cont’d)
+  - example: D) is not valid under sequential consistency
+
+P1: W(x)1 W(x)2                        P1:             W(x)1
+A) ---------------------->             B) ---------------------->
+P2:       R(x)0 R(x)2                  P2: R(x)0 R(x)1
+
+P1: W(x)1                              P1: W(x)1
+---------------------->                ---------------------->
+P2:       R(x)1 R(x)2                  P2:       R(x)2 R(x)1
+C) ---------------------->             D) ---------------------->
+P3:       R(x)1 R(x)2                  P3:       R(x)1 R(x)2
+---------------------->                ---------------------->
+P4: W(x)2                              P4: W(x)2
+
+
+<!-- source-page: 30 -->
+
+## Memory Consistency
+- sequential consistency (cont’d)
+  - consequences
+    - sequential consistent memory is very easy to use but it also entails
+very high cost / drawbacks due to
+      - only an overlapping execution of sequential operations instead of
+a complete parallel execution
+      - strong limitations as reordering of operations / non-blocking
+caches are forbidden
+      - very inefficient in case of frequent write accesses
+    - semantic too strong for most problems => weaker models necessary
+that are reasonable to use and easy to implement
+    - furthermore, sequential consistency assures correct order of memory
+accesses but not correct access to shared data objects => still
+synchronisation via programmer necessary
+
+
+<!-- source-page: 31 -->
+
+## Memory Consistency
+- sequential consistency (cont’d)
+  - caution: cache coherence != sequential consistency
+  - cache coherence only requires a locally consistent view, i. e.
+    - access to different memory locations might be seen in different orders
+    - access to the same memory location is globally seen in the same order
+  - sequential consistency requires a globally consistent view
+
+
+<!-- source-page: 32 -->
+
+## Memory Consistency
+- causal consistency
+  - weaker model than sequential consistency
+  - definition by HUTTO and AHAMAD (1990)
+“Writes that are potentially causally related must be seen by all processes in the same
+order. Concurrent writes may be seen in a different order on different machines.”
+
+  - hence, write w(t2) at time t2 is potentially dependent on write w(t1) at
+time t1 (with t1 <= t2), when there is a read between these two writes which
+may have influenced write w(t2) => if w(t2) causally depends on w(t1) then
+only correct sequence is w(t1) -> w(t2)
+  - implementing causal consistency requires keeping track of which
+processes have seen which writes => construction and maintenance of a
+dependence graph
+
+
+<!-- source-page: 33 -->
+
+## Memory Consistency
+- causal consistency (cont’d)
+  - example: B) is not valid under causal consistency
+
+P1: W(x)1             W(x)3
+---------------------------------------------->
+P2:       R(x)1 W(x)2
+A) ---------------------------------------------->
+P3:                         R(x)1 R(x)3 R(x)2
+---------------------------------------------->
+P4:                         R(x)1 R(x)2 R(x)3
+
+P1: W(x)1
+---------------------------------->
+P2:       R(x)1 W(x)2
+B) ---------------------------------->
+P3:                   R(x)2 R(x)1
+---------------------------------->
+P4:                   R(x)1 R(x)2
+
+
+<!-- source-page: 34 -->
+
+## Memory Consistency
+- processor consistency
+  - also referred to as PRAM (pipelined RAM) consistency
+  - definition by GOODMAN (1989)
+“A multiprocessor is said to be processor consistent if the result of any execution is the
+same as if the operations of each individual processor appear in the sequential order
+specified by its program.”
+
+  - difference to sequential consistency
+    - order of operations for all processors must not be uniform, i.e. write
+accesses of two processors might be seen in a different sequence from
+a third processor than from the previous ones
+    - however, write accesses of one processor are seen by all others in the
+order specified by its program
+    - this better reflects the reality of networks due to latency
+
+
+<!-- source-page: 35 -->
+
+## Memory Consistency
+- processor consistency (cont’d)
+  - example: B) is not valid under processor consistency
+
+P1: W(x)1
+---------------------------------------------->
+P2:       R(x)1 W(x)2 W(x)3
+A) ---------------------------------------------->
+P3:                         R(x)2 R(x)1 R(x)3
+---------------------------------------------->
+P4:                         R(x)1 R(x)2 R(x)3
+
+P1: W(x)1 W(x)2
+B) ---------------------------->
+P2:             R(x)2 R(x)1
+
+
+<!-- source-page: 36 -->
+
+## Memory Consistency
+- weak consistency
+  - in general, access to shared data will be protected via mutual exclusion
+(i.e. obtain access, manipulate data, relinquish access); other processes
+don’t need to see intermediate values, they only need to see final values
+  - classification of shared memory accesses (GHARACHORLOO)
+
+shared
+
+competing                  non-competing
+(i.e. critical section)
+synchronising           non-synchronising
+(to be avoided)
+acquire (lock)               release (unlock)
+
+
+<!-- source-page: 37 -->
+
+## Memory Consistency
+- weak consistency (cont’d)
+  - conditions to be fulfilled for weak consistency
+1) accesses to synchronisation variables (associated with a write
+operation) are sequentially consistent
+2) no access to a synchronisation variable is allowed to be performed
+until all preceding write operations have completed everywhere
+3) no read / write operation is allowed to be performed until all
+preceding accesses to synchronisation variables have been
+performed
+  - hence, accesses to synchronisation variables are visible for all processes
+in the same order (1)
+  - all write operations have been completed everywhere (2)
+  - all copies are up-to-date according to the synchronisation point (3)
+
+
+<!-- source-page: 38 -->
+
+## Memory Consistency
+- weak consistency (cont’d)
+  - in weak consistent memory, modifications are not visible until a
+synchronisation has been performed
+  - a program with properly set synchronisation behaves the same as a
+program without synchronisation on sequentially consistent memory
+  - example: B) is not valid under weak consistency
+
+P1: W(x)1 W(x)2       }
+------------------------------------>
+A) P2:             R(x)2 R(x)1 } R(x)2
+------------------------------------>
+P3:             R(x)1 R(x)2 } R(x)2
+
+P1: W(x)1 W(x)2 }
+B) ------------------------------>
+P2:             R(x)1 } R(x)1
+
+
+<!-- source-page: 39 -->
+
+## Memory Consistency
+- release consistency
+  - synchronisation does not tell if entering / leaving a critical section
+  - hence, local changes need to be both propagated to all other processors
+(sharing a copy) and all other changes need to be consolidated => too
+much communication
+
+  - release consistency helps to weaken the communication problem
+  - idea: consider locks and propagate locked memory only if needed
+1) before any read / write operation on shared data is performed, all
+preceding acquires done by the process must have completed
+successfully
+2) before a release is allowed to be performed, all preceding read /
+write operations done by the process must have been completed
+3) acquire / release accesses are processor consistent
+
+
+<!-- source-page: 40 -->
+
+## Memory Consistency
+- release consistency (cont’d)
+  - eager release consistency: all changes are propagated via the release
+operation => still huge communication overhead
+  - lazy release consistency: all local copies are updated via the acquire
+operation => complex implementation but avoidance of redundant
+communication
+  - example: B) is not valid under release consistency
+
+P1: AQ(L) W(x)1 W(x)2 RL(L)
+---------------------------------------------------->
+A) P2:                         AQ(L) R(x)2 RL(L)
+---------------------------------------------------->
+P3:                                           R(x)1
+
+P1: AQ(L) W(x)1 W(x)2 RL(L)
+B) ---------------------------------------------->
+P2:                   R(x)1 AQ(L) R(x)1 RL(L)
+
+
+<!-- source-page: 41 -->
+
+## Memory Consistency
+- characteristics of different models
+
+consistency                                         description
+
+strict       absolute time ordering of all accesses matters
+
+w/o synchronisation
+all processes see all accesses in same order; nevertheless, accesses are
+sequential
+not ordered in time
+causal       all processes see causally-related accesses in same order
+all processes see writes from one process in the order they were used;
+processor
+writes from different processes may not always be seen in that order
+only after a synchronisation is performed data can be counted on to be
+
+w/ synch.
+weak
+consistent
+release      data is made consistent when critical section is exited
+
+
+<!-- source-page: 42 -->
+
+- overview
+
+  - cache coherence ✓
+  - memory consistency ✓
+  - dependency analysis
+
+
+<!-- source-page: 43 -->
+
+## Dependency Analysis
+- types of dependencies
+  - a program might have execution-order constraints between statements
+(i.e. instructions) due to dependencies
+  - hence, dependence analysis should determine whether or not it is safe to
+reorder or parallelise these statements
+  - topics to be addressed by dependence analysis
+      - control dependencies
+      - data dependencies
+      - loop dependencies
+
+
+<!-- source-page: 44 -->
+
+## Dependency Analysis
+- control dependencies
+  - definition: an instruction executes if the previous instruction evaluates in a
+way that allows its execution
+  - hence, a statement S2 is control dependent on S1 iff the execution of S2 is
+conditionally guarded by S1
+  - example
+1: if u > 2 then           // branch: if u <= 2 goto 3
+```pseudo
+2:    u<-u-z
+```
+fi
+```pseudo
+3: v <- x * y
+4: w <- u + v
+```
+
+  - however, lines 3 and 4 will execute regardless of how the branch at line 1
+executes => lines 3 and 4 are not control dependent on line 1 and may
+execute concurrently
+  - essential for exploitation of instruction-level parallelism
+
+
+<!-- source-page: 45 -->
+
+## Dependency Analysis
+- data dependencies
+  - arise due to competitive access to shared data
+  - to be distinguished
+    - flow dependence: read after write (RAW)
+    - antidependence: write after read (WAR)
+    - output dependence: write after write (WAW)
+    - input dependence: read after read (RAR)
+  - data dependencies might lead to inefficiencies and bottlenecks, hence
+preventing optimisations such as out-of-order execution or parallelisation
+  - modern tools use dependence graphs, for instance, to find potential
+problem areas (= cycles within graphs) and examine to see if they can be
+broken
+  - example: KAP preprocessors for C, F77, and F90
+
+
+<!-- source-page: 46 -->
+
+## Dependency Analysis
+- data dependencies (cont’d)
+  - flow dependence a.k.a. true dependence (RAW)
+    - a statement S2 is flow dependent on S1 iff S1 modifies a resource that
+S2 reads and S1 precedes S2 in execution
+    - example (sequence in a loop)
+```pseudo
+1: a[i] <- x[i] - 3
+2: b[i] <- a[i] / c[i]
+```
+
+    - general problem: flow dependence cannot be avoided
+    - here, a[i] has to be calculated first in line 1 before using it in line 2 =>
+lines 1 and 2 cannot be processed in parallel
+
+
+<!-- source-page: 47 -->
+
+## Dependency Analysis
+- data dependencies (cont’d)
+  - antidependence (WAR)
+    - a statement S2 is antidependent on S1 iff S2 modifies a resource that S1
+reads and S1 precedes S2 in execution
+    - example (sequence in a loop)
+```pseudo
+1: a[i] <- x[i] - 3
+2: b[i] <- a[i+1] / c[i]
+```
+
+    - a[i+1] is first used with its former value in line 2 and only then
+computed at the next execution of the loop in line 1 => several
+iterations of the loop cannot be processed in parallel
+    - in general, antidependence can be avoided
+
+
+<!-- source-page: 48 -->
+
+## Dependency Analysis
+- data dependencies (cont’d)
+  - output dependence (WAW)
+    - a statement S2 is output dependent on S1 iff S1 and S2 modify the same
+resource and S1 precedes S2 in execution
+    - example (sequence in a loop)
+```pseudo
+1: c[i+4] <- b[i] + a[i+1]
+2: c[i+1] <- x[i]
+```
+
+    - some value is first assigned to c[i+4] in line 1 and after three
+executions of the loop a new value is assigned to the same element
+again in line 2 => several iterations of the loop cannot be processed in
+parallel
+    - nevertheless, output dependence can also be avoided
+
+
+<!-- source-page: 49 -->
+
+## Dependency Analysis
+- data dependencies (cont’d)
+  - input dependence (RAR)
+    - a statement S2 is input ‘dependent’ on S1 iff S1 and S2 read the same
+resource and S1 precedes S2 in execution
+    - example (sequence in a loop)
+```pseudo
+1: d[i] <- a[i] + 3
+2: b[i] <- a[i+1] / c[i]
+```
+
+    - a[i+1] is first used in line 2 and afterwards used again at the next
+execution of the loop in line 1 => not a dependence in the same sense
+as the others, hence it does not prohibit reordering instructions or
+parallel execution of lines 1 and 2
+
+
+<!-- source-page: 50 -->
+
+## Dependency Analysis
+- data dependencies (cont’d)
+  - removing of name dependencies
+    - antidependence and output dependence may be removed through
+renaming of variables
+    - example:
+```pseudo
+1: a <- 2 * x                              1: c <- 2 * x
+2: b <- a / 3         renaming =>           2: b <- c / 3
+3: a <- 9 * y                              3: a <- 9 * y
+```
+
+    - problem: line 3 (in variable a) is both antidependent on line 2 and
+output dependent on line 1
+    - after renaming, both dependencies have been removed, but line 2 (in
+variable c) is still flow dependent on line 1
+
+
+<!-- source-page: 51 -->
+
+## Dependency Analysis
+- loop dependencies
+  - statements (almost always w.r.t. array access and modification) within a
+loop body might form a dependence
+  - problem: finding dependencies throughout different iterations
+  - prototype of a ‘normalised’ nested loop with N levels
+```pseudo
+for i1 <- 1 to n1 do                       // loop #1
+for i2 <- 1 to n2 do                     // loop #2
+```
+
+```pseudo
+for iN <- 1 to nN do                   // loop #N
+...<-...                                 // statements
+```
+
+  - nesting level K (1 <= K <= N): number of surrounding loops + 1
+  - iteration number IK: value of iteration variable at nesting level K
+
+
+<!-- source-page: 52 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - iteration vector I: vector of integers containing the iteration numbers IK of
+a particular iteration for each of the loops in order of the nesting levels
+
+I = (I1, I2, ..., IN)T with iteration numbers IK , 1 <= K <= N
+
+  - iteration space: set of all possible iteration vectors (for a statement)
+  - precedence I < J: iteration I precedes iteration J iff
+
+existsK: IR = JR , forallR: 1 <= R < K, and IK < JK
+
+  - statement S(I): statement S under iteration vector I
+
+
+<!-- source-page: 53 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - a statement S2(J) is loop dependent on S1(I) iff
+
+1) I < J or
+I = J and there exists a path from S1 to S2 in the loop body
+2) a memory location is accessed by S1 on iteration I and by S2
+on iteration J
+3) one of these accesses is a write
+
+  - theorem of loop dependence
+
+There exists a dependence graph from statement S1 to statement S2
+in a common nested loop if and only if there exist two iteration vectors
+I and J (for the nested loop), such that S2(J) is loop dependent on S1(I).
+
+
+<!-- source-page: 54 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - distance vector D(I, J): if statement S2(J) is loop dependent on S1(I) then
+the dependence distance vector is computed as follows
+
+D(I,J)K = JK - IK , 1 <= K <= N
+
+  - direction vector R(I, J): if statement S2(J) is loop dependent on S1(I) then
+the dependence direction vector is computed as follows
+
+{ ‘<’ if D(I, J)K > 0
+|
+|
+R(I, J)K = { ‘=’ if D(I, J)K = 0    ,1<=K<=N
+|
+|} ‘>’ if D(I, J)K < 0
+
+
+<!-- source-page: 55 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - types of different loop dependencies
+    - loop-carried dependence
+      - dependence from statement S1(I) to statement S2(J) iff R(I, J)
+contains a ‘<’ as its leftmost component which is not equal to ‘=’
+      - level of a loop-carried dependence conforms to the index of the
+leftmost component of R(I, J) that is not equal to ‘=’
+    - loop-independent dependence
+      - dependence from statement S1(I) to statement S2(J) iff I = J
+
+
+<!-- source-page: 56 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - example
+```pseudo
+for i <- 1 to N do
+for j <- 1 to M do
+1:       a[i, j] <- b[i, j]
+2:       c[i, j] <- 2*c[i, j] + a[i-1, j]
+od
+od
+```
+
+    - again, loop dependence iff
+      - 1) I <= J
+      - 2) S1(I) and S2(J) access the same resource
+      - 3) one of these accesses is a write
+
+
+<!-- source-page: 57 -->
+
+## Dependency Analysis
+- loop dependencies (cont’d)
+  - example
+    - flow dependence (RAW) in variable a
+```pseudo
+1: a[i, j] <- ...
+2:   ... <- ... + a[i-1, j]
+```
+
+      - D(I, J) = (1, 0)T and R(I, J) = (‘<’, ‘=’)T
+      - hence, a loop-carried dependence of level 1
+    - antidependence (WAR) in variable c
+```pseudo
+2:    ... <- 2*c[i, j] + ...
+2: c[i, j] <- ...
+```
+
+      - D(I, J) = (0, 0)T and R(I, J) = (‘=’, ‘=’)T
+      - hence, a loop-independent dependence
+
+
+<!-- source-page: 58 -->
+
+- overview
+
+  - cache coherence ✓
+  - memory consistency ✓
+  - dependency analysis ✓

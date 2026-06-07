@@ -1,0 +1,267 @@
+{
+  "bundleVersion": 1,
+  "courseId": "22584",
+  "courseSlug": "high-performance-computing",
+  "courseName": "High Performance Computing",
+  "importedAt": "2026-06-07T20:12:10.258Z",
+  "source": {
+    "type": "school-workspace",
+    "courseRoot": "/Users/oli/school/terms/FS26/courses/high-performance-computing"
+  },
+  "script": {
+    "path": "script/Script.mdx",
+    "extractedPath": ".extracted/script/Script.mdx"
+  },
+  "tasks": [
+    {
+      "id": "01-aufgabenblatt-01",
+      "title": "Aufgabenblatt 01",
+      "path": "tasks/01-aufgabenblatt-01.mdx",
+      "sourceResourceId": "947711",
+      "sourceResourceTitle": "Aufgabenblatt 01",
+      "solutionPath": "tasks/solutions/01-aufgabenblatt-01-loesung.mdx",
+      "solutionResourceId": "947712",
+      "solutionTitle": "Aufgabenblatt 01 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "02-aufgabenblatt-02",
+      "title": "Aufgabenblatt 02",
+      "path": "tasks/02-aufgabenblatt-02.mdx",
+      "sourceResourceId": "947713",
+      "sourceResourceTitle": "Aufgabenblatt 02",
+      "solutionPath": "tasks/solutions/02-aufgabenblatt-02-loesung.mdx",
+      "solutionResourceId": "947714",
+      "solutionTitle": "Aufgabenblatt 02 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "03-aufgabenblatt-03",
+      "title": "Aufgabenblatt 03",
+      "path": "tasks/03-aufgabenblatt-03.mdx",
+      "sourceResourceId": "947719",
+      "sourceResourceTitle": "Aufgabenblatt 03",
+      "solutionPath": "tasks/solutions/03-aufgabenblatt-03-loesung.mdx",
+      "solutionResourceId": "947720",
+      "solutionTitle": "Aufgabenblatt 03 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "04-aufgabenblatt-04",
+      "title": "Aufgabenblatt 04",
+      "path": "tasks/04-aufgabenblatt-04.mdx",
+      "sourceResourceId": "947721",
+      "sourceResourceTitle": "Aufgabenblatt 04",
+      "solutionPath": "tasks/solutions/04-aufgabenblatt-04-loesung.mdx",
+      "solutionResourceId": "947722",
+      "solutionTitle": "Aufgabenblatt 04 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "05-aufgabenblatt-05",
+      "title": "Aufgabenblatt 05",
+      "path": "tasks/05-aufgabenblatt-05.mdx",
+      "sourceResourceId": "947723",
+      "sourceResourceTitle": "Aufgabenblatt 05",
+      "solutionPath": "tasks/solutions/05-aufgabenblatt-05-loesung.mdx",
+      "solutionResourceId": "947724",
+      "solutionTitle": "Aufgabenblatt 05 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "06-aufgabenblatt-06",
+      "title": "Aufgabenblatt 06",
+      "path": "tasks/06-aufgabenblatt-06.mdx",
+      "sourceResourceId": "947729",
+      "sourceResourceTitle": "Aufgabenblatt 06",
+      "solutionPath": "tasks/solutions/06-aufgabenblatt-06-loesung.mdx",
+      "solutionResourceId": "947730",
+      "solutionTitle": "Aufgabenblatt 06 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "07-aufgabenblatt-07",
+      "title": "Aufgabenblatt 07",
+      "path": "tasks/07-aufgabenblatt-07.mdx",
+      "sourceResourceId": "947731",
+      "sourceResourceTitle": "Aufgabenblatt 07",
+      "solutionPath": "tasks/solutions/07-aufgabenblatt-07-loesung.mdx",
+      "solutionResourceId": "947732",
+      "solutionTitle": "Aufgabenblatt 07 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "08-aufgabenblatt-08",
+      "title": "Aufgabenblatt 08",
+      "path": "tasks/08-aufgabenblatt-08.mdx",
+      "sourceResourceId": "947733",
+      "sourceResourceTitle": "Aufgabenblatt 08",
+      "solutionPath": "tasks/solutions/08-aufgabenblatt-08-loesung.mdx",
+      "solutionResourceId": "947734",
+      "solutionTitle": "Aufgabenblatt 08 -- Lösung",
+      "solutionStatus": "moodle-solution-available"
+    },
+    {
+      "id": "09-aufgabenblatt-09",
+      "title": "Aufgabenblatt 09",
+      "path": "tasks/09-aufgabenblatt-09.mdx",
+      "sourceResourceId": "947739",
+      "sourceResourceTitle": "Aufgabenblatt 09",
+      "solutionPath": "tasks/solutions/09-aufgabenblatt-09-own-solution.mdx",
+      "solutionResourceId": null,
+      "solutionTitle": "Aufgabenblatt 09 -- Own Solution",
+      "solutionStatus": "missing-in-moodle-needs-own-solution"
+    },
+    {
+      "id": "10-aufgabenblatt-10",
+      "title": "Aufgabenblatt 10",
+      "path": "tasks/10-aufgabenblatt-10.mdx",
+      "sourceResourceId": "947740",
+      "sourceResourceTitle": "Aufgabenblatt 10",
+      "solutionPath": "tasks/solutions/10-aufgabenblatt-10-own-solution.mdx",
+      "solutionResourceId": null,
+      "solutionTitle": "Aufgabenblatt 10 -- Own Solution",
+      "solutionStatus": "missing-in-moodle-needs-own-solution"
+    }
+  ],
+  "resources": [
+    {
+      "resourceId": "947709",
+      "title": "Teil 01",
+      "kind": "slides/pdf",
+      "rawPath": "materials/01-einfuehrung/01-teil-01.pdf"
+    },
+    {
+      "resourceId": "947711",
+      "title": "Aufgabenblatt 01",
+      "kind": "task/pdf",
+      "rawPath": "materials/01-einfuehrung/02-aufgabenblatt-01.pdf"
+    },
+    {
+      "resourceId": "947712",
+      "title": "Aufgabenblatt 01 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/01-einfuehrung/03-aufgabenblatt-01-loesung.pdf"
+    },
+    {
+      "resourceId": "947713",
+      "title": "Aufgabenblatt 02",
+      "kind": "task/pdf",
+      "rawPath": "materials/01-einfuehrung/04-aufgabenblatt-02.pdf"
+    },
+    {
+      "resourceId": "947714",
+      "title": "Aufgabenblatt 02 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/01-einfuehrung/05-aufgabenblatt-02-loesung.pdf"
+    },
+    {
+      "resourceId": "947717",
+      "title": "Teil 02",
+      "kind": "slides/pdf",
+      "rawPath": "materials/02-netztopologien/01-teil-02.pdf"
+    },
+    {
+      "resourceId": "947719",
+      "title": "Aufgabenblatt 03",
+      "kind": "task/pdf",
+      "rawPath": "materials/02-netztopologien/02-aufgabenblatt-03.pdf"
+    },
+    {
+      "resourceId": "947720",
+      "title": "Aufgabenblatt 03 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/02-netztopologien/03-aufgabenblatt-03-loesung.pdf"
+    },
+    {
+      "resourceId": "947721",
+      "title": "Aufgabenblatt 04",
+      "kind": "task/pdf",
+      "rawPath": "materials/02-netztopologien/04-aufgabenblatt-04.pdf"
+    },
+    {
+      "resourceId": "947722",
+      "title": "Aufgabenblatt 04 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/02-netztopologien/05-aufgabenblatt-04-loesung.pdf"
+    },
+    {
+      "resourceId": "947723",
+      "title": "Aufgabenblatt 05",
+      "kind": "task/pdf",
+      "rawPath": "materials/02-netztopologien/06-aufgabenblatt-05.pdf"
+    },
+    {
+      "resourceId": "947724",
+      "title": "Aufgabenblatt 05 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/02-netztopologien/07-aufgabenblatt-05-loesung.pdf"
+    },
+    {
+      "resourceId": "947727",
+      "title": "Teil 03",
+      "kind": "slides/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/01-teil-03.pdf"
+    },
+    {
+      "resourceId": "947729",
+      "title": "Aufgabenblatt 06",
+      "kind": "task/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/02-aufgabenblatt-06.pdf"
+    },
+    {
+      "resourceId": "947730",
+      "title": "Aufgabenblatt 06 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/03-aufgabenblatt-06-loesung.pdf"
+    },
+    {
+      "resourceId": "947731",
+      "title": "Aufgabenblatt 07",
+      "kind": "task/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/04-aufgabenblatt-07.pdf"
+    },
+    {
+      "resourceId": "947732",
+      "title": "Aufgabenblatt 07 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/05-aufgabenblatt-07-loesung.pdf"
+    },
+    {
+      "resourceId": "947733",
+      "title": "Aufgabenblatt 08",
+      "kind": "task/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/06-aufgabenblatt-08.pdf"
+    },
+    {
+      "resourceId": "947734",
+      "title": "Aufgabenblatt 08 -- Lösung",
+      "kind": "solution/pdf",
+      "rawPath": "materials/03-grundlagen-der-parallelisierung/07-aufgabenblatt-08-loesung.pdf"
+    },
+    {
+      "resourceId": "947737",
+      "title": "Teil 04 (Update 23.04.26)",
+      "kind": "slides/pdf",
+      "rawPath": "materials/04-nachrichtengekoppelte-systeme/01-teil-04-update-23-04-26.pdf"
+    },
+    {
+      "resourceId": "947739",
+      "title": "Aufgabenblatt 09",
+      "kind": "task/pdf",
+      "rawPath": "materials/04-nachrichtengekoppelte-systeme/02-aufgabenblatt-09.pdf"
+    },
+    {
+      "resourceId": "947740",
+      "title": "Aufgabenblatt 10",
+      "kind": "task/pdf",
+      "rawPath": "materials/04-nachrichtengekoppelte-systeme/03-aufgabenblatt-10.pdf"
+    },
+    {
+      "resourceId": "947745",
+      "title": "Teil 05",
+      "kind": "slides/pdf",
+      "rawPath": "materials/05-speichergekoppelte-systeme/01-teil-05.pdf"
+    }
+  ]
+}

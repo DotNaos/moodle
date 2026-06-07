@@ -99,6 +99,41 @@ describe("script PDF mapping", () => {
 });
 
 describe("script markdown renderer", () => {
+  test("renders study bundle figures as images instead of escaped HTML", () => {
+    const html = renderScriptMarkdownHTML([
+      "<figure>",
+      '  <img src="/api/study-bundles/courses/22584/asset?path=.extracted%2Fscript%2Fimage.jpg" alt="Cache diagram" />',
+      "</figure>",
+    ].join("\n"));
+
+    expect(html).toContain("<figure");
+    expect(html).toContain("<img");
+    expect(html).toContain("Cache diagram");
+    expect(html).not.toContain("&lt;figure&gt;");
+  });
+
+  test("separates headings and fenced code even without extra PDF extraction spacing", () => {
+    const html = renderScriptMarkdownHTML([
+      "## High Performance Computing (CDS-110)",
+      "Aufgabenblatt 1: Speicherzugriffe",
+      "",
+      "Die Schönauer-Vektortriade",
+      "```pseudo",
+      "for i <- 1 to N do",
+      "a(i) <- b(i) + c(i)*d(i)",
+      "od",
+      "```",
+      "soll ausgeführt werden.",
+    ].join("\n"));
+
+    expect(html).toContain("<h4");
+    expect(html).toContain("High Performance Computing");
+    expect(html).toContain("<pre");
+    expect(html).toContain("for i &lt;- 1 to N do");
+    expect(html).not.toContain("## High Performance");
+    expect(html).not.toContain("``pseudo");
+  });
+
   test("renders slide bullet markers as clean script lines", () => {
     const html = renderScriptMarkdownHTML([
       "## 1.6 Objectives of Parallelisation",
