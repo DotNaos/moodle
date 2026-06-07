@@ -3,7 +3,7 @@
 import katex from "katex";
 import { BookOpenText, CheckCircle2, FileText, MessageCircle, RefreshCw, SendHorizontal } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -89,6 +89,7 @@ export function TaskStudyPanel({
   onTaskViewChange,
   selectedScriptSectionId,
   selectedTaskId,
+  taskViewOverride,
 }: {
   course: Course | null;
   materials: Material[];
@@ -100,6 +101,7 @@ export function TaskStudyPanel({
   onTaskViewChange?: (view: TaskViewResponse | null) => void;
   selectedScriptSectionId: string | null;
   selectedTaskId: string | null;
+  taskViewOverride?: TaskViewResponse;
 }) {
   const [view, setView] = useState<TaskViewResponse | null>(null);
   const [answer, setAnswer] = useState("");
@@ -111,6 +113,7 @@ export function TaskStudyPanel({
   const [scriptIncluded, setScriptIncluded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestId = useRef(0);
 
   const courseId = course ? String(course.id) : null;
   const tasks = useMemo(() => view?.sheets.flatMap((sheet) => sheet.tasks) ?? [], [view]);
@@ -128,6 +131,9 @@ export function TaskStudyPanel({
   );
 
   useEffect(() => {
+    const controller = new AbortController();
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
     setView(null);
     onSelectedTaskIdChange(null);
     onSelectedScriptSectionIdChange(null);
@@ -138,10 +144,23 @@ export function TaskStudyPanel({
     onTaskViewChange?.(null);
     setMessage(null);
     setError(null);
-    if (courseId) {
-      void loadView(courseId, false, mode === "script");
+    if (taskViewOverride) {
+      applyView(taskViewOverride, Boolean(taskViewOverride.scriptMarkdown));
+      setLoading(false);
+      return () => {
+        controller.abort();
+      };
     }
-  }, [courseId]);
+    if (courseId) {
+      void loadView(courseId, false, mode === "script", {
+        requestId,
+        signal: controller.signal,
+      });
+    }
+    return () => {
+      controller.abort();
+    };
+  }, [courseId, taskViewOverride]);
 
   useEffect(() => {
     if (courseId && mode === "script" && view && !scriptIncluded && !loading) {
@@ -189,14 +208,23 @@ export function TaskStudyPanel({
     );
   }
 
-  async function loadView(id: string, compile: boolean, includeScript = mode === "script") {
+  async function loadView(
+    id: string,
+    compile: boolean,
+    includeScript = mode === "script",
+    request?: { requestId: number; signal: AbortSignal },
+  ) {
     setLoading(true);
     setError(null);
     setMessage(compile ? "Reloading study bundle..." : null);
     try {
       const bundledView = await studyBundleRequest<TaskViewResponse>(
         `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
+        request?.signal,
       );
+      if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
+        return;
+      }
       if (bundledView) {
         applyView(bundledView, includeScript);
         setMessage(compile ? "Loaded versioned study bundle." : null);
@@ -208,32 +236,43 @@ export function TaskStudyPanel({
         await taskForgeRequest(`/courses/${encodeURIComponent(id)}/compile`, {
           method: "POST",
           body: JSON.stringify({ scriptOnly: includeScript }),
+          signal: request?.signal,
         });
       }
       const nextView = await taskForgeRequest<TaskViewResponse>(
         `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
+        request?.signal ? { signal: request.signal } : undefined,
       );
+      if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
+        return;
+      }
       applyView(nextView, includeScript);
       setMessage(compile ? (includeScript ? "Built script." : `Built ${nextView.sheets.flatMap((sheet) => sheet.tasks).length} tasks.`) : null);
     } catch (loadError) {
+      if (isAbortError(loadError)) {
+        return;
+      }
       if (!compile && getErrorMessage(loadError).includes("Dataset not found")) {
-        await loadView(id, true);
+        await loadView(id, true, includeScript, request);
         return;
       }
       setError(getErrorMessage(loadError));
     } finally {
-      setLoading(false);
+      if (!request || (!request.signal.aborted && request.requestId === loadRequestId.current)) {
+        setLoading(false);
+      }
     }
   }
 
   function applyView(nextView: TaskViewResponse, includeScript: boolean) {
-    setView(nextView);
-    onTaskViewChange?.(nextView);
+    const displayView = normalizeTaskViewForDisplay(nextView);
+    setView(displayView);
+    onTaskViewChange?.(displayView);
     setScriptIncluded(includeScript);
     onSelectedTaskIdChange(
-      selectedTaskId && nextView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
+      selectedTaskId && displayView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
         ? selectedTaskId
-        : nextView.sheets[0]?.tasks[0]?.taskId ?? null,
+        : displayView.sheets[0]?.tasks[0]?.taskId ?? null,
     );
   }
 
@@ -390,7 +429,7 @@ export function TaskStudyPanel({
           </article>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto xl:grid-cols-[minmax(0,1fr)_340px] xl:overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto xl:grid-cols-[minmax(0,1fr)_340px]">
           <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
             {view?.sheets.map((sheet) => (
               <section className="mb-5" key={sheet.resourceId}>
@@ -419,11 +458,17 @@ export function TaskStudyPanel({
             )) ?? null}
           </aside>
 
-          <main className="min-h-0 overflow-visible bg-background px-3 py-4 lg:px-8 lg:py-8 xl:overflow-auto">
+          <main className="min-h-0 overflow-visible bg-background px-4 py-5 lg:px-10 lg:py-8">
             {selectedTask ? (
-              <article className="mx-auto max-w-[82ch] rounded-sm border border-border bg-card px-5 py-7 shadow-sm sm:px-9 sm:py-9">
-                <PaperHeading kicker={selectedSheet?.title ?? "Aufgabenblatt"} title={selectedTask.title} subtitle={selectedResource ?? courseTitle(course)} />
-                <div className="mt-6 border-y border-border py-6">
+              <article className="mx-auto max-w-[82ch]">
+                <header className="mb-6 border-b border-border pb-5">
+                  <p className="text-sm font-medium text-muted-foreground">{selectedSheet?.title ?? "Aufgabenblatt"}</p>
+                  <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-foreground">
+                    {selectedTask.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedResource ?? courseTitle(course)}</p>
+                </header>
+                <div className="py-2">
                   <MarkdownBlock onCitationClick={onOpenResource} text={taskPromptText(selectedTask)} />
                 </div>
                 <label className="mt-5 block text-sm font-medium text-muted-foreground">
@@ -488,7 +533,7 @@ export function TaskStudyPanel({
               </div>
             )}
           </main>
-          <aside className="mx-auto mt-4 min-h-0 max-w-[82ch] overflow-visible rounded-sm border border-border bg-card px-5 py-6 shadow-sm sm:px-9">
+          <aside className="mx-auto min-h-0 max-w-[82ch] overflow-visible border-t border-border bg-background px-5 py-6 sm:px-9 xl:mx-0 xl:h-full xl:max-w-none xl:overflow-auto xl:border-l xl:border-t-0">
             <div className="space-y-5">
               <div>
                 <p className="text-xs font-medium uppercase text-muted-foreground">Quelle</p>
@@ -532,6 +577,64 @@ function taskPromptText(task: TaskViewTask): string {
     task.promptMarkdown,
     ...task.parts.map((part) => [`### ${part.label ?? "Teilaufgabe"}`, part.promptMarkdown].join("\n\n")),
   ].filter(Boolean).join("\n\n");
+}
+
+export function normalizeTaskViewForDisplay(view: TaskViewResponse): TaskViewResponse {
+  return {
+    ...view,
+    sheets: view.sheets.map((sheet) => ({
+      ...sheet,
+      solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
+      tasks: sheet.tasks.flatMap(splitTaskByHeadings),
+    })),
+  };
+}
+
+function splitTaskByHeadings(task: TaskViewTask): TaskViewTask[] {
+  const promptMarkdown = cleanStudyBundleMarkdown(task.promptMarkdown);
+  const matches = Array.from(promptMarkdown.matchAll(/^##\s+(Aufgabe\s+\d+[^\n]*)\s*$/gim));
+  if (matches.length === 0) {
+    return [{
+      ...task,
+      parts: task.parts.map((part) => ({ ...part, promptMarkdown: cleanStudyBundleMarkdown(part.promptMarkdown) })),
+      promptMarkdown,
+    }];
+  }
+
+  return matches.map((match, index) => {
+    const title = stripMarkdown(match[1]).replace(/\s+/g, " ").trim();
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? promptMarkdown.length;
+    return {
+      ...task,
+      parts: [],
+      promptMarkdown: promptMarkdown.slice(start, end).trim(),
+      taskId: `${task.taskId}-${slugifyTaskId(title) || `aufgabe-${index + 1}`}`,
+      title,
+    };
+  });
+}
+
+function cleanStudyBundleMarkdown(markdown: string): string {
+  return markdown
+    .replace(/^#\s+[^\n]+\n+/m, "")
+    .replace(/^Source task:\s+.+$/gim, "")
+    .replace(/^Solution status:\s+.+$/gim, "")
+    .replace(/^Solution page:\s+.+$/gim, "")
+    .replace(/^This is the versioned working copy of the Moodle solution\..*$/gim, "")
+    .replace(/^##\s+Task Text\s*$/gim, "")
+    .replace(/\n##\s+Original Sources[\s\S]*$/im, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function slugifyTaskId(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function PaperHeading({ kicker, subtitle, title }: { kicker?: string | null; subtitle?: string | null; title: string }) {
@@ -652,7 +755,10 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
     return renderTrustedFigure(block);
   }
   if (block.startsWith("```")) {
-    return `<pre class="overflow-auto rounded-md border border-border bg-secondary p-4 font-mono text-xs leading-5 text-foreground">${escapeHtml(block.replace(/^```[a-z]*\n?/i, "").replace(/```$/, ""))}</pre>`;
+    const code = block.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trimEnd();
+    return code.trim()
+      ? `<pre class="overflow-auto rounded-md border border-border bg-secondary p-4 font-mono text-xs leading-5 text-foreground">${escapeHtml(code)}</pre>`
+      : "";
   }
   const leadingHeading = block.match(/^(#{1,3})\s+([^\n]+)\n+([\s\S]+)$/);
   if (leadingHeading) {
@@ -705,6 +811,13 @@ function inlineMarkdown(text: string): string {
     .replace(/\[([^\]]+)\]\(moodle-resource:([^)]+)\)/g, (_, label: string, resourceId: string) => {
       const decodedId = decodeHtml(resourceId);
       return `<button class="inline max-w-full p-0 text-left text-[0.9em] font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900" data-moodle-resource-id="${escapeHtml(decodedId)}" type="button">${label}</button>`;
+    })
+    .replace(/\[([^\]]+)\]\((?!moodle-resource:)([^)]+)\)/g, (_, label: string, href: string) => {
+      const decodedHref = decodeHtml(href).trim();
+      if (/^https?:\/\//i.test(decodedHref) || decodedHref.startsWith("/")) {
+        return `<a class="font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900" href="${escapeHtml(decodedHref)}" rel="noreferrer" target="_blank">${label}</a>`;
+      }
+      return label;
     })
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code class=\"rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em]\">$1</code>");
@@ -915,9 +1028,10 @@ async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promis
   return payload as T;
 }
 
-async function studyBundleRequest<T>(path: string): Promise<T | null> {
+async function studyBundleRequest<T>(path: string, signal?: AbortSignal): Promise<T | null> {
   const response = await fetch(`/api/study-bundles${path}`, {
     headers: { "content-type": "application/json" },
+    signal,
   });
   if (response.status === 404) {
     return null;
@@ -951,4 +1065,9 @@ async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError"
+    || error instanceof Error && error.name === "AbortError";
 }

@@ -439,7 +439,12 @@ export default function Home() {
 
       <Show when="signed-in">
         <main className="min-h-dvh overflow-x-hidden px-3 py-3 sm:px-6 sm:py-4 lg:h-dvh lg:max-h-dvh lg:overflow-hidden">
-          <div className="mx-auto grid min-h-full w-full min-w-0 max-w-[1680px] gap-3 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-4">
+          <div
+            className={cn(
+              "mx-auto grid min-h-full w-full min-w-0 max-w-[1680px] gap-3 lg:h-full lg:gap-4",
+              error ? "lg:grid-rows-[auto_auto_minmax(0,1fr)]" : "lg:grid-rows-[auto_minmax(0,1fr)]",
+            )}
+          >
             <header className="flex min-h-0 w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="w-full min-w-0">
                 <div className="flex items-center gap-2">
@@ -491,7 +496,7 @@ export default function Home() {
             ) : (
               <section
                 className={cn(
-                  "grid min-h-0 w-full min-w-0 gap-3 pb-24 lg:gap-4 lg:pb-0",
+                  "grid min-h-0 w-full min-w-0 gap-3 pb-24 lg:h-full lg:gap-4 lg:overflow-hidden lg:pb-0",
                   codexOpen
                     ? sidebarCollapsed
                       ? "lg:grid-cols-[72px_minmax(0,1fr)_420px]"
@@ -612,7 +617,7 @@ export default function Home() {
 
                 <div
                   className={cn(
-                    "min-w-0",
+                    "min-h-0 min-w-0 lg:h-full",
                     mobileShowsMainPanel ? "block" : "hidden",
                     "lg:block",
                   )}

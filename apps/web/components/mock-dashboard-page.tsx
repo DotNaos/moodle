@@ -7,6 +7,7 @@ import { CourseMainPanel } from "@/components/course-main-panel";
 import { CourseThumbnail, MaterialRow } from "@/components/dashboard-ui";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import { StudyModeActions, type StudyMode } from "@/components/study-mode-actions";
+import type { TaskViewResponse } from "@/components/task-study-panel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { mockCourses, mockMaterialsByCourseId, mockUser } from "@/lib/mock-moodle";
@@ -44,6 +45,102 @@ const mockRecordingState = {
   loaded: true,
   error: null,
   recordings: mockRecordings,
+};
+
+const mockTaskView: TaskViewResponse = {
+  courseId: "mock-hpc",
+  generatedAt: "2026-06-07T00:00:00.000Z",
+  source: "study-bundle",
+  scriptMarkdown: [
+    "# High Performance Computing Script",
+    "",
+    "# 1. Speicherzugriffe und Roofline",
+    "Source: [Teil 04](moodle-resource:mock-hpc-wide-slide)",
+    "",
+    "## 1.1 Schönauer-Vektortriade",
+    "Die Vektortriade verbindet Speicherzugriffe mit einer Multiplikation und Addition.",
+  ].join("\n"),
+  resources: [
+    { resourceId: "mock-hpc-wide-slide", title: "Teil 04 (Update 23.04.26)", kind: "slides/pdf" },
+    { resourceId: "mock-hpc-portrait", title: "Aufgabenblatt 09", kind: "task/pdf" },
+  ],
+  sheets: [
+    {
+      resourceId: "mock-hpc-portrait",
+      title: "Aufgabenblatt 01",
+      kind: "bundle-task",
+      tasks: [
+        {
+          taskId: "mock-task-1",
+          sourceResourceId: "mock-hpc-portrait",
+          title: "Task 1",
+          status: "open",
+          parts: [],
+          promptMarkdown: [
+            "# Task 1",
+            "",
+            "## Schönauer-Vektortriade und superskalare Architektur",
+            "",
+            "Betrachten Sie die Schönauer-Vektortriade:",
+            "",
+            "```pseudo",
+            "for i <- 1 to N do",
+            "  a(i) <- b(i) + c(i) * d(i)",
+            "od",
+            "```",
+            "",
+            "Die Schleife soll auf einer superskalaren Architektur ausgeführt werden, die gleichzeitig eine Multiplikation sowie eine Addition berechnen kann.",
+            "",
+            "Bestimmen Sie, wie viele Zyklen für eine vollständige Iteration nötig sind, wenn der Prozessor pro Zyklus zwei Worte laden und ein Wort speichern kann.",
+            "",
+            "Bestimmen Sie danach denselben Wert für eine Architektur, die vier Worte laden und zwei Worte speichern kann.",
+            "",
+            "## Vereinfachende Annahmen",
+            "",
+            "- Alle skalaren Grössen können in Registern vorgehalten werden.",
+            "- Ergebnisse einer arithmetischen Operation werden direkt zurückgeschrieben.",
+            "- Instruction Fetch und Decode werden für diese Analyse vernachlässigt.",
+            "",
+            "## Aufgabe 2",
+            "",
+            "Bestimmen Sie für dieselbe Vektortriade die Arbeit W, den Speicherverkehr Q und die arithmetische Intensität I = W / Q.",
+            "",
+            "Entscheiden Sie anhand des Roofline-Modells, ob die Anwendung durch den Speicher oder durch die Berechnung beschränkt wird.",
+            "",
+            "## Zusatz",
+            "",
+            "Formulieren Sie Ihre Antwort so, dass die einzelnen Lade-, Speicher- und Rechenoperationen nachvollziehbar sind. Begründen Sie auch, welche Annahme den Flaschenhals bestimmt.",
+          ].join("\n"),
+        },
+      ],
+    },
+    {
+      resourceId: "mock-hpc-wide-slide",
+      title: "Aufgabenblatt 02",
+      kind: "bundle-task",
+      tasks: [
+        {
+          taskId: "mock-task-2",
+          sourceResourceId: "mock-hpc-wide-slide",
+          title: "Task 2",
+          status: "open",
+          parts: [],
+          promptMarkdown: [
+            "# Task 2",
+            "",
+            "Diskutieren Sie den Speed-up eines parallelen Programms mit seriellem Anteil und vergleichen Sie die Effizienz für mehrere Prozessorzahlen.",
+          ].join("\n"),
+        },
+      ],
+    },
+  ],
+  progress: {
+    open: 2,
+    checked: 0,
+    correct: 0,
+    wrong: 0,
+    needsReview: 0,
+  },
 };
 
 export function MockDashboardPage() {
@@ -106,8 +203,8 @@ export function MockDashboardPage() {
           </Button>
         </header>
 
-        <section className="grid min-h-0 w-full min-w-0 gap-3 pb-8 lg:grid-cols-[360px_minmax(0,1fr)_400px] lg:gap-4 lg:pb-0">
-          <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.5rem] bg-card lg:rounded-[2rem]">
+        <section className="grid min-h-0 w-full min-w-0 gap-3 pb-8 lg:h-full lg:grid-cols-[360px_minmax(0,1fr)_400px] lg:gap-4 lg:overflow-hidden lg:pb-0">
+          <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.5rem] bg-card lg:h-full lg:rounded-[2rem]">
             <div className="px-5 py-5">
               <h2 className="text-base font-semibold tracking-tight">Mock courses</h2>
               <p className="mt-1 text-sm text-muted-foreground">{mockCourses.length} local courses</p>
@@ -212,6 +309,7 @@ export function MockDashboardPage() {
             onSignInWebexBrowser={async () => undefined}
             onStudyOutlineChange={setStudyOutline}
             pdfScrollCommand={pdfScrollCommand}
+            taskViewOverride={selectedCourseId === "mock-hpc" ? mockTaskView : undefined}
           />
 
           <MockCodexPanel
