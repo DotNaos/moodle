@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
 import { groupScriptSections } from "@/components/moodle-sidebar";
-import { buildScriptPDFMapping, extractScriptSections, renderScriptMarkdownHTML } from "@/components/task-study-panel";
+import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML } from "@/components/task-study-panel";
 import { buildDashboardRouteURL, parseDashboardRouteSearch } from "@/lib/dashboard-route";
 import { renderFormulaMarkdownHTML } from "@/lib/formula-renderer";
 
@@ -134,6 +134,20 @@ describe("script markdown renderer", () => {
     expect(html).not.toContain("``pseudo");
   });
 
+  test("drops empty closing fence artifacts from extracted markdown", () => {
+    const html = renderScriptMarkdownHTML([
+      "```pseudo",
+      "for i <- 1 to N do",
+      "od",
+      "```",
+      "",
+      "```",
+    ].join("\n"));
+
+    expect(html.match(/<pre/g)).toHaveLength(1);
+    expect(html).toContain("for i &lt;- 1 to N do");
+  });
+
   test("renders slide bullet markers as clean script lines", () => {
     const html = renderScriptMarkdownHTML([
       "## 1.6 Objectives of Parallelisation",
@@ -151,6 +165,59 @@ describe("script markdown renderer", () => {
     expect(html).not.toContain("<ul");
     expect(html).not.toContain("- Goal");
     expect(html).not.toContain("•");
+  });
+
+  test("renders non-Moodle markdown links without leaking unresolved relative paths", () => {
+    const html = renderScriptMarkdownHTML("Source task: [extracted task](../.extracted/tasks/foo.mdx)");
+
+    expect(html).toContain("extracted task");
+    expect(html).not.toContain("](../.extracted");
+    expect(html).not.toContain("href=\"../.extracted");
+  });
+});
+
+describe("task view display normalization", () => {
+  test("splits a study bundle worksheet into selectable Aufgabe sections", () => {
+    const view = normalizeTaskViewForDisplay({
+      courseId: "22584",
+      generatedAt: "2026-06-08T00:00:00.000Z",
+      progress: { checked: 0, correct: 0, needsReview: 0, open: 1, wrong: 0 },
+      resources: [],
+      scriptMarkdown: "",
+      sheets: [{
+        kind: "PDF",
+        resourceId: "sheet-01",
+        solutionMarkdown: "# Aufgabenblatt 01 -- Lösung\n\nThis is the versioned working copy of the Moodle solution.\n\n## Original Sources\n\n- raw.pdf",
+        tasks: [{
+          parts: [],
+          promptMarkdown: [
+            "# Aufgabenblatt 01",
+            "",
+            "Source task: [extracted task](../.extracted/tasks/01-aufgabenblatt-01.mdx)",
+            "",
+            "Solution status: **moodle-solution-available**",
+            "",
+            "## Task Text",
+            "",
+            "## Aufgabe 1",
+            "Erste Frage.",
+            "",
+            "## Aufgabe 2",
+            "Zweite Frage.",
+          ].join("\n"),
+          sourceResourceId: "sheet-01",
+          status: "open",
+          taskId: "01-aufgabenblatt-01",
+          title: "Aufgabenblatt 01",
+        }],
+        title: "Aufgabenblatt 01",
+      }],
+    });
+
+    expect(view.sheets[0]?.tasks.map((task) => task.title)).toEqual(["Aufgabe 1", "Aufgabe 2"]);
+    expect(view.sheets[0]?.tasks[0]?.promptMarkdown).toBe("Erste Frage.");
+    expect(view.sheets[0]?.tasks[0]?.promptMarkdown).not.toContain("Source task");
+    expect(view.sheets[0]?.solutionMarkdown).not.toContain("Original Sources");
   });
 });
 

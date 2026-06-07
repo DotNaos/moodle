@@ -33,6 +33,7 @@ export function CourseMainPanel({
   onSelectedTaskIdChange,
   onSignInWebexBrowser,
   onStudyOutlineChange,
+  taskViewOverride,
   selectedScriptSectionId,
   selectedTaskId,
 }: {
@@ -54,6 +55,7 @@ export function CourseMainPanel({
   onSelectedTaskIdChange: (taskId: string | null) => void;
   onSignInWebexBrowser: (credentials: { username: string; password: string }) => Promise<void>;
   onStudyOutlineChange: (outline: StudyOutline) => void;
+  taskViewOverride?: TaskViewResponse;
 }) {
   const [taskView, setTaskView] = useState<TaskViewResponse | null>(null);
   const pdfMapping = useMemo(
@@ -80,7 +82,7 @@ export function CourseMainPanel({
 
   if (studyMode === "tasks" || studyMode === "script") {
     return (
-      <section className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:min-h-0 lg:overflow-hidden lg:rounded-[2rem]">
+      <section className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:h-full lg:min-h-0 lg:overflow-hidden lg:rounded-[2rem]">
         <TaskStudyPanel
           course={course}
           materials={materials}
@@ -90,6 +92,7 @@ export function CourseMainPanel({
           onSelectedTaskIdChange={onSelectedTaskIdChange}
           onStudyOutlineChange={onStudyOutlineChange}
           onTaskViewChange={setTaskView}
+          taskViewOverride={taskViewOverride}
           selectedScriptSectionId={selectedScriptSectionId}
           selectedTaskId={selectedTaskId}
         />
@@ -99,7 +102,7 @@ export function CourseMainPanel({
 
   if (studyMode === "formula") {
     return (
-      <section className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:min-h-0 lg:overflow-hidden lg:rounded-[2rem]">
+      <section className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:h-full lg:min-h-0 lg:overflow-hidden lg:rounded-[2rem]">
         {course && courseId ? (
           <FormulaCollectionPanel
             course={course}
@@ -117,7 +120,7 @@ export function CourseMainPanel({
 
   if (material) {
     return (
-      <section className="flex min-h-[70dvh] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
+      <section className="flex min-h-[70dvh] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:h-full lg:min-h-0 lg:rounded-[2rem]">
         <FileViewer
           courseId={courseId}
           material={material}
@@ -129,7 +132,7 @@ export function CourseMainPanel({
   }
 
   return (
-    <section className="flex min-h-[50dvh] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
+    <section className="flex min-h-[50dvh] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:h-full lg:min-h-0 lg:rounded-[2rem]">
       {course ? <CourseOverview course={course} courseId={courseId} /> : <NoCourseSelected />}
     </section>
   );

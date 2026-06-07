@@ -111,7 +111,7 @@ export function MoodleSidebar({
   return (
     <aside
       className={cn(
-        "min-h-0 w-full min-w-0 flex-col rounded-[1.5rem] bg-card lg:flex lg:max-h-none lg:overflow-hidden lg:rounded-[2rem]",
+        "min-h-0 w-full min-w-0 flex-col rounded-[1.5rem] bg-card lg:flex lg:h-full lg:max-h-none lg:overflow-hidden lg:rounded-[2rem]",
         navigationMode === "courses" || mobileShowsMaterialList ? "flex max-h-none overflow-visible" : "hidden",
       )}
     >

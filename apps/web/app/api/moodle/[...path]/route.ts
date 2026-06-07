@@ -79,6 +79,12 @@ export async function GET(request: Request, context: RouteContext) {
     return moodleNotConnectedResponse(tokenError);
   }
 
+  const upstreamContentType = upstreamResponse.headers.get("content-type");
+  if (!upstreamResponse.ok && isHTMLContent(upstreamContentType)) {
+    const error = await readHTMLServiceError(upstreamResponse);
+    return Response.json({ error }, { status: upstreamResponse.status || 502 });
+  }
+
   const headers = new Headers();
   for (const header of ["content-type", "content-disposition", "cache-control", "accept-ranges", "content-range"]) {
     const value = upstreamResponse.headers.get(header);
@@ -329,6 +335,18 @@ function extractErrorMessage(text: string, contentType: string | null): string {
   }
 
   return text;
+}
+
+async function readHTMLServiceError(response: Response): Promise<string> {
+  const text = await response.clone().text().catch(() => "");
+  if (text.includes("__next_error__") || text.toLowerCase().includes("<!doctype html")) {
+    return "Moodle services returned an internal error. Refresh Moodle or reconnect your account.";
+  }
+  return `Moodle services request failed with ${response.status || 502}.`;
+}
+
+function isHTMLContent(contentType: string | null): boolean {
+  return contentType?.toLowerCase().includes("text/html") ?? false;
 }
 
 function isMoodleTokenError(message: string): boolean {

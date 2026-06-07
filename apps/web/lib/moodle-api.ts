@@ -87,6 +87,9 @@ function getAPIErrorMessage(payload: unknown, text: string, status: number): str
   }
 
   const trimmed = text.trim();
+  if (looksLikeHTMLDocument(trimmed)) {
+    return `Moodle request failed with ${status}. Refresh Moodle or reconnect your account.`;
+  }
   if (trimmed.includes("The page could not be found") || trimmed.includes("NOT_FOUND")) {
     return "The Webex recordings service is not deployed yet. Deploy the updated Moodle Services backend, then refresh.";
   }
@@ -95,6 +98,11 @@ function getAPIErrorMessage(payload: unknown, text: string, status: number): str
   }
 
   return `Request failed with ${status}`;
+}
+
+function looksLikeHTMLDocument(text: string): boolean {
+  const normalized = text.slice(0, 300).toLowerCase();
+  return normalized.includes("<!doctype html") || normalized.includes("<html");
 }
 
 function getAPIErrorCode(payload: unknown): string | undefined {

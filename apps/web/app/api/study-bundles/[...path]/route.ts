@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import { createReadStream } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -38,6 +37,7 @@ type StudyBundleManifest = {
 
 export const runtime = "nodejs";
 
+const bundleRoot = path.join(process.cwd(), "study-bundles");
 const courseBundleSlugs: Record<string, string> = {
   "22584": "high-performance-computing",
   "high-performance-computing": "high-performance-computing",
@@ -45,11 +45,6 @@ const courseBundleSlugs: Record<string, string> = {
 };
 
 export async function GET(request: Request, context: RouteContext) {
-  const { userId } = await auth();
-  if (!userId && process.env.NODE_ENV !== "development") {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const params = await context.params;
   const parts = params.path ?? [];
   if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "task-view") {
@@ -149,30 +144,10 @@ async function assetResponse(request: Request, courseId: string) {
 async function loadBundle(courseId: string): Promise<{ dir: string; manifest: StudyBundleManifest } | null> {
   const slug = courseBundleSlugs[courseId];
   if (!slug) return null;
-  const dir = await findBundleDir(slug);
-  if (!dir) return null;
+  const dir = path.join(bundleRoot, slug);
   await traceBundleRuntimeFiles(dir);
   const manifest = await readManifest(dir).catch(() => null);
   return manifest ? { dir, manifest } : null;
-}
-
-async function findBundleDir(slug: string): Promise<string | null> {
-  for (const root of candidateBundleRoots()) {
-    const dir = path.join(root, slug);
-    const info = await stat(path.join(dir, "manifest.json")).catch(() => null);
-    if (info?.isFile()) {
-      return dir;
-    }
-  }
-  return null;
-}
-
-function candidateBundleRoots(): string[] {
-  const cwd = /* turbopackIgnore: true */ process.cwd();
-  return [
-    path.join(cwd, "study-bundles"),
-    path.join(cwd, "apps", "web", "study-bundles"),
-  ];
 }
 
 async function traceBundleRuntimeFiles(dir: string) {
