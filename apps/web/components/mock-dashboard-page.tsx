@@ -49,7 +49,7 @@ export function MockDashboardPage() {
   useHideClerkDevOverlay();
 
   const [selectedCourseId, setSelectedCourseId] = useState(String(mockCourses[0]?.id ?? ""));
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(mockMaterialsByCourseId[selectedCourseId]?.[0]?.id ?? null);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [studyMode, setStudyMode] = useState<StudyMode>("materials");
   const [codexOpen, setCodexOpen] = useState(true);
   const [selectedRecording, setSelectedRecording] = useState<WebexRecording | null>(mockRecordings[0] ?? null);
@@ -67,9 +67,8 @@ export function MockDashboardPage() {
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
 
   function selectCourse(courseId: string) {
-    const nextMaterials = mockMaterialsByCourseId[courseId] ?? [];
     setSelectedCourseId(courseId);
-    setSelectedMaterialId(nextMaterials[0]?.id ?? null);
+    setSelectedMaterialId(null);
     setStudyMode("materials");
   }
 
