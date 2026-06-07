@@ -34,6 +34,17 @@ Run the web app:
 bun run web:dev
 ```
 
+Open the local study pipeline view after starting `moodle-services`:
+
+```sh
+cd /Users/oli/projects.school/tools/moodle/moodle-services/.worktrees/study-material-pipeline
+go run ./cmd/moodle serve --addr 127.0.0.1:8091 --skip-session-check --study-workspace /Users/oli/school
+
+cd /Users/oli/projects.school/tools/moodle/moodle-clients/.worktrees/study-material-pipeline
+bun run web:dev
+open "http://127.0.0.1:3008/study-pipeline?servicesUrl=http%3A%2F%2F127.0.0.1%3A8091&workspace=%2FUsers%2Foli%2Fschool&term=FS26"
+```
+
 Run the mobile app:
 
 ```sh
