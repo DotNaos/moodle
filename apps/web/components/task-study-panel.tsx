@@ -371,7 +371,7 @@ export function TaskStudyPanel({
           </article>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible xl:grid-cols-[minmax(0,1fr)_340px] xl:overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto xl:grid-cols-[minmax(0,1fr)_340px] xl:overflow-hidden">
           <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
             {view?.sheets.map((sheet) => (
               <section className="mb-5" key={sheet.resourceId}>
@@ -400,7 +400,7 @@ export function TaskStudyPanel({
             )) ?? null}
           </aside>
 
-          <main className="min-h-0 overflow-visible bg-background px-3 py-4 lg:overflow-auto lg:px-8 lg:py-8">
+          <main className="min-h-0 overflow-visible bg-background px-3 py-4 lg:px-8 lg:py-8 xl:overflow-auto">
             {selectedTask ? (
               <article className="mx-auto max-w-[78ch] rounded-sm border border-border bg-card px-5 py-7 shadow-sm sm:px-9 sm:py-9">
                 <PaperHeading kicker={selectedSheet?.title ?? "Aufgabenblatt"} title={selectedTask.title} subtitle={selectedResource ?? courseTitle(course)} />
