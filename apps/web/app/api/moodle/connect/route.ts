@@ -30,14 +30,26 @@ export async function POST(request: Request) {
     return Response.json({ error: getErrorMessage(error) }, { status: 500 });
   }
 
-  const body = (await request.json().catch(() => null)) as { qr?: unknown; name?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    name?: unknown;
+    password?: unknown;
+    qr?: unknown;
+    username?: unknown;
+  } | null;
   const qr = typeof body?.qr === "string" ? body.qr.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  if (!qr) {
-    return Response.json({ error: "QR code is missing." }, { status: 400 });
+  const username = typeof body?.username === "string" ? body.username.trim() : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  const usesCredentials = username !== "" || password !== "";
+  if (!qr && !usesCredentials) {
+    return Response.json({ error: "QR code or Moodle username and password are required." }, { status: 400 });
+  }
+  if (usesCredentials && (!username || !password)) {
+    return Response.json({ error: "Moodle username and password are required." }, { status: 400 });
   }
 
-  const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/auth/clerk/qr/exchange`, {
+  const upstreamPath = usesCredentials ? "/api/auth/clerk/login" : "/api/auth/clerk/qr/exchange";
+  const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}${upstreamPath}`, {
     method: "POST",
     cache: "no-store",
     headers: {
@@ -45,7 +57,7 @@ export async function POST(request: Request) {
       "X-Clerk-User-Id": userId,
       "X-Moodle-Internal-Secret": internalSecret,
     },
-    body: JSON.stringify({ qr, name }),
+    body: JSON.stringify(usesCredentials ? { username, password } : { qr, name }),
   });
 
   const payload = await readServiceJSON<QRExchangeResponse>(upstreamResponse);
