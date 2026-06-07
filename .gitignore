@@ -32,3 +32,6 @@ test-artifacts/
 !.env.example
 .vercel/
 .vercel
+
+# local git worktrees
+.worktrees/
