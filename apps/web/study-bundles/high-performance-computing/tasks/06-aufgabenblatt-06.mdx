@@ -1,0 +1,71 @@
+---
+title: "Aufgabenblatt 06"
+course: "High Performance Computing"
+status: "task-pass-1"
+ai_used: true
+source_task: "../.extracted/tasks/06-aufgabenblatt-06.mdx"
+solution_status: "moodle-solution-available"
+solution_page: "./solutions/06-aufgabenblatt-06-loesung.mdx"
+---
+
+# Aufgabenblatt 06
+
+Source task: [extracted task](../.extracted/tasks/06-aufgabenblatt-06.mdx)
+
+Solution status: **moodle-solution-available**
+
+Solution page: [06-aufgabenblatt-06-loesung](./solutions/06-aufgabenblatt-06-loesung.mdx)
+
+## Task Text
+
+<!-- source: page 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 6: Parallelisierungsstrategien
+
+## Aufgabe 1
+Die sequentielle Transposition einer Matrix A der Grösse N x N lässt sich folgendermassen umsetzen.
+```pseudo
+for i <- 1 to N do
+for j <- i to N do
+tmp <- A(i,j); A(i,j) <- A(j,i); A(j,i) <- tmp
+od
+od
+```
+
+a) Für die parallele Berechnung von AT stehen folgende Strategien zur Verfügung:
+Funktionsparallelität, Datenparallelität und Wettbewerbsparallelität. Benennen Sie Vor- und
+Nachteile der jeweiligen Strategien für vorliegendes Problem und geben Sie eine Idee zur
+algorithmischen Umsetzung an.
+b) Berechnen Sie für eine datenparallele Umsetzung mit spaltenweiser Zerlegung von A den
+Speed-Up in Abhängigkeit von N und p (d.h. Anzahl der Prozesse). Der Austausch zweier
+Elemente A(i,j) und A(j,i) soll dabei TEX, die Übertragung eines Elements A(i,j) von Prozess Pi zu
+Prozess Pj soll dabei TCOM = 1.5*TEX dauern. Zur Vereinfachung sei angenommen, dass ein
+Prozess alle Elemente seiner Domäne kommuniziert, dies beinhaltet auch die redundante
+Übertragung von Pi zu sich selbst. Was lässt sich für die parallele Effizienz beobachten?
+
+## Aufgabe 2
+Mithilfe der BERNSTEIN-Bedingungen lassen sich mögliche Abhängigkeiten bspw. in Schleifen aufdecken,
+die eine erfolgreiche Parallelisierung verhindern. Untersuchen Sie folgendes Code-Fragment auf
+Abhängigkeiten und entscheiden Sie, ob eine Parallelisierung über die Schleifeniterationen möglich ist
+oder nicht.
+```pseudo
+for i <- 1 to N do
+a(i) <- 2*a(i+m) + b(i)
+od
+```
+
+Für welche Werte -2 <= m <= 1 lässt sich obige Schleife erfolgreich parallelisieren?
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.
+
+## Working Area
+
+- Attempt status: not started
+- Checked solution: not written yet
+- Notes:
+
+## Original Sources
+
+- Task: [raw PDF](../.raw/materials/03-grundlagen-der-parallelisierung/02-aufgabenblatt-06.pdf) · [machine extraction](../.extracted/tasks/06-aufgabenblatt-06.mdx)
+- Moodle solution: [raw PDF](../.raw/materials/03-grundlagen-der-parallelisierung/03-aufgabenblatt-06-loesung.pdf) · [machine extraction](../.extracted/solutions/06-aufgabenblatt-06-loesung.mdx) · [working copy](solutions/06-aufgabenblatt-06-loesung.mdx)

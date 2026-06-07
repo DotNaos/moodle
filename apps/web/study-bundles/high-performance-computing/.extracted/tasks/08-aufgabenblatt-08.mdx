@@ -1,0 +1,52 @@
+---
+title: "Aufgabenblatt 08"
+course: "High Performance Computing"
+kind: "task"
+resource_id: "947733"
+source_pdf: "../../.raw/materials/03-grundlagen-der-parallelisierung/06-aufgabenblatt-08.pdf"
+ai_used: false
+conversion: semantic-mdx-with-assets
+text_source: pdftotext-layout
+asset_source: pdftohtml-xml-images
+text_quality: machine_extracted
+page_count: 1
+asset_count: 0
+visual_only_pages: []
+---
+
+# Aufgabenblatt 08
+
+<!-- source-page: 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 8: Lastbalanzierung & Synchronisation
+
+## Aufgabe 1
+Gegeben sei ein 2-dimensionales ILLIAC-Gitter mit 4 x 4 Knoten. Die einzelnen Knoten haben dabei eine
+initiale Lastsituation (d.h. Anzahl der Aufträge) wie folgt.
+
+0       0       0       0
+
+0       0      200      0
+
+0       0       0       0
+
+0       0       0       0
+
+Berechnen Sie die ersten beiden Lastbalanzierungsschritte basierend auf einem Diffusionsmodell mit
+α = 0.10 unter Verwendung eines Gesamtschrittverfahrens (d.h. für Werte wi(t+1) zum Zeitschritt t+1
+werden ausschliesslich Werte wi(t) zum Zeitschritt t genutzt) zur Aktualisierung!
+
+## Aufgabe 2
+Fünf Philosoph:innen sitzen um einen runden Tisch und befinden sich jeweils in einem der beiden
+Zustände «Essen» oder «Denken». Während sie essen, denken sie nicht; während sie denken, essen
+sie nicht. In der Mitte des Tisches befindet sich eine Schale gekochter Spaghetti, vor jedem/r
+Philosoph:in steht ein Teller und zwischen zwei Tellern liegt ein Essstäbchen. Damit haben alle
+Philosoph:innen ein Essstäbchen auf der linken und eines auf der rechten Seite. Zum Essen benötigen
+die Philosoph:innen jeweils zwei Essstäbchen, sie dürfen aber nur die beiden Essstäbchen jeweils direkt
+links und rechts von ihnen verwenden.
+Da die Philosoph:innen niemals miteinander sprechen, entsteht ein Synchronisationsproblem
+hinsichtlich der gemeinsamen Nutzungen der fünf Essstäbchen. Überlegen Sie sich eine
+Synchronisation mit beliebig vielen Semephoren und diskutieren Sie die Fairness Ihrer Lösung!
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.

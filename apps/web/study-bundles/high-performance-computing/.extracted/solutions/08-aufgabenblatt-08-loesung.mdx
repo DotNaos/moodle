@@ -1,0 +1,93 @@
+---
+title: "Aufgabenblatt 08 -- Lösung"
+course: "High Performance Computing"
+kind: "solution"
+resource_id: "947734"
+source_pdf: "../../.raw/materials/03-grundlagen-der-parallelisierung/07-aufgabenblatt-08-loesung.pdf"
+ai_used: false
+conversion: semantic-mdx-with-assets
+text_source: pdftotext-layout
+asset_source: pdftohtml-xml-images
+text_quality: partial_visual_only_pages
+page_count: 2
+asset_count: 1
+visual_only_pages: [1]
+---
+
+# Aufgabenblatt 08 -- Lösung
+
+<!-- source-page: 1 -->
+<!-- visual-only-page: no trusted machine text emitted -->
+
+<figure>
+  <img src="./08-aufgabenblatt-08-loesung.assets/image-page-001-001.jpg" alt="Aufgabenblatt 08 -- Lösung asset from source page 1" />
+</figure>
+
+
+<!-- source-page: 2 -->
+
+Blatt 08 / Aufgabe 2: Dining Philosophers
+
+neuer Zustand HUNGRY => Idee: ‚hungrige‘ Philosoph:innen testen erst, ob sie essen dürfen
+
+```pseudo
+semaphore mutex; mutex <- 1
+semaphore phil[N]; phil[0] <- 0; phil[1] <- 0; …; phil [N-1] <- 0
+state[]; state[0] <- THINK; state[1] <- THINK; …; state[N-1] <- THINK
+```
+
+```pseudo
+begin procedure PHILOSOPHER(num)
+while (TRUE) do
+```
+THINK()
+get_chopsticks(num)
+EAT()                                               // nothing happens here
+put_chopsticks(num)
+```pseudo
+od
+end
+```
+
+```pseudo
+begin procedure TEST(num)
+if state[num] = HUNGRY &&
+state[LEFT(num)] != EATING &&
+state[RIGHT(num)] != EATING then
+state[num] <- EATING
+V(phil[num])
+```
+fi
+```pseudo
+end
+```
+
+```pseudo
+begin procedure get_chopsticks(num)
+state[num] <- HUNGRY
+P(mutex)
+```
+TEST(num)
+```pseudo
+V(mutex)
+P(phil[num])
+end
+```
+
+```pseudo
+begin procedure put_chopsticks(num)
+state[num] <- THINK
+P(mutex)
+```
+TEST(LEFT(num))
+TEST(RIGHT(num))
+```pseudo
+V(mutex)
+end
+```
+
+In der Prozedur put_chopsticks( ) testet Philosoph:in num via (TEST(LEFT(num)) and
+TEST(RIGHT(num))) zuerst, ob die Nachbarn essen können und aktiviert sie anschliessend via
+```pseudo
+V(phil[num])).
+```

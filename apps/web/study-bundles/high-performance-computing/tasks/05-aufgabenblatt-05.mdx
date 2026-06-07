@@ -1,0 +1,70 @@
+---
+title: "Aufgabenblatt 05"
+course: "High Performance Computing"
+status: "task-pass-1"
+ai_used: true
+source_task: "../.extracted/tasks/05-aufgabenblatt-05.mdx"
+solution_status: "moodle-solution-available"
+solution_page: "./solutions/05-aufgabenblatt-05-loesung.mdx"
+---
+
+# Aufgabenblatt 05
+
+Source task: [extracted task](../.extracted/tasks/05-aufgabenblatt-05.mdx)
+
+Solution status: **moodle-solution-available**
+
+Solution page: [05-aufgabenblatt-05-loesung](./solutions/05-aufgabenblatt-05-loesung.mdx)
+
+## Task Text
+
+<!-- source: page 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 5: Netztopologien III
+
+## Aufgabe 1
+Das Beneš-Netzwerk zählt zu den blockierungsfreien dynamischen Netztopologien. Entscheidend für
+ein blockierungsfreies Routing ist die Tatsache, alle möglichen Verbindungen abbilden zu können.
+Nachfolgend dargestellt ist ein Beneš-Netzwerk mit 8 Eingängen / Ausgängen.
+
+000                                                       000
+001                                                       001
+010                                                       010
+011                                                       011
+
+100                                                       100
+101                                                       101
+110                                                       110
+
+111                                                       111
+
+a) Zeigen Sie, dass sich folgende Verbindungen blockierungsfrei schalten lassen.
+0->3                                   1->5
+2->4                                   3->7
+4->6                                   5->0
+6->1                                   7->2
+b) Erklären (oder beweisen) Sie, weshalb das Beneš-Netzwerk blockierungsfrei ist.
+
+## Aufgabe 2
+In Abhängigkeit von M, der Anzahl der Middle-Stage-Crossbars, kann das CLOS-Netzwerk strikt
+blockierungsfrei (M >= 2N-1) oder blockierungsfrei durch Umordnung (M >= N) ausfallen.
+a) Zeichnen Sie ein strikt blockierungsfreies CLOS-Netzwerk mit R = N = 2 und zeigen Sie, wie sich
+die folgenden Verbindungen schalten lassen.
+0->3                                   1->1
+2->0                                   3->2
+b) Zeichnen Sie ein durch Umordnung blockierungsfreies CLOS-Netzwerk mit R = N = 3 und zeigen
+Sie einen Fall, bei dem die Umordnung einer bestehenden Verbindung notwendig wird.
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.
+
+## Working Area
+
+- Attempt status: not started
+- Checked solution: not written yet
+- Notes:
+
+## Original Sources
+
+- Task: [raw PDF](../.raw/materials/02-netztopologien/06-aufgabenblatt-05.pdf) · [machine extraction](../.extracted/tasks/05-aufgabenblatt-05.mdx)
+- Moodle solution: [raw PDF](../.raw/materials/02-netztopologien/07-aufgabenblatt-05-loesung.pdf) · [machine extraction](../.extracted/solutions/05-aufgabenblatt-05-loesung.mdx) · [working copy](solutions/05-aufgabenblatt-05-loesung.mdx)

@@ -1,0 +1,114 @@
+---
+title: "Aufgabenblatt 10"
+course: "High Performance Computing"
+status: "task-pass-1"
+ai_used: true
+source_task: "../.extracted/tasks/10-aufgabenblatt-10.mdx"
+solution_status: "missing-in-moodle-needs-own-solution"
+solution_page: "./solutions/10-aufgabenblatt-10-own-solution.mdx"
+---
+
+# Aufgabenblatt 10
+
+Source task: [extracted task](../.extracted/tasks/10-aufgabenblatt-10.mdx)
+
+Solution status: **missing-in-moodle-needs-own-solution**
+
+Solution page: [10-aufgabenblatt-10-own-solution](./solutions/10-aufgabenblatt-10-own-solution.mdx)
+
+## Task Text
+
+<!-- source: page 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 10: MPI-Programmierung II
+
+## Aufgabe 1
+Gegeben sei folgendes MPI-Fragment mit div und mod als ganzzahlige Division bzw. Division mit Rest.
+```pseudo
+for i in range(N, 0, -1):
+```
+off = 2**i
+shift = (rank div off)*off
+dest = (((rank mod off) + off/2) mod off) + shift
+
+```pseudo
+MPI.Send(val, dest)
+MPI.Recv(tmp, dest)
+```
+
+min = np.min([val, tmp])
+max = np.max([val, tmp])
+
+```pseudo
+if rank < dest:
+```
+val = min
+```pseudo
+else:
+```
+val = max
+
+a) Skizzieren Sie das Kommunikationsmuster des obigen Algorithmus (nur MPI.Send( )) für N = 3
+und p = 8 Prozesse.
+
+0                     0                    0                     0
+
+1                     1                    1                     1
+
+2                     2                    2                     2
+
+3                     3                    3                     3
+
+4                     4                    4                     4
+
+5                     5                    5                     5
+
+6                     6                    6                     6
+
+7                     7                    7                     7
+
+i=3                  i=2                  i=1
+
+
+<!-- source: page 2 -->
+
+b) Die Ausführung einer Schleifeniteration (ohne Kommunikation) benötige TPROC Zeit, der
+Austausch zweier Elemente (d.h. Senden und Empfangen) zwischen zwei Prozessen pi und pj
+benötige TEX = 3*TPROC Zeit. Berechnen Sie unter der Annahme, dass T(1) = p2*TPROC gelte, den
+Speed-Up in Abhängigkeit von N und skizzieren Sie diesen für verschiedene Werte von N. Was
+lässt sich beobachten?
+c) Skizzieren Sie für N = 3 unter der gegebenen Initialisierung der Variablen val den kompletten
+Programmablauf inkl. lokaler Änderungen der Variable val und beschreiben Sie, was das
+Programm berechnet.
+
+0    val = 6           0   val =           0   val =             0   val =
+
+1    val = 7           1   val =           1   val =             1   val =
+
+2    val = 4           2   val =           2   val =             2   val =
+
+3    val = 2           3   val =           3   val =             3   val =
+
+4    val = 1           4   val =           4   val =             4   val =
+
+5    val = 0           5   val =           5   val =             5   val =
+
+6    val = 3           6   val =           6   val =             6   val =
+
+7    val = 5           7   val =           7   val =             7   val =
+
+initial setup            i=3                  i=2                  i=1
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.
+
+## Working Area
+
+- Attempt status: not started
+- Checked solution: not written yet
+- Notes:
+
+## Original Sources
+
+- Task: [raw PDF](../.raw/materials/04-nachrichtengekoppelte-systeme/03-aufgabenblatt-10.pdf) · [machine extraction](../.extracted/tasks/10-aufgabenblatt-10.mdx)
+- Moodle solution: not provided · [own-solution placeholder](solutions/10-aufgabenblatt-10-own-solution.mdx)

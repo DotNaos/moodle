@@ -1,0 +1,224 @@
+{
+  "courseId": "22584",
+  "contextId": "1268025",
+  "title": "Kurs: High Performance Computing (cds-110) FS26 | moodle @ FHGR",
+  "url": "https://moodle.fhgr.ch/course/view.php?id=22584",
+  "sections": [
+    {
+      "id": "252077",
+      "title": "Allgemeine Informationen",
+      "summaryHtml": "<div class=\"no-overflow\"><p>\n\n</p>",
+      "items": [
+        {
+          "id": "907353",
+          "name": "__________________________________________________...",
+          "type": "label",
+          "sectionId": "252077",
+          "sectionName": "Allgemeine Informationen",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p>_________________________________________________________________________________________________________<br></p>",
+          "contentText": "_________________________________________________________________________________________________________"
+        }
+      ]
+    },
+    {
+      "id": "261843",
+      "title": "Einführung",
+      "summaryHtml": "<div class=\"no-overflow\"><h4></h4>",
+      "items": [
+        {
+          "id": "947707",
+          "name": "Lernziele",
+          "type": "label",
+          "sectionId": "261843",
+          "sectionName": "Einführung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312347/mod_label/intro/dart_32x32.png\" alt=\"Lernziel\" class=\"img-responsive atto_image_button_text-bottom\" width=\"32\" height=\"32\"> Lernziele</h4><ul><li><span>Sie kennen und verstehen unterschiedliche Architekturmodelle<br></span></li><li><span><span>Sie können die Performanz paralleler Programme bestimmen</span><br></span></li><li><span>Sie können parallele Algorithmen mithilfe des PRAM Modells beschreiben<br></span></li></ul><hr><br><p></p>",
+          "contentText": "Lernziele\nSie kennen und verstehen unterschiedliche Architekturmodelle\n\nSie können die Performanz paralleler Programme bestimmen\n\nSie können parallele Algorithmen mithilfe des PRAM Modells beschreiben"
+        },
+        {
+          "id": "947708",
+          "name": "Präsenz",
+          "type": "label",
+          "sectionId": "261843",
+          "sectionName": "Einführung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312348/mod_label/intro/students.png\" alt=\"Präsenz\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_text-bottom\"> Präsenz</h4><br><p></p>",
+          "contentText": "Präsenz"
+        },
+        {
+          "id": "947709",
+          "name": "Teil 01",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947709&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261843",
+          "sectionName": "Einführung"
+        },
+        {
+          "id": "947710",
+          "name": "Selbststudium (Nach- und Vorbereitung)",
+          "type": "label",
+          "sectionId": "261843",
+          "sectionName": "Einführung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312350/mod_label/intro/computer.png\" alt=\"Selbststudium\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_middle\"> Selbststudium (Nach- und Vorbereitung)</h4><br><p></p>",
+          "contentText": "Selbststudium (Nach- und Vorbereitung)"
+        },
+        {
+          "id": "947711",
+          "name": "Aufgabenblatt 01",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947711&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261843",
+          "sectionName": "Einführung"
+        },
+        {
+          "id": "947712",
+          "name": "Aufgabenblatt 01 -- Lösung",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947712&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261843",
+          "sectionName": "Einführung"
+        },
+        {
+          "id": "947713",
+          "name": "Aufgabenblatt 02",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947713&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261843",
+          "sectionName": "Einführung"
+        },
+        {
+          "id": "947714",
+          "name": "Aufgabenblatt 02 -- Lösung",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947714&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261843",
+          "sectionName": "Einführung"
+        }
+      ]
+    },
+    {
+      "id": "261844",
+      "title": "Netztopologien",
+      "items": [
+        {
+          "id": "947715",
+          "name": "Lernziele",
+          "type": "label",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312355/mod_label/intro/dart_32x32.png\" alt=\"Lernziel\" class=\"img-responsive atto_image_button_text-bottom\" width=\"32\" height=\"32\"> Lernziele</h4><ul><li><span>Sie kennen und verstehen grundsätzliche Evaluierungskriterien für Netztopologien<br></span></li><li><span><span><span>Sie können unterschiedliche Netztopologien sowie deren Vor- und Nachteile benennen<br></span></span></span></li></ul><ul><hr></ul><p></p>",
+          "contentText": "Lernziele\nSie kennen und verstehen grundsätzliche Evaluierungskriterien für Netztopologien\n\nSie können unterschiedliche Netztopologien sowie deren Vor- und Nachteile benennen"
+        },
+        {
+          "id": "947716",
+          "name": "Präsenz",
+          "type": "label",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312356/mod_label/intro/students.png\" alt=\"Präsenz\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_text-bottom\"> Präsenz</h4><br><p></p>",
+          "contentText": "Präsenz"
+        },
+        {
+          "id": "947717",
+          "name": "Teil 02",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947717&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien"
+        },
+        {
+          "id": "947718",
+          "name": "Selbststudium (Nach- und Vorbereitung)",
+          "type": "label",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312358/mod_label/intro/computer.png\" alt=\"Selbststudium\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_middle\"> Selbststudium (Nach- und Vorbereitung)</h4><br><p></p>",
+          "contentText": "Selbststudium (Nach- und Vorbereitung)"
+        },
+        {
+          "id": "947719",
+          "name": "Aufgabenblatt 03",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947719&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien"
+        },
+        {
+          "id": "947720",
+          "name": "Aufgabenblatt 03 -- Lösung",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947720&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien"
+        },
+        {
+          "id": "947721",
+          "name": "Aufgabenblatt 04",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947721&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261844",
+          "sectionName": "Netztopologien"
+        }
+      ]
+    },
+    {
+      "id": "261845",
+      "title": "Grundlagen der Parallelisierung",
+      "items": [
+        {
+          "id": "947725",
+          "name": "Lernziele",
+          "type": "label",
+          "sectionId": "261845",
+          "sectionName": "Grundlagen der Parallelisierung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312365/mod_label/intro/dart_32x32.png\" alt=\"Lernziel\" class=\"img-responsive atto_image_button_text-bottom\" width=\"32\" height=\"32\"> Lernziele</h4><ul><li><span>Sie kennen und verstehen verschiedene Parallelisierungsstrategien<span></span></span></li><li><span><span><span>Sie können Konzepte der Synchronisation und Lastbalanzierung benennen und erklären<br></span></span></span></li><li><span><span><span>Sie können die gelernten Konzepte auf eigene Beispiele anwenden<br></span></span></span></li></ul><p></p>",
+          "contentText": "Lernziele\nSie kennen und verstehen verschiedene Parallelisierungsstrategien\nSie können Konzepte der Synchronisation und Lastbalanzierung benennen und erklären\n\nSie können die gelernten Konzepte auf eigene Beispiele anwenden"
+        },
+        {
+          "id": "947726",
+          "name": "Präsenz",
+          "type": "label",
+          "sectionId": "261845",
+          "sectionName": "Grundlagen der Parallelisierung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312366/mod_label/intro/students.png\" alt=\"Präsenz\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_text-bottom\"> Präsenz</h4><br><p></p>",
+          "contentText": "Präsenz"
+        },
+        {
+          "id": "947727",
+          "name": "Teil 03",
+          "type": "resource",
+          "url": "https://moodle.fhgr.ch/mod/resource/view.php?id=947727&redirect=1",
+          "fileType": "pdf",
+          "sectionId": "261845",
+          "sectionName": "Grundlagen der Parallelisierung"
+        },
+        {
+          "id": "947728",
+          "name": "Selbststudium (Nach- und Vorbereitung)",
+          "type": "label",
+          "sectionId": "261845",
+          "sectionName": "Grundlagen der Parallelisierung",
+          "contentHtml": "<div class=\"no-overflow\"><div class=\"no-overflow\"><p></p><h4><img src=\"https://moodle.fhgr.ch/pluginfile.php/1312368/mod_label/intro/computer.png\" alt=\"Selbststudium\" width=\"32\" height=\"32\" class=\"img-responsive atto_image_button_middle\"> Selbststudium (Nach- und Vorbereitung)</h4><br><p></p>",
+          "contentText": "Selbststudium (Nach- und Vorbereitung)"
+        }
+      ]
+    }
+  ],
+  "scheduleDates": [
+    "2026-03-19",
+    "2026-03-26",
+    "2026-04-09",
+    "2026-04-23",
+    "2026-04-30",
+    "2026-05-07",
+    "2026-05-21",
+    "2026-05-28"
+  ]
+}
