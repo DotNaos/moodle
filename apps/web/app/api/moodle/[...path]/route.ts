@@ -124,6 +124,9 @@ function proxyRequestHeaders(request: Request): Record<string, string> {
 export async function POST(request: Request, context: RouteContext) {
   const params = await context.params;
   const route = params.path?.join("/") ?? "";
+  if (isStudyPipelineRoute(route)) {
+    return proxyMoodlePost(request, params.path ?? []);
+  }
   if (route === "keys") {
     return createAPIKey(request);
   }
@@ -149,6 +152,58 @@ export async function POST(request: Request, context: RouteContext) {
     user: restored.user,
     apiKeyRecord: restored.apiKeyRecord,
   });
+}
+
+function isStudyPipelineRoute(route: string): boolean {
+  const parts = route.split("/");
+  return parts.length === 3 && parts[0] === "courses" && parts[2] === "study-pipeline";
+}
+
+async function proxyMoodlePost(request: Request, path: string[]) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const cookieStore = await cookies();
+  let session = decodeMoodleSession(cookieStore.get(MOODLE_SESSION_COOKIE)?.value, userId);
+  if (!session) {
+    const restored = await restoreMoodleSession(userId);
+    if (!restored.ok) {
+      return moodleNotConnectedResponse(restored.error);
+    }
+    session = restored.session;
+  }
+
+  const upstreamPath = path.map(encodeURIComponent).join("/");
+  const body = await request.text();
+  let upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/${upstreamPath}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": request.headers.get("content-type") ?? "application/json",
+      "X-Moodle-App-Key": session.apiKey,
+    },
+    body: body || "{}",
+  });
+
+  if (upstreamResponse.status === 401) {
+    const restored = await restoreMoodleSession(userId);
+    if (restored.ok) {
+      upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/${upstreamPath}`, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": request.headers.get("content-type") ?? "application/json",
+          "X-Moodle-App-Key": restored.session.apiKey,
+        },
+        body: body || "{}",
+      });
+    }
+  }
+
+  const payload = await readServiceJSON<unknown>(upstreamResponse);
+  return Response.json(payload, { status: upstreamResponse.status || 502 });
 }
 
 async function saveWebexCredentials(request: Request) {

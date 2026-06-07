@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CourseThumbnail } from "@/components/dashboard-ui";
 import { FileViewer } from "@/components/file-viewer";
 import { FormulaCollectionPanel } from "@/components/formula-collection-panel";
+import { StudyPipelineAction } from "@/components/study-pipeline-action";
 import { buildScriptPDFMapping, TaskStudyPanel, type TaskViewResponse } from "@/components/task-study-panel";
 import { WebexRecordingsPanel } from "@/components/webex-recordings-panel";
 import { Button } from "@/components/ui/button";
@@ -129,12 +130,12 @@ export function CourseMainPanel({
 
   return (
     <section className="flex min-h-[50dvh] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
-      {course ? <CourseOverview course={course} /> : <NoCourseSelected />}
+      {course ? <CourseOverview course={course} courseId={courseId} /> : <NoCourseSelected />}
     </section>
   );
 }
 
-function CourseOverview({ course }: { course: Course }) {
+function CourseOverview({ course, courseId }: { course: Course; courseId: string | null }) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-8 py-8">
       <div className="w-full max-w-2xl">
@@ -156,6 +157,7 @@ function CourseOverview({ course }: { course: Course }) {
             </Button>
           ) : null}
         </div>
+        {courseId ? <StudyPipelineAction courseId={courseId} /> : null}
       </div>
     </div>
   );
