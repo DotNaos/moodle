@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 export type TaskViewResponse = {
   courseId: string;
   generatedAt: string;
+  source?: "study-bundle" | "task-forge";
   scriptMarkdown: string;
   sheets: Array<{
     resourceId: string;
@@ -191,8 +192,18 @@ export function TaskStudyPanel({
   async function loadView(id: string, compile: boolean, includeScript = mode === "script") {
     setLoading(true);
     setError(null);
-    setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
+    setMessage(compile ? "Reloading study bundle..." : null);
     try {
+      const bundledView = await studyBundleRequest<TaskViewResponse>(
+        `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
+      );
+      if (bundledView) {
+        applyView(bundledView, includeScript);
+        setMessage(compile ? "Loaded versioned study bundle." : null);
+        return;
+      }
+
+      setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
       if (compile) {
         await taskForgeRequest(`/courses/${encodeURIComponent(id)}/compile`, {
           method: "POST",
@@ -202,14 +213,7 @@ export function TaskStudyPanel({
       const nextView = await taskForgeRequest<TaskViewResponse>(
         `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
       );
-      setView(nextView);
-      onTaskViewChange?.(nextView);
-      setScriptIncluded(includeScript);
-      onSelectedTaskIdChange(
-        selectedTaskId && nextView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
-          ? selectedTaskId
-          : nextView.sheets[0]?.tasks[0]?.taskId ?? null,
-      );
+      applyView(nextView, includeScript);
       setMessage(compile ? (includeScript ? "Built script." : `Built ${nextView.sheets.flatMap((sheet) => sheet.tasks).length} tasks.`) : null);
     } catch (loadError) {
       if (!compile && getErrorMessage(loadError).includes("Dataset not found")) {
@@ -220,6 +224,17 @@ export function TaskStudyPanel({
     } finally {
       setLoading(false);
     }
+  }
+
+  function applyView(nextView: TaskViewResponse, includeScript: boolean) {
+    setView(nextView);
+    onTaskViewChange?.(nextView);
+    setScriptIncluded(includeScript);
+    onSelectedTaskIdChange(
+      selectedTaskId && nextView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
+        ? selectedTaskId
+        : nextView.sheets[0]?.tasks[0]?.taskId ?? null,
+    );
   }
 
   async function loadChat(taskId: string) {
@@ -348,7 +363,7 @@ export function TaskStudyPanel({
           variant="secondary"
         >
           {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-          Aktualisieren
+          {view?.source === "study-bundle" ? "Bundle neu laden" : "Aktualisieren"}
         </Button>
       </div>
 
@@ -357,12 +372,16 @@ export function TaskStudyPanel({
 
       {loading && !view ? (
         <div className="grid min-h-0 flex-1 place-items-center text-sm text-muted-foreground">
-          <span className="flex items-center gap-2"><Spinner aria-hidden /> Building study data</span>
+          <span className="flex items-center gap-2"><Spinner aria-hidden /> Loading study material</span>
         </div>
       ) : mode === "script" ? (
         <div className="min-h-0 flex-1 overflow-visible bg-background px-3 py-4 lg:overflow-auto lg:px-8 lg:py-8">
           <article className="mx-auto max-w-[82ch] rounded-sm border border-border bg-card px-5 py-7 shadow-sm sm:px-10 sm:py-10 lg:px-14">
-            <PaperHeading kicker="Course Script" title={courseTitle(course)} subtitle="Generated from Moodle material" />
+            <PaperHeading
+              kicker="Course Script"
+              title={courseTitle(course)}
+              subtitle={view?.source === "study-bundle" ? "Versioned study bundle" : "Generated from Moodle material"}
+            />
             <ProgressiveMarkdownBlock
               onCitationClick={onOpenResource}
               selectedSectionId={selectedScriptSectionId}
@@ -402,7 +421,7 @@ export function TaskStudyPanel({
 
           <main className="min-h-0 overflow-visible bg-background px-3 py-4 lg:px-8 lg:py-8 xl:overflow-auto">
             {selectedTask ? (
-              <article className="mx-auto max-w-[78ch] rounded-sm border border-border bg-card px-5 py-7 shadow-sm sm:px-9 sm:py-9">
+              <article className="mx-auto max-w-[82ch] rounded-sm border border-border bg-card px-5 py-7 shadow-sm sm:px-9 sm:py-9">
                 <PaperHeading kicker={selectedSheet?.title ?? "Aufgabenblatt"} title={selectedTask.title} subtitle={selectedResource ?? courseTitle(course)} />
                 <div className="mt-6 border-y border-border py-6">
                   <MarkdownBlock onCitationClick={onOpenResource} text={taskPromptText(selectedTask)} />
@@ -469,8 +488,8 @@ export function TaskStudyPanel({
               </div>
             )}
           </main>
-          <aside className="min-h-0 overflow-visible border-t border-border px-4 py-5 lg:col-span-2 lg:overflow-auto xl:col-span-1 xl:border-l xl:border-t-0">
-            <div className="space-y-4">
+          <aside className="mx-auto mt-4 min-h-0 max-w-[82ch] overflow-visible rounded-sm border border-border bg-card px-5 py-6 shadow-sm sm:px-9">
+            <div className="space-y-5">
               <div>
                 <p className="text-xs font-medium uppercase text-muted-foreground">Quelle</p>
                 <h4 className="mt-1 text-sm font-semibold">{selectedResource ?? selectedSheet?.title ?? "Moodle resource"}</h4>
@@ -599,7 +618,11 @@ function ProgressiveMarkdownBlock({
 }
 
 function splitMarkdownBlocks(text: string): string[] {
-  return text.trim().split(/\n{2,}/).filter(Boolean);
+  const normalized = text
+    .trim()
+    .replace(/([^\n])\n```/g, "$1\n\n```")
+    .replace(/```\n([^\n])/g, "```\n\n$1");
+  return normalized.split(/\n{2,}/).filter(Boolean);
 }
 
 function renderMarkdownBlocks(blocks: string[]): string[] {
@@ -622,8 +645,21 @@ function renderMarkdownBlocks(blocks: string[]): string[] {
 }
 
 function renderMarkdownBlock(block: string, sourceBlock?: string): string {
+  if (isHtmlCommentBlock(block)) {
+    return "";
+  }
+  if (isTrustedFigureBlock(block)) {
+    return renderTrustedFigure(block);
+  }
   if (block.startsWith("```")) {
     return `<pre class="overflow-auto rounded-md border border-border bg-secondary p-4 font-mono text-xs leading-5 text-foreground">${escapeHtml(block.replace(/^```[a-z]*\n?/i, "").replace(/```$/, ""))}</pre>`;
+  }
+  const leadingHeading = block.match(/^(#{1,3})\s+([^\n]+)\n+([\s\S]+)$/);
+  if (leadingHeading) {
+    return [
+      renderMarkdownBlock(`${leadingHeading[1]} ${leadingHeading[2]}`, sourceBlock),
+      renderMarkdownBlock(leadingHeading[3]),
+    ].join("");
   }
   const heading = block.match(/^(#{1,3})\s+(.+)$/);
   if (heading) {
@@ -672,6 +708,35 @@ function inlineMarkdown(text: string): string {
     })
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code class=\"rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em]\">$1</code>");
+}
+
+function isHtmlCommentBlock(block: string): boolean {
+  return /^<!--[\s\S]*-->$/.test(block.trim());
+}
+
+function isTrustedFigureBlock(block: string): boolean {
+  const trimmed = block.trim();
+  if (!/^<figure>[\s\S]*<\/figure>$/.test(trimmed)) {
+    return false;
+  }
+  const src = attributeValue(trimmed, "src");
+  return Boolean(src && (src.startsWith("/api/study-bundles/") || src.startsWith("/_next/")));
+}
+
+function renderTrustedFigure(block: string): string {
+  const src = attributeValue(block, "src") ?? "";
+  const alt = attributeValue(block, "alt") ?? "";
+  return [
+    '<figure class="my-6 overflow-hidden rounded-md border border-border bg-background">',
+    `<img class="h-auto w-full object-contain" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`,
+    alt ? `<figcaption class="border-t border-border px-3 py-2 text-xs text-muted-foreground">${escapeHtml(alt)}</figcaption>` : "",
+    "</figure>",
+  ].join("");
+}
+
+function attributeValue(markup: string, name: string): string | null {
+  const match = markup.match(new RegExp(`${name}="([^"]*)"`, "i"));
+  return match?.[1] ?? null;
 }
 
 function isHeadingBlock(block: string): boolean {
@@ -845,6 +910,23 @@ async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promis
     const errorMessage = payload && typeof payload === "object" && "error" in payload
       ? String(payload.error)
       : `Task Forge failed with ${response.status}.`;
+    throw new Error(errorMessage);
+  }
+  return payload as T;
+}
+
+async function studyBundleRequest<T>(path: string): Promise<T | null> {
+  const response = await fetch(`/api/study-bundles${path}`, {
+    headers: { "content-type": "application/json" },
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  const payload = await response.json().catch(() => null) as { error?: string } | T | null;
+  if (!response.ok) {
+    const errorMessage = payload && typeof payload === "object" && "error" in payload
+      ? String(payload.error)
+      : `Study bundle failed with ${response.status}.`;
     throw new Error(errorMessage);
   }
   return payload as T;

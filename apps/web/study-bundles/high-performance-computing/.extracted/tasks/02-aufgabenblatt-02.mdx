@@ -1,0 +1,49 @@
+---
+title: "Aufgabenblatt 02"
+course: "High Performance Computing"
+kind: "task"
+resource_id: "947713"
+source_pdf: "../../.raw/materials/01-einfuehrung/04-aufgabenblatt-02.pdf"
+ai_used: false
+conversion: semantic-mdx-with-assets
+text_source: pdftotext-layout
+asset_source: pdftohtml-xml-images
+text_quality: machine_extracted
+page_count: 1
+asset_count: 0
+visual_only_pages: []
+---
+
+# Aufgabenblatt 02
+
+<!-- source-page: 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 2: Leistungsbemessung
+
+## Aufgabe 1
+Der Speed-Up S(p) zur parallelen Lösung eines Problems auf p Prozessoren lässt sich gemäss Amdahls
+Gesetz berechnen als
+
+mit σ als seriellem Anteil des Problems. Die parallele Effizienz ist gegeben als E(p) = S(p) / p.
+Bestimmen Sie für ein paralleles Programm mit seriellem Anteil σ = 4%, für welche Werte p eine
+parallel Effizienz von mindestens 90% erreicht wird.
+
+## Aufgabe 2
+Die Summation von n Zahlen lässt sich wie folgt durchführen
+```pseudo
+for i <- 0 to n-1 do
+s <- s + a(i)
+od
+```
+wobei s einen skalaren Wert und a( ) ein Array der Grösse n darstellt. Da der aktuelle Wert von s in
+jeder Schleifeniteration benötigt wird, kann die Schleife nicht vektorisiert werden. Wie lässt sich dieses
+Problem – auch Reduktion genannt – lösen, um die zur Verfügung stehende Leistung einer Architektur
+bestmöglich auszuschöpfen?
+
+## Aufgabe 3
+Implementieren Sie obiges Problem (in Pseudo-Code) unter Nutzung des PRAM-Modells und
+überlegen Sie, welche Konflikte beim Zugriff auf die geteilten Register auftreten können? Wie lautet
+damit die parallele Zeitkomplexität Ihres Algorithmus?
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.

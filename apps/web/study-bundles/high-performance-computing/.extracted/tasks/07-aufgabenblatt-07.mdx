@@ -1,0 +1,57 @@
+---
+title: "Aufgabenblatt 07"
+course: "High Performance Computing"
+kind: "task"
+resource_id: "947731"
+source_pdf: "../../.raw/materials/03-grundlagen-der-parallelisierung/04-aufgabenblatt-07.pdf"
+ai_used: false
+conversion: semantic-mdx-with-assets
+text_source: pdftotext-layout
+asset_source: pdftohtml-xml-images
+text_quality: machine_extracted
+page_count: 1
+asset_count: 0
+visual_only_pages: []
+---
+
+# Aufgabenblatt 07
+
+<!-- source-page: 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 7: Synchronisation
+
+## Aufgabe 1
+Ein Flughafen hat zwei Rollbahnen, die sich an einem Punkt E (siehe Skizze) kreuzen. Ankommende
+Flugzeuge entscheiden sich entweder für Rollbahn AB oder Rollbahn CD.
+
+A                          C
+
+E
+
+D                          B
+
+Um Katastrophen beim Landeanflug zu vermeiden, ist Synchronisation der beiden Rollbahnen
+unabdingbar. Hierfür hat die Flughafenadministration folgende Regeln definiert:
+I. Keine zwei Flugzeuge dürfen dieselbe Rollbahn gleichzeitig benutzen.
+II. Sobald ein Flugzeug Punkt E auf seiner Rollbahn passiert hat, darf ein weiteres Flugzeug auf
+der anderen Rollbahn landen.
+Überlegen Sie sich eine Synchronisation mit beliebig vielen (binären) Semephoren in den Punkten A,
+B, C, D oder E und geben Sie eine gültige Lösung für beide Rollbahnen AB und CD an. Achten Sie dabei
+auf eine korrekte Nutzung der Funktionen P( ) and V( ) sowie eine korrekte Initialisierung Ihrer
+```pseudo
+Semaphore. Diskutieren Sie die Fairness Ihrer Lösung!
+```
+
+## Aufgabe 2
+In einem Mehrprozessorsystem sollen vier Prozesse Pi , i ∈ {1, 2, 3, 4} ausgeführt werden, die um zwei
+Ressourcen R1 und R2 konkurrieren. Beide Ressourcen sind jeweils zweimal vorhanden. Die Anfrage zur
+Belegung der Ressourcen soll dabei in der aufgeführten Reihenfolge geschehen.
+P1 -> R1, P3 -> R2, P4 -> R2, P2 -> R1, P1 -> R2, P3 -> R1, P2 -> R2
+Unter den bekannten Bedingungen für Deadlocks (siehe auch Skript Teil 3, Folie 21) kann obige
+Reihenfolge zu Problemen führen, da Prozesse ihre Berechnung erst dann beenden können, wenn sie
+alle erforderlichen Ressourcen alloziert haben. Zeichnen Sie einen Anforderungs-/Belegungsgraphen
+für obiges Szenario und entscheiden Sie, ob die Situation zu einem Deadlock führt oder nicht und –
+falls nein – in welcher möglichen Reihenfolge die Prozesse P1 bis P4 ihre Berechnung beenden können.
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.

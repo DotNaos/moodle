@@ -1,0 +1,243 @@
+import { auth } from "@clerk/nextjs/server";
+import { createReadStream } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import { Readable } from "node:stream";
+
+type RouteContext = {
+  params: Promise<{ path?: string[] }> | { path?: string[] };
+};
+
+type StudyBundleManifest = {
+  courseId: string;
+  courseName: string;
+  courseSlug: string;
+  importedAt: string;
+  script: {
+    path: string;
+    extractedPath: string;
+  };
+  tasks: Array<{
+    id: string;
+    path: string;
+    solutionPath: string | null;
+    solutionResourceId: string | null;
+    solutionStatus: string;
+    solutionTitle: string | null;
+    sourceResourceId: string;
+    sourceResourceTitle: string;
+    title: string;
+  }>;
+  resources: Array<{
+    kind: string;
+    rawPath: string;
+    resourceId: string;
+    title: string;
+  }>;
+};
+
+export const runtime = "nodejs";
+
+const courseBundleSlugs: Record<string, string> = {
+  "22584": "high-performance-computing",
+  "high-performance-computing": "high-performance-computing",
+  "mock-hpc": "high-performance-computing",
+};
+
+export async function GET(request: Request, context: RouteContext) {
+  const { userId } = await auth();
+  if (!userId && process.env.NODE_ENV !== "development") {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const params = await context.params;
+  const parts = params.path ?? [];
+  if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "task-view") {
+    return taskViewResponse(request, parts[1]);
+  }
+  if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "asset") {
+    return assetResponse(request, parts[1]);
+  }
+  return Response.json({ error: "Study bundle route not found" }, { status: 404 });
+}
+
+async function taskViewResponse(request: Request, courseId: string) {
+  const bundle = await loadBundle(courseId);
+  if (!bundle) {
+    return Response.json({ error: "Study bundle not found" }, { status: 404 });
+  }
+
+  const includeScript = new URL(request.url).searchParams.get("includeScript") === "1";
+  const scriptMarkdown = includeScript
+    ? await readBundleMarkdown(bundle.dir, bundle.manifest.script.path, courseId)
+    : "";
+
+  const sheets = [];
+  for (const task of bundle.manifest.tasks) {
+    const taskMarkdown = await readBundleMarkdown(bundle.dir, task.path, courseId);
+    const solutionMarkdown = task.solutionPath
+      ? await readBundleMarkdown(bundle.dir, task.solutionPath, courseId).catch(() => "")
+      : "";
+    const taskBody = extractMainContent(taskMarkdown);
+    sheets.push({
+      resourceId: task.sourceResourceId,
+      title: task.title,
+      kind: "bundle-task",
+      solutionResourceId: task.solutionResourceId ?? undefined,
+      solutionTitle: task.solutionTitle ?? undefined,
+      solutionMarkdown: solutionMarkdown ? extractMainContent(solutionMarkdown) : undefined,
+      tasks: [
+        {
+          taskId: task.id,
+          sourceResourceId: task.sourceResourceId,
+          title: task.title,
+          promptMarkdown: taskBody,
+          parts: [],
+          status: "open",
+        },
+      ],
+    });
+  }
+
+  return Response.json({
+    courseId: bundle.manifest.courseId || courseId,
+    generatedAt: bundle.manifest.importedAt,
+    scriptMarkdown,
+    sheets,
+    resources: bundle.manifest.resources.map((resource) => ({
+      resourceId: resource.resourceId,
+      title: resource.title,
+      kind: resource.kind,
+    })),
+    progress: {
+      open: sheets.length,
+      checked: 0,
+      correct: 0,
+      wrong: 0,
+      needsReview: 0,
+    },
+    source: "study-bundle",
+  });
+}
+
+async function assetResponse(request: Request, courseId: string) {
+  const bundle = await loadBundle(courseId);
+  if (!bundle) {
+    return Response.json({ error: "Study bundle not found" }, { status: 404 });
+  }
+  const requested = new URL(request.url).searchParams.get("path");
+  if (!requested) {
+    return Response.json({ error: "Missing asset path" }, { status: 400 });
+  }
+  const assetPath = safeBundlePath(bundle.dir, requested);
+  if (!assetPath) {
+    return Response.json({ error: "Invalid asset path" }, { status: 400 });
+  }
+  const info = await stat(assetPath).catch(() => null);
+  if (!info?.isFile()) {
+    return Response.json({ error: "Asset not found" }, { status: 404 });
+  }
+  const stream = Readable.toWeb(createReadStream(assetPath)) as ReadableStream;
+  return new Response(stream, {
+    headers: {
+      "cache-control": "private, max-age=3600",
+      "content-type": contentTypeFor(assetPath),
+    },
+  });
+}
+
+async function loadBundle(courseId: string): Promise<{ dir: string; manifest: StudyBundleManifest } | null> {
+  const slug = courseBundleSlugs[courseId];
+  if (!slug) return null;
+  const dir = await findBundleDir(slug);
+  if (!dir) return null;
+  await traceBundleRuntimeFiles(dir);
+  const manifest = await readManifest(dir).catch(() => null);
+  return manifest ? { dir, manifest } : null;
+}
+
+async function findBundleDir(slug: string): Promise<string | null> {
+  for (const root of candidateBundleRoots()) {
+    const dir = path.join(root, slug);
+    const info = await stat(path.join(dir, "manifest.json")).catch(() => null);
+    if (info?.isFile()) {
+      return dir;
+    }
+  }
+  return null;
+}
+
+function candidateBundleRoots(): string[] {
+  const cwd = /* turbopackIgnore: true */ process.cwd();
+  return [
+    path.join(cwd, "study-bundles"),
+    path.join(cwd, "apps", "web", "study-bundles"),
+  ];
+}
+
+async function traceBundleRuntimeFiles(dir: string) {
+  await Promise.all([
+    readdir(path.join(dir, "assets"), { recursive: true }).catch(() => []),
+    readdir(path.join(dir, "script"), { recursive: true }).catch(() => []),
+    readdir(path.join(dir, "tasks"), { recursive: true }).catch(() => []),
+  ]);
+}
+
+async function readManifest(dir: string): Promise<StudyBundleManifest> {
+  return JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8")) as StudyBundleManifest;
+}
+
+async function readBundleMarkdown(bundleDir: string, relativePath: string, courseId: string): Promise<string> {
+  const filePath = safeBundlePath(bundleDir, relativePath);
+  if (!filePath) {
+    throw new Error(`Invalid bundle path: ${relativePath}`);
+  }
+  const markdown = await readFile(filePath, "utf8");
+  return rewriteAssetLinks(stripFrontmatter(markdown), relativePath, courseId);
+}
+
+function stripFrontmatter(markdown: string): string {
+  return markdown.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+}
+
+function extractMainContent(markdown: string): string {
+  return markdown
+    .replace(/## Working Area[\s\S]*?(?=\n## Original Sources|\n# |$)/, "")
+    .trim();
+}
+
+function rewriteAssetLinks(markdown: string, documentPath: string, courseId: string): string {
+  return markdown.replace(/src="([^"]+)"/g, (match, rawSrc: string) => {
+    if (/^(https?:)?\/\//.test(rawSrc) || rawSrc.startsWith("/api/")) {
+      return match;
+    }
+    const assetPath = path.posix.normalize(path.posix.join(path.posix.dirname(documentPath), rawSrc));
+    const assetUrl = `/api/study-bundles/courses/${encodeURIComponent(courseId)}/asset?path=${encodeURIComponent(assetPath)}`;
+    return `src="${assetUrl}"`;
+  });
+}
+
+function safeBundlePath(bundleDir: string, relativePath: string): string | null {
+  const normalized = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, "");
+  const resolved = path.resolve(bundleDir, normalized);
+  const root = path.resolve(bundleDir);
+  return resolved === root || resolved.startsWith(root + path.sep) ? resolved : null;
+}
+
+function contentTypeFor(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".svg":
+      return "image/svg+xml";
+    default:
+      return "application/octet-stream";
+  }
+}

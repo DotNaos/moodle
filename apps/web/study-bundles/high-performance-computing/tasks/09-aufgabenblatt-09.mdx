@@ -1,0 +1,92 @@
+---
+title: "Aufgabenblatt 09"
+course: "High Performance Computing"
+status: "task-pass-1"
+ai_used: true
+source_task: "../.extracted/tasks/09-aufgabenblatt-09.mdx"
+solution_status: "missing-in-moodle-needs-own-solution"
+solution_page: "./solutions/09-aufgabenblatt-09-own-solution.mdx"
+---
+
+# Aufgabenblatt 09
+
+Source task: [extracted task](../.extracted/tasks/09-aufgabenblatt-09.mdx)
+
+Solution status: **missing-in-moodle-needs-own-solution**
+
+Solution page: [09-aufgabenblatt-09-own-solution](./solutions/09-aufgabenblatt-09-own-solution.mdx)
+
+## Task Text
+
+<!-- source: page 1 -->
+
+## High Performance Computing (CDS-110)
+Aufgabenblatt 9: MPI-Programmierung I
+
+## Aufgabe 1
+Für die parallele Summation von N2 Zahlen, soll ein 2-dimensionaler Torus der Grösse N x N verwendet
+werden. Jeder Knoten (Prozess) des Torus speichert genau eine Zahl mit Wert val <- rank+1. Die
+parallele Summation findet gemäss nachfolgendem Algorithmus statt.
+sum = val
+tmp = val
+
+```pseudo
+for i in range(1, N):
+MPI.Send(tmp, left neighbour)
+MPI.Recv(tmp, right neighbour)
+```
+sum = sum + tmp
+
+tmp = sum
+```pseudo
+for i in range(1, N):
+MPI.Send(tmp, lower neighbour)
+MPI.Recv(tmp, higher neighbour)
+```
+sum = sum + tmp
+
+a) Skizzieren Sie die Funktionsweise des obigen Algorithmus für einen Torus der Grösse 3 x 3, bei
+dem die Knoten zeilenweise von oben links nach unten rechts numeriert sind (siehe
+Abbildung).
+
+0       1       2
+
+3       4       5
+
+6       7       8
+
+b) Bestimmen Sie die Anzahl der notwendigen Berechnungsschritte (d.h. T(p)) des parallelen
+Programms (die Kommunikation darf vernachlässigt werden) in Abhängigkeit von N und geben
+Sie damit eine Abschätzung für den Speed-Up sowie die parallele Effizienz an. Zeichnen Sie die
+parallele Effizienz in einem Diagramm und diskutieren Sie Ihr Ergebnis!
+
+
+<!-- source: page 2 -->
+
+## Aufgabe 2
+Gegeben sei ein 2-dimensionaler Torus der Grösse N x N. Die einzelnen Knoten werden in beiden
+Richtungen mit 1 bis N numeriert, wobei Knoten (1, 1) im linken oberen Eck und Knoten (N, N) im
+rechten unteren Eck liegt. Für die Implementierung eines Broadcast soll jeder Knoten – nach dem
+Empfang – den erhaltenen Wert an seinen rechten und unteren Nachbarn weiterschicken. Diese
+Prozedur beginnt an einem dedizierten Startknoten und wird so lange wiederholt, bis alle Knoten die
+Information erhalten haben. Aus Symmetriegründen soll der Startknoten ebenfalls von seinen beiden
+Nachbarn (links und oben) empfangen.
+a) Skizzieren Sie die einzelnen Schritte des Algorithmus für einen Torus der Grösse 4 x 4 mit
+Knoten (1, 1) als Startknoten.
+b) Geben Sie eine MPI-Implementierung Ihres Algorithmus an und denken Sie dabei an die
+korrekte Verwendung von Sende- und Empfangsroutinen. Um die Kommunikation einfach zu
+gestalten, dürfen Sie anstelle echter MPI-Ränge für jeden Knoten links, rechts, oben und unten
+als Nachbarn verwenden.
+
+Die Bearbeitung der Aufgaben erfolgt freiwillig.
+
+## Working Area
+
+- Attempt status: not started
+- Checked solution: not written yet
+- Notes:
+
+## Original Sources
+
+- Task: [raw PDF](../.raw/materials/04-nachrichtengekoppelte-systeme/02-aufgabenblatt-09.pdf) · [machine extraction](../.extracted/tasks/09-aufgabenblatt-09.mdx)
+- Moodle solution: not provided · [own-solution placeholder](solutions/09-aufgabenblatt-09-own-solution.mdx)

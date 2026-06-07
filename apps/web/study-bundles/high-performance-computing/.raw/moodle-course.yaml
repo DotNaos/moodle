@@ -1,0 +1,214 @@
+category: FS26
+fullname: High Performance Computing
+id: 22584
+resources:
+    - id: "947709"
+      name: Teil 01
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947709&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261843"
+      sectionname: Einführung
+      filetype: pdf
+      uploadedat: "2026-02-14T13:07:00+01:00"
+    - id: "947711"
+      name: Aufgabenblatt 01
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947711&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261843"
+      sectionname: Einführung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947712"
+      name: Aufgabenblatt 01 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947712&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261843"
+      sectionname: Einführung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947713"
+      name: Aufgabenblatt 02
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947713&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261843"
+      sectionname: Einführung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947714"
+      name: Aufgabenblatt 02 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947714&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261843"
+      sectionname: Einführung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947717"
+      name: Teil 02
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947717&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-26T11:21:00+01:00"
+    - id: "947719"
+      name: Aufgabenblatt 03
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947719&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947720"
+      name: Aufgabenblatt 03 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947720&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947721"
+      name: Aufgabenblatt 04
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947721&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947722"
+      name: Aufgabenblatt 04 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947722&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947723"
+      name: Aufgabenblatt 05
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947723&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947724"
+      name: Aufgabenblatt 05 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947724&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261844"
+      sectionname: Netztopologien
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947727"
+      name: Teil 03
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947727&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-03-12T07:56:00+01:00"
+    - id: "947729"
+      name: Aufgabenblatt 06
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947729&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947730"
+      name: Aufgabenblatt 06 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947730&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947731"
+      name: Aufgabenblatt 07
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947731&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947732"
+      name: Aufgabenblatt 07 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947732&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947733"
+      name: Aufgabenblatt 08
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947733&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947734"
+      name: Aufgabenblatt 08 -- Lösung
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947734&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261845"
+      sectionname: Grundlagen der Parallelisierung
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947737"
+      name: Teil 04 (Update 23.04.26)
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947737&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261846"
+      sectionname: Nachrichtengekoppelte Systeme
+      filetype: pdf
+      uploadedat: "2026-04-23T13:07:00+02:00"
+    - id: "947739"
+      name: Aufgabenblatt 09
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947739&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261846"
+      sectionname: Nachrichtengekoppelte Systeme
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947740"
+      name: Aufgabenblatt 10
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947740&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261846"
+      sectionname: Nachrichtengekoppelte Systeme
+      filetype: pdf
+      uploadedat: "2026-02-14T12:30:00+01:00"
+    - id: "947745"
+      name: Teil 05
+      url: https://moodle.fhgr.ch/mod/resource/view.php?id=947745&redirect=1
+      type: resource
+      courseid: "22584"
+      sectionid: "261847"
+      sectionname: Speichergekoppelte Systeme
+      filetype: pdf
+      uploadedat: "2026-04-30T10:09:00+02:00"
+shortname: (cds-110) FS26
+title: High Performance Computing
+url: https://moodle.fhgr.ch/course/view.php?id=22584
