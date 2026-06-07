@@ -106,7 +106,7 @@ export function FileViewer({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 bg-muted">
+      <div className="min-h-0 flex-1 overflow-hidden bg-muted">
         {materialKind === "pdf" ? (
           <PDFDocumentViewer
             courseId={courseId}

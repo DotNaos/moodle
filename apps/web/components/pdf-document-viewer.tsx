@@ -1,7 +1,7 @@
 "use client";
 
 import { Maximize2, Minus, Plus } from "lucide-react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -398,7 +398,7 @@ export function PDFDocumentViewer({
   }
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col bg-muted">
+    <div className="flex h-full min-h-0 flex-col bg-muted">
       <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border/60 bg-card px-4 py-2">
         <p className="text-sm text-muted-foreground">
           Page {currentPage} / {pageCount}
@@ -445,7 +445,7 @@ export function PDFDocumentViewer({
       <div
         ref={containerRef}
         className={cn(
-          "min-h-0 flex-1 overflow-auto overscroll-contain px-3 py-4 data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4 sm:py-5",
+          "min-h-0 flex-1 overflow-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4 sm:py-5",
           zoom > 1.01 ? "[touch-action:none]" : "[touch-action:pan-y_pinch-zoom]",
         )}
         data-pannable={zoom > 1.01}
@@ -537,13 +537,7 @@ function PDFPageCanvas({
 
       renderTask = page.render({ canvas, canvasContext: context, viewport });
       await renderTask.promise;
-      const textContent = await page.getTextContent();
-      const text = textContent.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
+      const text = await readPageText(page);
 
       if (!cancelled) {
         onRendered({
@@ -556,7 +550,7 @@ function PDFPageCanvas({
 
     void renderPage().catch((renderError) => {
       if (!cancelled && !isRenderCancelled(renderError)) {
-        throw renderError;
+        console.warn(`Could not render PDF page ${pageNumber}.`, renderError);
       }
     });
 
@@ -571,6 +565,21 @@ function PDFPageCanvas({
       <canvas ref={canvasRef} className="block max-w-none" />
     </div>
   );
+}
+
+async function readPageText(page: PDFPageProxy): Promise<string> {
+  try {
+    const textContent = await page.getTextContent();
+    return textContent.items
+      .map((item) => ("str" in item ? item.str : ""))
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch (textError) {
+    console.warn("Could not read PDF page text.", textError);
+    return "";
+  }
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
