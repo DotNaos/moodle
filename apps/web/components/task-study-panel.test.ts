@@ -185,6 +185,24 @@ describe("script markdown renderer", () => {
     expect(html).not.toContain("<p>$$</p>");
   });
 
+  test("renders markdown tables with inline formatting", () => {
+    const html = renderScriptMarkdownHTML([
+      "| Theme | Keras | PyTorch |",
+      "|---|---|---|",
+      "| Data Handling | Use of NumPy structure | Explicit use of tensors and CPU or GPU allocation |",
+      "| Data Preparing | NumPy or scikit-learn framework | Explicit transformation functions; `DataLoader` for structuring data in batches |",
+      "| Model | Easy-to-call functions | Model function with two parts: `__init__` and `forward` |",
+    ].join("\n"));
+
+    expect(html).toContain("<table");
+    expect(html).toContain("<thead");
+    expect(html).toContain("<tbody");
+    expect(html).toContain("Data Handling");
+    expect(html).toContain("<code");
+    expect(html).toContain("__init__");
+    expect(html).not.toContain("|---|---|---|");
+  });
+
   test("splits scripts into state-backed chapters without exposing wrapper headings", () => {
     const chapters = splitScriptChapters([
       "# Course Script",

@@ -1483,6 +1483,9 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
   if (isDisplayMathBlock(block)) {
     return `<div class="my-4 overflow-x-auto">${renderMath(escapeHtml(block))}</div>`;
   }
+  if (isMarkdownTableBlock(block)) {
+    return renderMarkdownTable(block);
+  }
   const leadingHeading = block.match(/^(#{1,3})\s+([^\n]+)\n+([\s\S]+)$/);
   if (leadingHeading) {
     return [
@@ -1509,6 +1512,74 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
     return `<ul class="ml-6 list-disc space-y-2">${items.map((item) => `<li>${renderListItem(item)}</li>`).join("")}</ul>`;
   }
   return `<p>${inlineMarkdown(block).replace(/\n/g, "<br />")}</p>`;
+}
+
+function isMarkdownTableBlock(block: string): boolean {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2 || !lines[0]?.includes("|")) {
+    return false;
+  }
+  const headerCells = splitMarkdownTableRow(lines[0]);
+  const delimiterCells = splitMarkdownTableRow(lines[1] ?? "");
+  return headerCells.length >= 2 &&
+    delimiterCells.length === headerCells.length &&
+    delimiterCells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function renderMarkdownTable(block: string): string {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  const header = splitMarkdownTableRow(lines[0] ?? "");
+  const bodyRows = lines.slice(2)
+    .map(splitMarkdownTableRow)
+    .filter((cells) => cells.length > 0)
+    .map((cells) => header.map((_, index) => cells[index] ?? ""));
+
+  const headerHtml = header
+    .map((cell) => `<th class="px-3 py-2 font-semibold">${inlineMarkdown(cell)}</th>`)
+    .join("");
+  const bodyHtml = bodyRows
+    .map((cells) => `<tr class="border-b border-border/70 align-top last:border-b-0">${cells.map((cell) => `<td class="px-3 py-3">${inlineMarkdown(cell)}</td>`).join("")}</tr>`)
+    .join("");
+
+  return [
+    '<div class="my-5 overflow-x-auto rounded-md bg-secondary/50">',
+    '<table class="w-full min-w-[640px] border-collapse text-left text-sm leading-6 text-foreground">',
+    `<thead class="border-b border-border text-xs uppercase tracking-[0.12em] text-muted-foreground"><tr>${headerHtml}</tr></thead>`,
+    `<tbody>${bodyHtml}</tbody>`,
+    "</table>",
+    "</div>",
+  ].join("");
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  let escaped = false;
+
+  for (const char of trimmed) {
+    if (escaped) {
+      current += char === "|" ? "|" : `\\${char}`;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  if (escaped) {
+    current += "\\";
+  }
+  cells.push(current.trim());
+  return cells;
 }
 
 function hasMixedSlideLines(block: string): boolean {
