@@ -166,6 +166,25 @@ describe("script markdown renderer", () => {
     expect(html).not.toContain("<p>$$</p>");
   });
 
+  test("renders indented display math inside list items", () => {
+    const html = renderScriptMarkdownHTML([
+      "- Jedes Fenster extrahiert ein 3D-Patch mit Form:",
+      "  $$",
+      "  (\\text{window height},\\ \\text{window width},\\ \\text{input depth})",
+      "  $$",
+      "- Jedes 3D-Patch wird in einen 1D-Vektor der Form:",
+      "  $$",
+      "  (\\text{output depth})",
+      "  $$",
+    ].join("\n"));
+
+    expect(html).toContain("<ul");
+    expect(html).toContain("katex-display");
+    expect(html).toContain("window height");
+    expect(html).toContain("output depth");
+    expect(html).not.toContain("<p>$$</p>");
+  });
+
   test("splits scripts into state-backed chapters without exposing wrapper headings", () => {
     const chapters = splitScriptChapters([
       "# Course Script",
