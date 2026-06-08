@@ -202,7 +202,7 @@ async function startNextDevServer() {
 async function handleInterceptedRequest(request) {
   const url = new URL(request.url());
 
-  if (url.pathname === "/api/task-forge/courses/mock-hpc/task-view") {
+  if (url.pathname === "/api/moodle/courses/mock-hpc/study-pipeline/task-view") {
     await request.respond({
       contentType: "application/json",
       status: 200,

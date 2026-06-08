@@ -1,8 +1,15 @@
 # Study bundles
 
-This folder contains manually imported course material bundles for the Moodle web app.
+This folder is only a local escape hatch for manually imported course material.
+Generated study material should normally live on the VPS and be served through
+`moodle-services`, not be committed into the web app source tree.
 
-Bundles are read at runtime and are not regenerated during page loads. To refresh a bundle, run:
+The web app now uses the `moodle-services` study pipeline as the normal source
+for generated script and task views. If a file-backed bundle store is needed
+for local debugging, set `STUDY_BUNDLES_ROOT` to an external directory and put
+generated bundles there.
+
+To refresh a local bundle manually, run:
 
 ```sh
 bun run study:import /Users/oli/school/terms/FS26/courses/high-performance-computing high-performance-computing

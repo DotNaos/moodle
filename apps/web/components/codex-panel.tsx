@@ -59,7 +59,13 @@ type CodexAuthEvent =
       userCode: string;
       expiresInSeconds?: number;
     }
+  | {
+      type: "browser_auth";
+      authUrl: string;
+      callbackHost?: string;
+    }
   | { type: "completed" }
+  | { authenticated: boolean }
   | { type: "error"; error: string };
 
 type CodexDeviceCode = {
@@ -147,54 +153,44 @@ export function CodexPanel({
     try {
       const response = await fetch("/api/codex/auth", {
         method: "POST",
-        headers: { accept: "application/x-ndjson" },
       });
+      const payload = (await response.json().catch(() => ({}))) as CodexAuthEvent;
 
-      if (!response.ok || !response.body) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload.error ?? "Could not start ChatGPT sign-in.");
+      if (!response.ok) {
+        throw new Error("error" in payload ? payload.error : "Could not start ChatGPT sign-in.");
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let connected = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          const event = parseAuthEvent(line);
-          if (!event) {
-            continue;
-          }
-
-          if (event.type === "device_code") {
-            setDeviceCode({
-              verificationUri: event.verificationUri,
-              userCode: event.userCode,
-              expiresInSeconds: event.expiresInSeconds,
-            });
-            setCopiedCode(false);
-          } else if (event.type === "completed") {
-            connected = true;
-            setDeviceCode(null);
-            setCopiedCode(false);
-            setAuthStatus("connected");
-          } else if (event.type === "error") {
-            throw new Error(event.error);
-          }
-        }
+      if ("authenticated" in payload && payload.authenticated) {
+        setDeviceCode(null);
+        setCopiedCode(false);
+        setAuthStatus("connected");
+        return;
       }
 
-      if (!connected) {
+      if ("type" in payload && payload.type === "device_code") {
+        setDeviceCode({
+          verificationUri: payload.verificationUri,
+          userCode: payload.userCode,
+          expiresInSeconds: payload.expiresInSeconds,
+        });
+        setCopiedCode(false);
+      } else if ("type" in payload && payload.type === "browser_auth") {
+        window.open(payload.authUrl, "_blank", "noopener,noreferrer");
+      } else if ("type" in payload && payload.type === "completed") {
+        setDeviceCode(null);
+        setCopiedCode(false);
+        setAuthStatus("connected");
+        return;
+      } else if ("type" in payload && payload.type === "error") {
+        throw new Error(payload.error);
+      }
+
+      const connected = await waitForCodexAuth();
+      if (connected) {
+        setDeviceCode(null);
+        setCopiedCode(false);
+        setAuthStatus("connected");
+      } else {
         throw new Error("ChatGPT sign-in did not finish.");
       }
     } catch (authError) {
@@ -471,16 +467,33 @@ export function CodexPanel({
   );
 }
 
-function parseAuthEvent(line: string): CodexAuthEvent | null {
-  if (!line.trim()) {
-    return null;
+async function waitForCodexAuth(): Promise<boolean> {
+  const deadline = Date.now() + 15 * 60 * 1000;
+
+  while (Date.now() < deadline) {
+    await sleep(2_000);
+
+    const response = await fetch("/api/codex/auth", {
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      authenticated?: boolean;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Could not check Codex authentication.");
+    }
+    if (payload.authenticated) {
+      return true;
+    }
   }
 
-  try {
-    return JSON.parse(line) as CodexAuthEvent;
-  } catch {
-    return null;
-  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function buildMoodleContext({

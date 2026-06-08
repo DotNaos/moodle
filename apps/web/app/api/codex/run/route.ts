@@ -3,20 +3,20 @@ import { auth } from "@clerk/nextjs/server";
 import {
   codexOutputSchema,
   type CodexChatMessage,
-  type CodexStreamEvent,
 } from "@/lib/codex-actions";
 import { withMoodlePrompt } from "@/lib/codex-prompt";
 import { codexRuntimeErrorMessage } from "@/lib/codex-runtime";
-import { runCodexInVercelSandbox } from "@/lib/codex-sandbox";
-import { getCodexStateSnapshot } from "@/lib/codex-state";
+import { MOODLE_SERVICES_URL, moodleInternalHeaders, proxyServiceResponse } from "@/lib/moodle-services";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+export const maxDuration = 300;
 
 type CodexRunBody = {
   prompt?: unknown;
   images?: unknown;
   messages?: unknown;
+  model?: unknown;
+  reasoningEffort?: unknown;
   moodleContext?: unknown;
   stream?: unknown;
 };
@@ -36,90 +36,60 @@ export async function POST(request: Request) {
   }
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  const images = parseImages(body.images);
-  const messages = parseMessages(body.messages);
-  const composedPrompt = withMoodlePrompt(prompt, body.moodleContext, messages);
-
   if (!prompt) {
     return Response.json({ error: "Prompt is required." }, { status: 400 });
   }
 
+  const upstreamAccept = request.headers.get("accept")?.includes("application/x-ndjson")
+    ? "application/x-ndjson"
+    : "application/json";
+
   try {
-    const authSnapshot = await getCodexStateSnapshot(userId, "codex-auth");
-    if (!authSnapshot?.zipBase64) {
-      return Response.json(
-        { error: "Connect ChatGPT before asking Codex questions." },
-        { status: 409 },
-      );
-    }
+    const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/codex/run`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        ...moodleInternalHeaders(userId),
+        "Accept": upstreamAccept,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: withMoodlePrompt(prompt, body.moodleContext, parseMessages(body.messages)),
+        images: parseImages(body.images),
+        model: parseOptionalString(body.model),
+        reasoningEffort: parseOptionalString(body.reasoningEffort),
+        outputSchema: codexOutputSchema,
+        stream: body.stream === true,
+      }),
+    });
 
-    const input = {
-      prompt: composedPrompt,
-      authZipBase64: authSnapshot.zipBase64,
-      images,
-      outputSchema: codexOutputSchema,
-    };
-
-    if (request.headers.get("accept")?.includes("application/x-ndjson") || body.stream === true) {
-      return streamCodexRun(input);
-    }
-
-    const result = await runCodexInVercelSandbox(input);
-
-    return Response.json(result);
+    return proxyServiceResponse(upstreamResponse, responseContentType(upstreamAccept));
   } catch (error) {
-    return Response.json({ error: codexErrorMessage(error) }, { status: 500 });
+    return Response.json({ error: codexRuntimeErrorMessage(error) }, { status: 500 });
   }
 }
 
-function streamCodexRun(input: Parameters<typeof runCodexInVercelSandbox>[0]) {
-  const stream = new TransformStream<Uint8Array>();
-  const writer = stream.writable.getWriter();
-
-  void runCodexInVercelSandbox(input, (event) => writeEvent(writer, event))
-    .catch((error) =>
-      writeEvent(writer, {
-        type: "error",
-        error: codexErrorMessage(error),
-      }),
-    )
-    .finally(() => {
-      void writer.close().catch(() => undefined);
-    });
-
-  return new Response(stream.readable, {
-    headers: {
-      "Cache-Control": "no-cache, no-transform",
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-    },
-  });
-}
-
-async function writeEvent(
-  writer: WritableStreamDefaultWriter<Uint8Array>,
-  event: CodexStreamEvent,
-) {
-  await writer.write(new TextEncoder().encode(`${JSON.stringify(event)}\n`));
-}
-
-function parseImages(value: unknown): Array<{ name: string; dataURL: string }> {
+function parseImages(value: unknown): Array<{ name: string; dataUrl: string }> {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value.flatMap((image): Array<{ name: string; dataURL: string }> => {
+  return value.flatMap((image): Array<{ name: string; dataUrl: string }> => {
     if (!image || typeof image !== "object") {
       return [];
     }
     const name = "name" in image ? image.name : null;
-    const dataURL = "dataURL" in image ? image.dataURL : null;
-    if (typeof name !== "string" || typeof dataURL !== "string") {
+    const dataUrl = "dataURL" in image ? image.dataURL : "dataUrl" in image ? image.dataUrl : null;
+    if (typeof name !== "string" || typeof dataUrl !== "string") {
       return [];
     }
-    if (!dataURL.startsWith("data:image/") || dataURL.length > 1_200_000) {
+    if (!dataUrl.startsWith("data:image/") || dataUrl.length > 1_200_000) {
       return [];
     }
-    return [{ name: name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80) || "pdf-page.jpg", dataURL }];
+    return [{
+      name: name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80) || "pdf-page.jpg",
+      dataUrl,
+    }];
   }).slice(0, 40);
 }
 
@@ -142,6 +112,12 @@ function parseMessages(value: unknown): CodexChatMessage[] {
   }).slice(-12);
 }
 
-function codexErrorMessage(error: unknown): string {
-  return codexRuntimeErrorMessage(error);
+function parseOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function responseContentType(accept: string): string {
+  return accept === "application/x-ndjson"
+    ? "application/x-ndjson; charset=utf-8"
+    : "application/json; charset=utf-8";
 }

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 
-import { getTaskForgeInternalSecret, taskForgeFetch, TASK_FORGE_URL } from "@/lib/task-forge";
+import { MOODLE_SERVICES_URL, moodleInternalHeaders, proxyServiceResponse } from "@/lib/moodle-services";
 
 export const runtime = "nodejs";
 
@@ -11,19 +11,10 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const upstreamResponse = await taskForgeFetch(`${TASK_FORGE_URL}/api/codex/models`, {
+  const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/codex/models`, {
     cache: "no-store",
-    headers: {
-      "X-Clerk-User-Id": userId,
-      "X-Task-Forge-Internal-Secret": getTaskForgeInternalSecret(),
-    },
+    headers: moodleInternalHeaders(userId),
   });
 
-  return new Response(upstreamResponse.body, {
-    status: upstreamResponse.status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": upstreamResponse.headers.get("content-type") ?? "application/json; charset=utf-8",
-    },
-  });
+  return proxyServiceResponse(upstreamResponse);
 }

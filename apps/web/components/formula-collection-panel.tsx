@@ -109,12 +109,12 @@ export function FormulaCollectionPanel({
       try {
         return await loadFormulaView(false);
       } catch (loadError) {
-        if (!getErrorMessage(loadError).includes("Dataset not found")) {
+        if (!shouldBuildStudyPipeline(getErrorMessage(loadError))) {
           throw loadError;
         }
-        await taskForgeRequest(`/courses/${encodeURIComponent(courseId)}/compile`, {
+        await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/curated`, {
           method: "POST",
-          body: JSON.stringify({ scriptOnly: true }),
+          body: JSON.stringify({ includeScript: true }),
         });
         return await loadFormulaView(false);
       }
@@ -125,13 +125,13 @@ export function FormulaCollectionPanel({
 
   async function loadFormulaView(includeFallbackCompile: boolean): Promise<TaskViewResponse> {
     if (includeFallbackCompile) {
-      await taskForgeRequest(`/courses/${encodeURIComponent(courseId)}/compile`, {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/curated`, {
         method: "POST",
-        body: JSON.stringify({ scriptOnly: true }),
+        body: JSON.stringify({ includeScript: true }),
       });
     }
-    const nextView = await taskForgeRequest<TaskViewResponse>(
-      `/courses/${encodeURIComponent(courseId)}/task-view?includeScript=1`,
+    const nextView = await studyPipelineRequest<TaskViewResponse>(
+      `/courses/${encodeURIComponent(courseId)}/study-pipeline/task-view?includeScript=1`,
     );
     setLoadedView(nextView);
     onTaskViewChange?.(nextView);
@@ -510,8 +510,8 @@ async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
   return { finalResponse: payload.finalResponse ?? "" };
 }
 
-async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/task-forge${path}`, {
+async function studyPipelineRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(studyPipelineEndpoint(path), {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -522,10 +522,15 @@ async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promis
   if (!response.ok) {
     const errorMessage = payload && typeof payload === "object" && "error" in payload
       ? String(payload.error)
-      : `Task Forge failed with ${response.status}.`;
+      : `Moodle study pipeline failed with ${response.status}.`;
     throw new Error(errorMessage);
   }
   return payload as T;
+}
+
+function studyPipelineEndpoint(path: string): string {
+  const serviceBaseURL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL?.replace(/\/+$/, "");
+  return serviceBaseURL ? `${serviceBaseURL}/api${path}` : `/api/moodle${path}`;
 }
 
 function safeFilename(value: string): string {
@@ -538,6 +543,10 @@ function safeFilename(value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function shouldBuildStudyPipeline(message: string): boolean {
+  return /not found|missing|no .*generated|no .*snapshot|no .*artifact|dataset|task forge|study bundle|failed with 404/i.test(message);
 }
 
 function formatCodexGenerationError(error: unknown): string {
