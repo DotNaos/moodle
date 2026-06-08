@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
-import { groupScriptSections } from "@/components/moodle-sidebar";
+import { groupScriptSections, groupStudyTasksBySheet } from "@/components/moodle-sidebar";
 import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML } from "@/components/task-study-panel";
 import { buildDashboardRouteURL, parseDashboardRouteSearch } from "@/lib/dashboard-route";
 import { renderFormulaMarkdownHTML } from "@/lib/formula-renderer";
@@ -45,6 +45,32 @@ describe("script outline", () => {
     expect(groups[1]?.parent.title).toBe("2. From Bits and Bytes to Cache and Cores");
     expect(groups[1]?.children.map((section) => section.title)).toEqual([
       "2.1 Arithmetic-Logical Unit (ALU)",
+    ]);
+  });
+});
+
+describe("task outline", () => {
+  test("keeps desktop task navigation grouped by worksheet", () => {
+    const groups = groupStudyTasksBySheet([
+      { id: "sheet-01-task-1", sheetTitle: "Aufgabenblatt 01", status: "open", title: "Aufgabe 1" },
+      { id: "sheet-01-task-2", sheetTitle: "Aufgabenblatt 01", status: "open", title: "Aufgabe 2" },
+      { id: "sheet-02-task-1", sheetTitle: "Aufgabenblatt 02", status: "open", title: "Aufgabe 1" },
+    ]);
+
+    expect(groups).toEqual([
+      {
+        sheetTitle: "Aufgabenblatt 01",
+        tasks: [
+          { id: "sheet-01-task-1", sheetTitle: "Aufgabenblatt 01", status: "open", title: "Aufgabe 1" },
+          { id: "sheet-01-task-2", sheetTitle: "Aufgabenblatt 01", status: "open", title: "Aufgabe 2" },
+        ],
+      },
+      {
+        sheetTitle: "Aufgabenblatt 02",
+        tasks: [
+          { id: "sheet-02-task-1", sheetTitle: "Aufgabenblatt 02", status: "open", title: "Aufgabe 1" },
+        ],
+      },
     ]);
   });
 });
