@@ -1505,13 +1505,16 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
       .join("");
   }
   if (/^[-*]\s+/m.test(block)) {
-    const items = block.split("\n").filter(Boolean).map(cleanListItem);
-    return `<ul class="ml-6 list-disc space-y-1">${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`;
+    const items = parseListItems(block);
+    return `<ul class="ml-6 list-disc space-y-2">${items.map((item) => `<li>${renderListItem(item)}</li>`).join("")}</ul>`;
   }
   return `<p>${inlineMarkdown(block).replace(/\n/g, "<br />")}</p>`;
 }
 
 function hasMixedSlideLines(block: string): boolean {
+  if (/\$\$|\\\[/.test(block)) {
+    return false;
+  }
   const lines = block.split("\n").filter((line) => line.trim());
   return lines.some((line) => !isListLine(line)) && lines.some(isListLine);
 }
@@ -1526,6 +1529,39 @@ function cleanSlideLine(line: string): string {
 
 function cleanListItem(line: string): string {
   return line.replace(/^\s*•\s*/, "").replace(/^\s*[-*]\s+/, "");
+}
+
+function parseListItems(block: string): string[] {
+  const items: string[] = [];
+  let current: string[] = [];
+  for (const line of block.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    if (isListLine(line)) {
+      if (current.length > 0) {
+        items.push(current.join("\n").trim());
+      }
+      current = [cleanListItem(line)];
+      continue;
+    }
+    if (current.length === 0) {
+      current = [line.trim()];
+    } else {
+      current.push(line.trim());
+    }
+  }
+  if (current.length > 0) {
+    items.push(current.join("\n").trim());
+  }
+  return items;
+}
+
+function renderListItem(item: string): string {
+  if (isDisplayMathBlock(item) || /\$\$|\\\[/.test(item)) {
+    return renderMarkdownBlocks(splitMarkdownBlocks(item)).join("");
+  }
+  return inlineMarkdown(item).replace(/\n/g, "<br />");
 }
 
 function inlineMarkdown(text: string): string {
