@@ -1730,8 +1730,7 @@ async function studyPipelineRequest<T>(path: string, init: RequestInit = {}): Pr
 }
 
 function studyPipelineEndpoint(path: string): string {
-  const serviceBaseURL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL?.replace(/\/+$/, "");
-  return serviceBaseURL ? `${serviceBaseURL}/api${path}` : `/api/moodle${path}`;
+  return `/api/study-pipeline${path}`;
 }
 
 function shouldBuildStudyPipeline(message: string): boolean {
