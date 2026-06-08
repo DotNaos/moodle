@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 
-import { getTaskForgeInternalSecret, taskForgeFetch, TASK_FORGE_URL } from "@/lib/task-forge";
+import { MOODLE_SERVICES_URL, moodleInternalHeaders, proxyServiceResponse } from "@/lib/moodle-services";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,10 +11,10 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return proxy(await taskForgeFetch(`${TASK_FORGE_URL}/api/codex/files`, {
+  return proxyServiceResponse(await fetch(`${MOODLE_SERVICES_URL}/api/codex/files`, {
     method: "GET",
     cache: "no-store",
-    headers: taskForgeHeaders(userId),
+    headers: moodleInternalHeaders(userId),
   }));
 }
 
@@ -24,11 +24,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return proxy(await taskForgeFetch(`${TASK_FORGE_URL}/api/codex/files`, {
+  return proxyServiceResponse(await fetch(`${MOODLE_SERVICES_URL}/api/codex/files`, {
     method: "POST",
     cache: "no-store",
     headers: {
-      ...taskForgeHeaders(userId),
+      ...moodleInternalHeaders(userId),
       "Content-Type": "application/json",
     },
     body: await request.text(),
@@ -42,26 +42,9 @@ export async function DELETE(request: Request) {
   }
 
   const url = new URL(request.url);
-  return proxy(await taskForgeFetch(`${TASK_FORGE_URL}/api/codex/files?name=${encodeURIComponent(url.searchParams.get("name") ?? "")}`, {
+  return proxyServiceResponse(await fetch(`${MOODLE_SERVICES_URL}/api/codex/files?name=${encodeURIComponent(url.searchParams.get("name") ?? "")}`, {
     method: "DELETE",
     cache: "no-store",
-    headers: taskForgeHeaders(userId),
+    headers: moodleInternalHeaders(userId),
   }));
-}
-
-function taskForgeHeaders(userId: string): HeadersInit {
-  return {
-    "X-Clerk-User-Id": userId,
-    "X-Task-Forge-Internal-Secret": getTaskForgeInternalSecret(),
-  };
-}
-
-function proxy(response: Response): Response {
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8",
-    },
-  });
 }

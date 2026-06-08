@@ -36,8 +36,7 @@
   },
   "dependencies": {
     "@openai/codex-sdk": "0.125.0",
-    "@react-native-cookies/cookies": "^6.2.1",
-    "@vercel/sandbox": "^1.10.0"
+    "@react-native-cookies/cookies": "^6.2.1"
   },
   "trustedDependencies": [
     "@clerk/shared"

@@ -1,0 +1,21 @@
+FROM node:24-bookworm-slim
+
+WORKDIR /app
+
+RUN npm install -g bun@1.3.9
+
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_MOODLE_SERVICES_URL
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_MOODLE_SERVICES_URL=$NEXT_PUBLIC_MOODLE_SERVICES_URL
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV MOODLE_ENABLE_DEV_ROUTES=1
+
+COPY . .
+RUN bun install --frozen-lockfile
+RUN rm -rf apps/web/dist
+RUN cd apps/web && node ../../node_modules/next/dist/bin/next build --webpack
+
+EXPOSE 3000
+CMD ["sh", "-lc", "cd /app/apps/web && node ../../node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port ${PORT:-3000}"]

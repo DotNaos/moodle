@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
 
-import { getTaskForgeInternalSecret, taskForgeFetch, TASK_FORGE_URL } from "@/lib/task-forge";
-
 type MoodleCacheConfig = {
   key: string;
   ttlSeconds: number;
@@ -34,51 +32,15 @@ export function getMoodleCacheConfig(userId: string, upstreamPath: string, searc
 }
 
 export async function readMoodleCache(config: MoodleCacheConfig, userId: string): Promise<CacheReadResult> {
-  let secret: string;
-  try {
-    secret = getTaskForgeInternalSecret();
-  } catch {
-    return { hit: false };
-  }
-
-  try {
-    const response = await taskForgeFetch(`${TASK_FORGE_URL}/api/cache?key=${encodeURIComponent(config.key)}`, {
-      cache: "no-store",
-      headers: cacheHeaders(userId, secret)
-    });
-    if (!response.ok) return { hit: false };
-    const payload = await response.json() as { value?: unknown };
-    return { hit: true, value: payload.value };
-  } catch {
-    return { hit: false };
-  }
+  void config;
+  void userId;
+  return { hit: false };
 }
 
 export async function writeMoodleCache(config: MoodleCacheConfig, userId: string, value: unknown): Promise<void> {
-  let secret: string;
-  try {
-    secret = getTaskForgeInternalSecret();
-  } catch {
-    return;
-  }
-
-  try {
-    await taskForgeFetch(`${TASK_FORGE_URL}/api/cache`, {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        ...cacheHeaders(userId, secret),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        key: config.key,
-        ttlSeconds: config.ttlSeconds,
-        value
-      })
-    });
-  } catch {
-    // The cache must never block the live Moodle path.
-  }
+  void config;
+  void userId;
+  void value;
 }
 
 function ttlForPath(upstreamPath: string): number | null {
@@ -86,13 +48,6 @@ function ttlForPath(upstreamPath: string): number | null {
   if (upstreamPath === "courses") return 60 * 60 * 12;
   if (/^courses\/[^/]+\/materials$/.test(upstreamPath)) return 60 * 60 * 12;
   return null;
-}
-
-function cacheHeaders(userId: string, secret: string): Record<string, string> {
-  return {
-    "X-Clerk-User-Id": userId,
-    "X-Task-Forge-Internal-Secret": secret
-  };
 }
 
 function hash(input: string): string {

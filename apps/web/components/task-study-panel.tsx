@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 export type TaskViewResponse = {
   courseId: string;
   generatedAt: string;
-  source?: "study-bundle" | "task-forge";
+  source?: "study-bundle" | "moodle-services";
   scriptMarkdown: string;
   sheets: Array<{
     resourceId: string;
@@ -144,7 +144,7 @@ export function TaskStudyPanel({
     onTaskViewChange?.(null);
     setMessage(null);
     setError(null);
-    if (taskViewOverride) {
+    if (taskViewOverride && (mode !== "script" || taskViewOverride.scriptMarkdown.trim())) {
       applyView(taskViewOverride, Boolean(taskViewOverride.scriptMarkdown));
       setLoading(false);
       return () => {
@@ -160,7 +160,7 @@ export function TaskStudyPanel({
     return () => {
       controller.abort();
     };
-  }, [courseId, taskViewOverride]);
+  }, [courseId, mode, taskViewOverride]);
 
   useEffect(() => {
     if (courseId && mode === "script" && view && !scriptIncluded && !loading) {
@@ -216,31 +216,17 @@ export function TaskStudyPanel({
   ) {
     setLoading(true);
     setError(null);
-    setMessage(compile ? "Reloading study bundle..." : null);
+    setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
     try {
-      const bundledView = await studyBundleRequest<TaskViewResponse>(
-        `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
-        request?.signal,
-      );
-      if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
-        return;
-      }
-      if (bundledView) {
-        applyView(bundledView, includeScript);
-        setMessage(compile ? "Loaded versioned study bundle." : null);
-        return;
-      }
-
-      setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
       if (compile) {
-        await taskForgeRequest(`/courses/${encodeURIComponent(id)}/compile`, {
+        await studyPipelineRequest(`/courses/${encodeURIComponent(id)}/study-pipeline/${includeScript ? "curated" : "extracted"}`, {
           method: "POST",
-          body: JSON.stringify({ scriptOnly: includeScript }),
+          body: JSON.stringify({ includeScript }),
           signal: request?.signal,
         });
       }
-      const nextView = await taskForgeRequest<TaskViewResponse>(
-        `/courses/${encodeURIComponent(id)}/task-view?includeScript=${includeScript ? "1" : "0"}`,
+      const nextView = await studyPipelineRequest<TaskViewResponse>(
+        `/courses/${encodeURIComponent(id)}/study-pipeline/task-view?includeScript=${includeScript ? "1" : "0"}`,
         request?.signal ? { signal: request.signal } : undefined,
       );
       if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
@@ -252,11 +238,11 @@ export function TaskStudyPanel({
       if (isAbortError(loadError)) {
         return;
       }
-      if (!compile && getErrorMessage(loadError).includes("Dataset not found")) {
+      if (!compile && shouldBuildStudyPipeline(getErrorMessage(loadError))) {
         await loadView(id, true, includeScript, request);
         return;
       }
-      setError(getErrorMessage(loadError));
+      setError(formatStudyPipelineError(loadError));
     } finally {
       if (!request || (!request.signal.aborted && request.requestId === loadRequestId.current)) {
         setLoading(false);
@@ -278,8 +264,10 @@ export function TaskStudyPanel({
 
   async function loadChat(taskId: string) {
     try {
-      const payload = await taskForgeRequest<{ messages: TaskChatMessage[] }>(`/tasks/${encodeURIComponent(taskId)}/chat`);
-      setChatMessages(payload.messages);
+      const payload = await studyPipelineRequest<{ messages: TaskChatMessage[] }>(
+        `/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(taskId)}/chat`,
+      );
+      setChatMessages(asArray(payload.messages));
     } catch {
       setChatMessages([]);
     }
@@ -313,7 +301,7 @@ export function TaskStudyPanel({
         "Student answer:",
         trimmed,
       ].join("\n"));
-      await taskForgeRequest(`/tasks/${encodeURIComponent(selectedTask.taskId)}/attempts`, {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/attempts`, {
         method: "POST",
         body: JSON.stringify({
           userAnswer: trimmed,
@@ -347,7 +335,7 @@ export function TaskStudyPanel({
     setError(null);
     setChatPrompt("");
     try {
-      await taskForgeRequest(`/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
         method: "POST",
         body: JSON.stringify({ role: "user", text }),
       });
@@ -365,12 +353,12 @@ export function TaskStudyPanel({
         answer.trim() || "No answer yet.",
         "",
         "Chat history:",
-        chatMessages.map((message) => `${message.role}: ${message.text}`).join("\n") || "No previous chat.",
+        asArray(chatMessages).map((message) => `${message.role}: ${message.text}`).join("\n") || "No previous chat.",
         "",
         "User message:",
         text,
       ].join("\n"));
-      await taskForgeRequest(`/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
         method: "POST",
         body: JSON.stringify({ role: "assistant", text: response.finalResponse }),
       });
@@ -402,7 +390,7 @@ export function TaskStudyPanel({
           variant="secondary"
         >
           {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-          {view?.source === "study-bundle" ? "Bundle neu laden" : "Aktualisieren"}
+          Aktualisieren
         </Button>
       </div>
 
@@ -419,7 +407,7 @@ export function TaskStudyPanel({
             <PaperHeading
               kicker="Course Script"
               title={courseTitle(course)}
-              subtitle={view?.source === "study-bundle" ? "Versioned study bundle" : "Generated from Moodle material"}
+              subtitle="Generated from Moodle material"
             />
             <ProgressiveMarkdownBlock
               onCitationClick={onOpenResource}
@@ -429,34 +417,41 @@ export function TaskStudyPanel({
           </article>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto xl:grid-cols-[minmax(0,1fr)_340px]">
-          <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
-            {view?.sheets.map((sheet) => (
-              <section className="mb-5" key={sheet.resourceId}>
-                <h3 className="mb-2 line-clamp-2 px-2 text-xs font-medium uppercase text-muted-foreground">
-                  {sheet.title}
-                </h3>
-                <div className="flex flex-col gap-1">
-                  {sheet.tasks.map((task) => (
-                    <button
-                      className={cn(
-                        "rounded-2xl px-3 py-2 text-left text-sm transition-colors",
-                        task.taskId === selectedTask?.taskId ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-                      )}
-                      key={task.taskId}
-                      onClick={() => onSelectedTaskIdChange(task.taskId)}
-                      type="button"
-                    >
-                      <span className="line-clamp-2 font-medium">{task.title}</span>
-                      <span className={cn("mt-1 block text-xs", task.taskId === selectedTask?.taskId ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                        {task.status.replace("_", " ")}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )) ?? null}
-          </aside>
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto",
+            selectedTask ? "xl:grid-cols-[minmax(0,1fr)_340px]" : "",
+          )}
+        >
+          {selectedTask ? (
+            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
+              {view?.sheets.map((sheet) => (
+                <section className="mb-5" key={sheet.resourceId}>
+                  <h3 className="mb-2 line-clamp-2 px-2 text-xs font-medium uppercase text-muted-foreground">
+                    {sheet.title}
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {sheet.tasks.map((task) => (
+                      <button
+                        className={cn(
+                          "rounded-2xl px-3 py-2 text-left text-sm transition-colors",
+                          task.taskId === selectedTask?.taskId ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
+                        )}
+                        key={task.taskId}
+                        onClick={() => onSelectedTaskIdChange(task.taskId)}
+                        type="button"
+                      >
+                        <span className="line-clamp-2 font-medium">{task.title}</span>
+                        <span className={cn("mt-1 block text-xs", task.taskId === selectedTask?.taskId ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                          {task.status.replace("_", " ")}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )) ?? null}
+            </aside>
+          ) : null}
 
           <main className="min-h-0 overflow-visible bg-background px-4 py-5 lg:px-10 lg:py-8">
             {selectedTask ? (
@@ -498,7 +493,7 @@ export function TaskStudyPanel({
                 <section className="mt-6 border-t border-border pt-5">
                   <h4 className="font-semibold">Chat zu dieser Aufgabe</h4>
                   <div className="mt-3 flex flex-col gap-2">
-                    {chatMessages.map((chat) => (
+                      {asArray(chatMessages).map((chat) => (
                       <div
                         className={cn(
                           "rounded-[1.25rem] px-4 py-3 text-sm leading-6",
@@ -533,39 +528,41 @@ export function TaskStudyPanel({
               </div>
             )}
           </main>
-          <aside className="mx-auto min-h-0 max-w-[82ch] overflow-visible border-t border-border bg-background px-5 py-6 sm:px-9 xl:mx-0 xl:h-full xl:max-w-none xl:overflow-auto xl:border-l xl:border-t-0">
-            <div className="space-y-5">
-              <div>
-                <p className="text-xs font-medium uppercase text-muted-foreground">Quelle</p>
-                <h4 className="mt-1 text-sm font-semibold">{selectedResource ?? selectedSheet?.title ?? "Moodle resource"}</h4>
-                {selectedTask ? (
-                  <Button className="mt-3" onClick={() => onOpenResource(selectedTask.sourceResourceId)} type="button" variant="secondary">
-                    Aufgabenblatt öffnen
-                  </Button>
-                ) : null}
-              </div>
-              <div className="border-t border-border pt-4">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Lösung</p>
-                {selectedSheet?.solutionResourceId ? (
-                  <>
-                    <h4 className="mt-1 text-sm font-semibold">{selectedSheet.solutionTitle ?? "Lösung"}</h4>
-                    <Button className="mt-3" onClick={() => onOpenResource(selectedSheet.solutionResourceId!)} type="button" variant="secondary">
-                      Lösungs-PDF öffnen
+          {selectedTask ? (
+            <aside className="mx-auto min-h-0 max-w-[82ch] overflow-visible border-t border-border bg-background px-5 py-6 sm:px-9 xl:mx-0 xl:h-full xl:max-w-none xl:overflow-auto xl:border-l xl:border-t-0">
+              <div className="space-y-5">
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Quelle</p>
+                  <h4 className="mt-1 text-sm font-semibold">{selectedResource ?? selectedSheet?.title ?? "Moodle resource"}</h4>
+                  {selectedTask ? (
+                    <Button className="mt-3" onClick={() => onOpenResource(selectedTask.sourceResourceId)} type="button" variant="secondary">
+                      Aufgabenblatt öffnen
                     </Button>
-                    {selectedSheet.solutionMarkdown ? (
-                      <div className="mt-4 border-t border-border pt-4 lg:max-h-[36rem] lg:overflow-auto">
-                        <MarkdownBlock onCitationClick={onOpenResource} text={selectedSheet.solutionMarkdown} />
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    Keine Moodle-Lösung gefunden. Codex prüft deine Antwort direkt gegen Aufgabe und Kurskontext.
-                  </p>
-                )}
+                  ) : null}
+                </div>
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Lösung</p>
+                  {selectedSheet?.solutionResourceId ? (
+                    <>
+                      <h4 className="mt-1 text-sm font-semibold">{selectedSheet.solutionTitle ?? "Lösung"}</h4>
+                      <Button className="mt-3" onClick={() => onOpenResource(selectedSheet.solutionResourceId!)} type="button" variant="secondary">
+                        Lösungs-PDF öffnen
+                      </Button>
+                      {selectedSheet.solutionMarkdown ? (
+                        <div className="mt-4 border-t border-border pt-4 lg:max-h-[36rem] lg:overflow-auto">
+                          <MarkdownBlock onCitationClick={onOpenResource} text={selectedSheet.solutionMarkdown} />
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      Keine Moodle-Lösung gefunden. Codex prüft deine Antwort direkt gegen Aufgabe und Kurskontext.
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          </aside>
+            </aside>
+          ) : null}
         </div>
       )}
     </section>
@@ -575,17 +572,18 @@ export function TaskStudyPanel({
 function taskPromptText(task: TaskViewTask): string {
   return [
     task.promptMarkdown,
-    ...task.parts.map((part) => [`### ${part.label ?? "Teilaufgabe"}`, part.promptMarkdown].join("\n\n")),
+    ...asArray(task.parts).map((part) => [`### ${part.label ?? "Teilaufgabe"}`, part.promptMarkdown].join("\n\n")),
   ].filter(Boolean).join("\n\n");
 }
 
 export function normalizeTaskViewForDisplay(view: TaskViewResponse): TaskViewResponse {
   return {
     ...view,
-    sheets: view.sheets.map((sheet) => ({
+    resources: asArray(view.resources),
+    sheets: asArray(view.sheets).map((sheet) => ({
       ...sheet,
       solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
-      tasks: sheet.tasks.flatMap(splitTaskByHeadings),
+      tasks: asArray(sheet.tasks).flatMap(splitTaskByHeadings),
     })),
   };
 }
@@ -596,7 +594,7 @@ function splitTaskByHeadings(task: TaskViewTask): TaskViewTask[] {
   if (matches.length === 0) {
     return [{
       ...task,
-      parts: task.parts.map((part) => ({ ...part, promptMarkdown: cleanStudyBundleMarkdown(part.promptMarkdown) })),
+      parts: asArray(task.parts).map((part) => ({ ...part, promptMarkdown: cleanStudyBundleMarkdown(part.promptMarkdown) })),
       promptMarkdown,
     }];
   }
@@ -613,6 +611,10 @@ function splitTaskByHeadings(task: TaskViewTask): TaskViewTask[] {
       title,
     };
   });
+}
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function cleanStudyBundleMarkdown(markdown: string): string {
@@ -833,7 +835,11 @@ function isTrustedFigureBlock(block: string): boolean {
     return false;
   }
   const src = attributeValue(trimmed, "src");
-  return Boolean(src && (src.startsWith("/api/study-bundles/") || src.startsWith("/_next/")));
+  return Boolean(src && (
+    src.startsWith("/api/moodle/") ||
+    src.startsWith("/api/study-bundles/") ||
+    src.startsWith("/_next/")
+  ));
 }
 
 function renderTrustedFigure(block: string): string {
@@ -1010,8 +1016,8 @@ function resourceTitle(view: TaskViewResponse | null, materials: Material[], res
     ?? null;
 }
 
-async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/task-forge${path}`, {
+async function studyPipelineRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(studyPipelineEndpoint(path), {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -1022,28 +1028,19 @@ async function taskForgeRequest<T>(path: string, init: RequestInit = {}): Promis
   if (!response.ok) {
     const errorMessage = payload && typeof payload === "object" && "error" in payload
       ? String(payload.error)
-      : `Task Forge failed with ${response.status}.`;
+      : `Moodle study pipeline failed with ${response.status}.`;
     throw new Error(errorMessage);
   }
   return payload as T;
 }
 
-async function studyBundleRequest<T>(path: string, signal?: AbortSignal): Promise<T | null> {
-  const response = await fetch(`/api/study-bundles${path}`, {
-    headers: { "content-type": "application/json" },
-    signal,
-  });
-  if (response.status === 404) {
-    return null;
-  }
-  const payload = await response.json().catch(() => null) as { error?: string } | T | null;
-  if (!response.ok) {
-    const errorMessage = payload && typeof payload === "object" && "error" in payload
-      ? String(payload.error)
-      : `Study bundle failed with ${response.status}.`;
-    throw new Error(errorMessage);
-  }
-  return payload as T;
+function studyPipelineEndpoint(path: string): string {
+  const serviceBaseURL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL?.replace(/\/+$/, "");
+  return serviceBaseURL ? `${serviceBaseURL}/api${path}` : `/api/moodle${path}`;
+}
+
+function shouldBuildStudyPipeline(message: string): boolean {
+  return /not found|missing|no .*generated|no .*snapshot|no .*artifact|dataset|task forge|study bundle|failed with 404/i.test(message);
 }
 
 async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
@@ -1065,6 +1062,12 @@ async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function formatStudyPipelineError(error: unknown): string {
+  return getErrorMessage(error)
+    .replace(/^Task Forge failed/i, "Moodle study pipeline failed")
+    .replace(/^Study bundle/i, "Moodle study pipeline");
 }
 
 function isAbortError(error: unknown): boolean {

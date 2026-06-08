@@ -57,7 +57,7 @@ export async function GET(request: Request, context: RouteContext) {
     cache: "no-store",
     headers: {
       ...proxyRequestHeaders(request),
-      "X-Moodle-App-Key": session.apiKey,
+      ...moodleAPIKeyHeader(upstreamPath, session.apiKey),
     },
   });
 
@@ -68,7 +68,7 @@ export async function GET(request: Request, context: RouteContext) {
         cache: "no-store",
         headers: {
           ...proxyRequestHeaders(request),
-          "X-Moodle-App-Key": restored.session.apiKey,
+          ...moodleAPIKeyHeader(upstreamPath, restored.session.apiKey),
         },
       });
     }
@@ -132,6 +132,13 @@ function proxyRequestHeaders(request: Request): Record<string, string> {
   return headers;
 }
 
+function moodleAPIKeyHeader(upstreamPath: string, apiKey: string): Record<string, string> {
+  if (isStudyPipelineRoute(upstreamPath)) {
+    return {};
+  }
+  return { "X-Moodle-App-Key": apiKey };
+}
+
 export async function POST(request: Request, context: RouteContext) {
   const params = await context.params;
   const route = params.path?.join("/") ?? "";
@@ -167,7 +174,7 @@ export async function POST(request: Request, context: RouteContext) {
 
 function isStudyPipelineRoute(route: string): boolean {
   const parts = route.split("/");
-  return parts.length === 3 && parts[0] === "courses" && parts[2] === "study-pipeline";
+  return parts.length >= 3 && parts[0] === "courses" && parts[2] === "study-pipeline";
 }
 
 async function proxyMoodlePost(request: Request, path: string[]) {
@@ -193,7 +200,7 @@ async function proxyMoodlePost(request: Request, path: string[]) {
     cache: "no-store",
     headers: {
       "Content-Type": request.headers.get("content-type") ?? "application/json",
-      "X-Moodle-App-Key": session.apiKey,
+      ...moodleAPIKeyHeader(upstreamPath, session.apiKey),
     },
     body: body || "{}",
   });
@@ -206,7 +213,7 @@ async function proxyMoodlePost(request: Request, path: string[]) {
         cache: "no-store",
         headers: {
           "Content-Type": request.headers.get("content-type") ?? "application/json",
-          "X-Moodle-App-Key": restored.session.apiKey,
+          ...moodleAPIKeyHeader(upstreamPath, restored.session.apiKey),
         },
         body: body || "{}",
       });

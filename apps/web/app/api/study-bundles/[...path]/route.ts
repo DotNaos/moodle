@@ -37,18 +37,16 @@ type StudyBundleManifest = {
 
 export const runtime = "nodejs";
 
-const bundleRoot = path.join(process.cwd(), "study-bundles");
-const courseBundleSlugs: Record<string, string> = {
-  "22584": "high-performance-computing",
-  "high-performance-computing": "high-performance-computing",
-  "mock-hpc": "high-performance-computing",
-};
+const bundleRoot = process.env.STUDY_BUNDLES_ROOT?.trim()
+  ? path.resolve(process.env.STUDY_BUNDLES_ROOT.trim())
+  : null;
 
 export async function GET(request: Request, context: RouteContext) {
   const params = await context.params;
   const parts = params.path ?? [];
   if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "task-view") {
-    return taskViewResponse(request, parts[1]);
+    const requestUrl = new URL(request.url);
+    return redirectTo(`/api/moodle/courses/${encodeURIComponent(parts[1])}/study-pipeline/task-view${requestUrl.search}`);
   }
   if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "asset") {
     return assetResponse(request, parts[1]);
@@ -142,12 +140,19 @@ async function assetResponse(request: Request, courseId: string) {
 }
 
 async function loadBundle(courseId: string): Promise<{ dir: string; manifest: StudyBundleManifest } | null> {
-  const slug = courseBundleSlugs[courseId];
-  if (!slug) return null;
-  const dir = path.join(bundleRoot, slug);
-  await traceBundleRuntimeFiles(dir);
-  const manifest = await readManifest(dir).catch(() => null);
-  return manifest ? { dir, manifest } : null;
+  if (!bundleRoot) return null;
+  const entries = await readdir(bundleRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(bundleRoot, entry.name);
+    const manifest = await readManifest(dir).catch(() => null);
+    if (!manifest) continue;
+    if (manifest.courseId === courseId || manifest.courseSlug === courseId || entry.name === courseId) {
+      await traceBundleRuntimeFiles(dir);
+      return { dir, manifest };
+    }
+  }
+  return null;
 }
 
 async function traceBundleRuntimeFiles(dir: string) {
@@ -215,4 +220,14 @@ function contentTypeFor(filePath: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+function redirectTo(location: string): Response {
+  return new Response(null, {
+    status: 307,
+    headers: {
+      "cache-control": "no-store",
+      location,
+    },
+  });
 }

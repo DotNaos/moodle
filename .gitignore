@@ -25,6 +25,8 @@ apps/extension/dogfood-output/
 .DS_Store
 .verification/
 test-artifacts/
+apps/web/study-bundles/*
+!apps/web/study-bundles/README.md
 
 # local config
 .env
