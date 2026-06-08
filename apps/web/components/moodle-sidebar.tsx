@@ -534,26 +534,45 @@ function TaskOutline({
   if (tasks.length === 0) {
     return <LoadingRows label="Loading tasks" />;
   }
+  const groups = groupStudyTasksBySheet(tasks);
   return (
-    <div className="flex flex-col gap-1">
-      {tasks.map((task) => (
-        <button
-          className={cn(
-            "rounded-2xl px-3 py-2 text-left text-sm transition-colors",
-            selectedTaskId === task.id ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-          )}
-          key={task.id}
-          onClick={() => onSelectTask(task.id)}
-          type="button"
-        >
-          <span className="line-clamp-2 font-medium">{task.title}</span>
-          <span className={cn("mt-1 block truncate text-xs", selectedTaskId === task.id ? "text-primary-foreground/70" : "text-muted-foreground")}>
-            {task.sheetTitle} · {task.status.replace("_", " ")}
-          </span>
-        </button>
+    <div className="flex flex-col gap-5">
+      {groups.map((group) => (
+        <section className="flex flex-col gap-1" key={group.sheetTitle}>
+          <h2 className="px-3 text-xs font-medium text-muted-foreground">{group.sheetTitle}</h2>
+          {group.tasks.map((task) => (
+            <button
+              className={cn(
+                "rounded-2xl px-3 py-2 text-left text-sm transition-colors",
+                selectedTaskId === task.id ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
+              )}
+              key={task.id}
+              onClick={() => onSelectTask(task.id)}
+              type="button"
+            >
+              <span className="line-clamp-2 font-medium">{task.title}</span>
+              <span className={cn("mt-1 block truncate text-xs", selectedTaskId === task.id ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                {task.status.replace("_", " ")}
+              </span>
+            </button>
+          ))}
+        </section>
       ))}
     </div>
   );
+}
+
+export function groupStudyTasksBySheet(tasks: StudyOutline["tasks"]) {
+  const groups: Array<{ sheetTitle: string; tasks: StudyOutline["tasks"] }> = [];
+  for (const task of tasks) {
+    const lastGroup = groups.at(-1);
+    if (lastGroup?.sheetTitle === task.sheetTitle) {
+      lastGroup.tasks.push(task);
+    } else {
+      groups.push({ sheetTitle: task.sheetTitle, tasks: [task] });
+    }
+  }
+  return groups;
 }
 
 function ScriptOutline({
