@@ -51,6 +51,9 @@ export function getErrorMessage(error: unknown): string {
 
 export function getMoodleConnectionMessage(error: unknown): string {
   const message = getErrorMessage(error);
+  if (message === "Unauthorized") {
+    return "Connect your Moodle account first.";
+  }
   if (isMoodleTokenError(message)) {
     return "Your Moodle connection expired. Connect Moodle again to load fresh courses and materials.";
   }
