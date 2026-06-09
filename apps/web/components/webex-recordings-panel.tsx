@@ -49,8 +49,8 @@ export function WebexRecordingsPanel({
   }
 
   return (
-    <section className="flex min-h-[560px] flex-col overflow-hidden rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
-      <div className="flex items-start justify-between gap-4 px-5 py-5 lg:px-6">
+    <section className="flex min-h-[560px] flex-col overflow-hidden rounded-[1.5rem] bg-card md:min-h-0 md:rounded-[2rem]">
+      <div className="flex items-start justify-between gap-4 px-5 py-5 md:px-6">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">Webex recordings</p>
           <h2 className="mt-1 line-clamp-2 text-2xl font-semibold tracking-tight">

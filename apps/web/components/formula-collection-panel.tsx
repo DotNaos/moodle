@@ -176,7 +176,7 @@ export function FormulaCollectionPanel({
   }
 
   return (
-    <main className="min-h-0 flex-1 overflow-visible bg-background px-4 py-6 lg:overflow-auto lg:px-10 lg:py-9">
+    <main className="min-h-0 flex-1 overflow-visible bg-background px-4 py-6 md:overflow-auto md:px-10 md:py-9">
       <div className="mx-auto max-w-[88ch]">
         <header className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">

@@ -178,7 +178,8 @@ export function MockDashboardPage() {
   const [selectedRecording, setSelectedRecording] = useState<WebexRecording | null>(mockRecordings[0] ?? null);
   const [selectedScriptSectionId, setSelectedScriptSectionId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
+  const [studyOutline, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
+  const [courseHubOpen, setCourseHubOpen] = useState(false);
   const [pdfState, setPDFState] = useState<PDFViewState | null>(null);
   const [pdfScrollCommand, setPDFScrollCommand] = useState<PDFScrollCommand | null>(null);
 
@@ -187,6 +188,14 @@ export function MockDashboardPage() {
     [selectedCourseId],
   );
   const materials = mockMaterialsByCourseId[selectedCourseId] ?? [];
+  const materialsBySection = useMemo(() => {
+    const groups = new Map<string, Material[]>();
+    for (const material of materials) {
+      const section = material.sectionName?.trim() || "Materialien";
+      groups.set(section, [...(groups.get(section) ?? []), material]);
+    }
+    return [...groups.entries()];
+  }, [materials]);
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
 
   useEffect(() => {
@@ -311,14 +320,25 @@ export function MockDashboardPage() {
 
           <CourseMainPanel
             course={selectedCourse}
+            courseHubOpen={courseHubOpen}
             courseId={selectedCourseId}
             materials={materials}
+            materialsBySection={materialsBySection}
+            materialsLoading={false}
             material={selectedMaterial}
             recordingsState={mockRecordingState}
             selectedRecording={selectedRecording}
             selectedScriptSectionId={selectedScriptSectionId}
             selectedTaskId={selectedTaskId}
             studyMode={studyMode}
+            studyOutline={studyOutline}
+            onEnterStudyMode={(mode) => {
+              setCourseHubOpen(false);
+              setStudyMode(mode);
+            }}
+            onSelectMaterial={openMaterial}
+            onSelectScriptSection={setSelectedScriptSectionId}
+            onSelectTask={setSelectedTaskId}
             onOpenResource={(resourceId) => {
               const material = materials.find((item) => item.id === resourceId);
               if (material) {

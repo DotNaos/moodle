@@ -557,7 +557,7 @@ export function TaskStudyPanel({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-visible">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between lg:px-5">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between md:px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />}
@@ -579,10 +579,10 @@ export function TaskStudyPanel({
         </Button>
       </div>
 
-      {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive lg:mx-5">{error}</div> : null}
-      {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground lg:mx-5">{message}</div> : null}
+      {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
+      {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">{message}</div> : null}
       {refineStream.length > 0 ? (
-        <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground lg:mx-5">
+        <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">
           <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
             <Spinner aria-hidden />
             Codex arbeitet
@@ -631,12 +631,12 @@ export function TaskStudyPanel({
       ) : (
         <div
           className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto",
+            "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible md:overflow-auto",
             selectedTask ? "2xl:grid-cols-[minmax(0,1fr)_340px]" : "",
           )}
         >
           {selectedTask ? (
-            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
+            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 md:hidden">
               {view?.sheets.map((sheet) => (
                 <section className="mb-5" key={sheet.resourceId}>
                   <h3 className="mb-2 line-clamp-2 px-2 text-xs font-medium uppercase text-muted-foreground">
@@ -665,7 +665,7 @@ export function TaskStudyPanel({
             </aside>
           ) : null}
 
-          <main className="min-h-0 overflow-visible bg-background px-4 py-5 lg:px-10 lg:py-8">
+          <main className="min-h-0 overflow-visible bg-background px-4 py-5 md:px-10 md:py-8">
             {selectedTask ? (
               <article className="mx-auto max-w-[82ch]">
                 <header className="mb-6 border-b border-border pb-5">
@@ -775,7 +775,7 @@ export function TaskStudyPanel({
                         Lösungs-PDF öffnen
                       </Button>
                       {selectedSheet.solutionMarkdown ? (
-                        <div className="mt-4 border-t border-border pt-4 lg:max-h-[36rem] lg:overflow-auto">
+                        <div className="mt-4 border-t border-border pt-4 md:max-h-[36rem] md:overflow-auto">
                           <MarkdownBlock onCitationClick={onOpenResource} text={selectedSheet.solutionMarkdown} />
                         </div>
                       ) : null}
@@ -860,7 +860,7 @@ function CodexModelPicker({
   }, [openMenu]);
 
   return (
-    <div ref={pickerRef} className="mx-4 mt-4 flex flex-col gap-3 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm lg:mx-5">
+    <div ref={pickerRef} className="mx-4 mt-4 flex flex-col gap-3 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm md:mx-5">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <p className="flex items-center gap-2 font-medium text-foreground">
@@ -1221,7 +1221,7 @@ function ScriptReader({
       </aside>
 
       <div className="flex min-h-0 flex-col">
-        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:px-8">
+        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Reading progress</p>
@@ -1237,7 +1237,7 @@ function ScriptReader({
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-auto px-4 py-6 lg:px-10 lg:py-8"
+          className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-10 md:py-8"
           onScroll={updateScrollProgress}
           ref={scrollRef}
         >

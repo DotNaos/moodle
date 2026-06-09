@@ -2,11 +2,15 @@
 
 import { GrainientBackground } from "@/components/grainient-background";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
+import { ModeToggle } from "@/components/mode-toggle";
 import { Spinner } from "@/components/ui/spinner";
 
 export function SignedOutHome({ moodleServicesUrl }: { moodleServicesUrl: string }) {
   return (
     <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-6 py-16 sm:px-8 lg:py-28">
+      <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
+        <ModeToggle className="border-0 bg-white/10 text-white hover:bg-white/20 hover:text-white" />
+      </div>
       <GrainientBackground
         blendAngle={-8}
         blendSoftness={0.22}

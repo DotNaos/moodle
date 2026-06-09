@@ -413,8 +413,8 @@ export function CodexPanel({
   }
 
   return (
-    <aside className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
-      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between lg:px-5 lg:py-5">
+    <aside className="flex min-h-[60dvh] flex-col overflow-visible rounded-2xl bg-card md:h-full md:min-h-0 md:overflow-hidden md:rounded-none md:border-l md:border-border md:bg-background">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between md:px-4 md:py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Bot aria-hidden className="size-4 text-muted-foreground" />
@@ -464,7 +464,7 @@ export function CodexPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-visible px-4 pb-4 lg:overflow-auto">
+      <div className="min-h-0 flex-1 overflow-visible px-4 pb-4 md:overflow-auto md:px-4 md:pb-4">
         {deviceCode ? (
           <div className="mb-3 rounded-[1.5rem] bg-secondary px-4 py-4 text-sm">
             <p className="font-medium text-foreground">Finish ChatGPT sign-in</p>

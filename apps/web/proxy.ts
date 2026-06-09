@@ -11,20 +11,40 @@ async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextRe
   }
 
   const handshakeToken = request.nextUrl.searchParams.get("__clerk_handshake");
-  if (!handshakeToken) {
+  const sessionCookie = request.cookies.get("__session")?.value;
+
+  console.log("[PROXY] maybeRedirectStaleHandshake -> handshakeToken:", !!handshakeToken, "sessionCookie:", !!sessionCookie);
+
+  if (!handshakeToken && !sessionCookie) {
     return null;
   }
 
-  const [tokenKid, expectedKid] = await Promise.all([
-    Promise.resolve(handshakeTokenKid(handshakeToken)),
-    getClerkSigningKid(),
-  ]);
-
-  if (!tokenKid || !expectedKid || tokenKid === expectedKid) {
+  const expectedKid = await getClerkSigningKid();
+  console.log("[PROXY] expectedKid:", expectedKid);
+  
+  if (!expectedKid) {
     return null;
   }
 
-  return NextResponse.redirect(new URL("/api/dev/clear-clerk", request.url));
+  if (handshakeToken) {
+    const kid = handshakeTokenKid(handshakeToken);
+    console.log("[PROXY] handshakeToken kid:", kid);
+    if (kid && kid !== expectedKid) {
+      console.log("[PROXY] redirecting due to stale handshake token");
+      return NextResponse.redirect(new URL("/api/dev/clear-clerk", request.url));
+    }
+  }
+
+  if (sessionCookie) {
+    const kid = handshakeTokenKid(sessionCookie);
+    console.log("[PROXY] sessionCookie kid:", kid);
+    if (kid && kid !== expectedKid) {
+      console.log("[PROXY] redirecting due to stale session cookie");
+      return NextResponse.redirect(new URL("/api/dev/clear-clerk", request.url));
+    }
+  }
+
+  return null;
 }
 
 export default async function proxy(request: NextRequest, event: NextFetchEvent): Promise<Response> {

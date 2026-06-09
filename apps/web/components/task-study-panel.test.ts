@@ -2,9 +2,15 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
-import { groupScriptSections, groupStudyTasksBySheet } from "@/components/moodle-sidebar";
+import { groupScriptSections, groupStudyTasksBySheet } from "@/components/course-study-outline";
 import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
-import { buildDashboardRouteURL, parseDashboardRouteSearch } from "@/lib/dashboard-route";
+import {
+  buildDashboardRouteURL,
+  dashboardRouteFromInput,
+  dashboardRoutesEqual,
+  parseDashboardRoute,
+  parseDashboardRouteSearch,
+} from "@/lib/dashboard-route";
 import { renderFormulaMarkdownHTML } from "@/lib/formula-renderer";
 
 const scriptMarkdown = [
@@ -453,7 +459,7 @@ describe("formula source excerpt", () => {
 });
 
 describe("dashboard URL routing", () => {
-  test("parses a formula collection deep link", () => {
+  test("parses legacy query URLs for backward compatibility", () => {
     const route = parseDashboardRouteSearch("?course=42&mode=formula&codex=1");
 
     expect(route.courseId).toBe("42");
@@ -461,9 +467,19 @@ describe("dashboard URL routing", () => {
     expect(route.codexOpen).toBe(true);
   });
 
+  test("parses path-based course mode URLs", () => {
+    const route = parseDashboardRoute("/courses/42/tasks", "?codex=1");
+
+    expect(route.courseId).toBe("42");
+    expect(route.mode).toBe("tasks");
+    expect(route.courseHubOpen).toBe(false);
+    expect(route.codexOpen).toBe(true);
+  });
+
   test("builds URLs for selected course modes and nested targets", () => {
     expect(buildDashboardRouteURL({
       codexOpen: false,
+      courseHubOpen: false,
       homeView: "courses",
       navigationMode: "materials",
       recordingId: null,
@@ -472,18 +488,50 @@ describe("dashboard URL routing", () => {
       selectedScriptSectionId: "section-cache",
       selectedTaskId: null,
       studyMode: "script",
-    })).toBe("/?course=42&mode=script&section=section-cache");
+    })).toBe("/courses/42/script/section-cache");
 
     expect(buildDashboardRouteURL({
       codexOpen: false,
-      homeView: "calendar",
-      navigationMode: "courses",
+      courseHubOpen: true,
+      homeView: "courses",
+      navigationMode: "materials",
       recordingId: null,
       selectedCourseId: "42",
       selectedMaterialId: null,
       selectedScriptSectionId: null,
       selectedTaskId: null,
       studyMode: "formula",
-    })).toBe("/?view=calendar");
+    })).toBe("/courses/42");
+
+    expect(buildDashboardRouteURL({
+      codexOpen: false,
+      courseHubOpen: true,
+      homeView: "calendar",
+      navigationMode: "courses",
+      recordingId: null,
+      selectedCourseId: null,
+      selectedMaterialId: null,
+      selectedScriptSectionId: null,
+      selectedTaskId: null,
+      studyMode: "materials",
+    })).toBe("/calendar");
+  });
+
+  test("treats courses navigation as home even when a course id is still in memory", () => {
+    const route = dashboardRouteFromInput({
+      codexOpen: false,
+      courseHubOpen: true,
+      homeView: "courses",
+      navigationMode: "courses",
+      recordingId: null,
+      selectedCourseId: "42",
+      selectedMaterialId: "material-1",
+      selectedScriptSectionId: null,
+      selectedTaskId: null,
+      studyMode: "materials",
+    });
+
+    expect(route.courseId).toBeNull();
+    expect(dashboardRoutesEqual(route, parseDashboardRoute("/"))).toBe(true);
   });
 });

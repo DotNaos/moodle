@@ -151,6 +151,12 @@ export async function POST(request: Request, context: RouteContext) {
   if (route === "webex/credentials") {
     return saveWebexCredentials(request);
   }
+  if (route === "courses") {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.searchParams.get("route") === "calendar-subscription") {
+      return saveCalendarSubscription(request);
+    }
+  }
   if (route !== "session/restore") {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -247,6 +253,42 @@ async function saveWebexCredentials(request: Request) {
 
   const body = await request.text();
   const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/webex/credentials`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": request.headers.get("content-type") ?? "application/json",
+      "X-Moodle-App-Key": session.apiKey,
+    },
+    body: body || "{}",
+  });
+  const tokenError = await readMoodleTokenError(upstreamResponse);
+  if (tokenError) {
+    return moodleNotConnectedResponse(tokenError);
+  }
+  const payload = await readServiceJSON<unknown>(upstreamResponse);
+  return Response.json(payload, { status: upstreamResponse.status || 502 });
+}
+
+async function saveCalendarSubscription(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const cookieStore = await cookies();
+  let session = decodeMoodleSession(cookieStore.get(MOODLE_SESSION_COOKIE)?.value, userId);
+  if (!session) {
+    const restored = await restoreMoodleSession(userId);
+    if (!restored.ok) {
+      return moodleNotConnectedResponse(restored.error);
+    }
+    session = restored.session;
+  }
+
+  const requestUrl = new URL(request.url);
+  const search = upstreamSearch(requestUrl.searchParams);
+  const body = await request.text();
+  const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/courses${search}`, {
     method: "POST",
     cache: "no-store",
     headers: {
