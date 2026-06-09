@@ -9,11 +9,11 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import { Filter, Layers, Globe } from "lucide-react";
+import { FileIcon } from "@dotnaos/react-ui/web";
 import type { Material } from "@/lib/dashboard-data";
 import {
-  countMaterialsForFilter,
   filterMaterialsBySection,
   type MaterialTypeFilter,
 } from "@/lib/material-filters";
@@ -44,8 +44,6 @@ export function MaterialsOutline({
     () => filteredSections.reduce((total, [, sectionMaterials]) => total + sectionMaterials.length, 0),
     [filteredSections],
   );
-  const pdfCount = useMemo(() => countMaterialsForFilter(materials, "pdf"), [materials]);
-  const pagesCount = useMemo(() => countMaterialsForFilter(materials, "pages"), [materials]);
 
   if (materialsLoading) {
     return <LoadingRows label="Loading materials" />;
@@ -59,9 +57,6 @@ export function MaterialsOutline({
       header={
         <MaterialTypeFilterSelect
           filter={typeFilter}
-          materialsCount={materials.length}
-          pagesCount={pagesCount}
-          pdfCount={pdfCount}
           onFilterChange={setTypeFilter}
         />
       }
@@ -101,24 +96,23 @@ export function MaterialsOutline({
 
 function MaterialTypeFilterSelect({
   filter,
-  materialsCount,
-  pagesCount,
-  pdfCount,
   onFilterChange,
 }: {
   filter: MaterialTypeFilter;
-  materialsCount: number;
-  pagesCount: number;
-  pdfCount: number;
   onFilterChange: (filter: MaterialTypeFilter) => void;
 }) {
   return (
     <Select value={filter} onValueChange={(value) => onFilterChange(value as MaterialTypeFilter)}>
       <SelectTrigger
         aria-label="Materialtyp filtern"
-        className="h-11 w-full rounded-full border-0 bg-secondary px-4 text-sm shadow-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:min-w-[12rem]"
+        className={cn(
+          "flex !h-11 !w-11 !min-w-[44px] !max-w-[44px] shrink-0 items-center justify-center rounded-full border-0 !p-0 shadow-none transition-colors focus-visible:ring-2 focus-visible:ring-ring [&>svg]:hidden [&>span:last-child]:hidden",
+          filter !== "all" ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+        )}
       >
-        <SelectValue />
+        <span className="flex items-center justify-center">
+          <Filter className="size-5 text-current" aria-hidden />
+        </span>
       </SelectTrigger>
       <SelectContent
         className="rounded-3xl border-0 bg-card p-2 text-card-foreground shadow-xl"
@@ -126,13 +120,22 @@ function MaterialTypeFilterSelect({
         sideOffset={6}
       >
         <SelectItem className="rounded-2xl px-3 py-2.5" value="all">
-          Alle Typen ({materialsCount})
+          <div className="flex items-center gap-2">
+            <Layers className="size-4" />
+            <span>Alle Ressourcen</span>
+          </div>
         </SelectItem>
         <SelectItem className="rounded-2xl px-3 py-2.5" value="pdf">
-          PDFs ({pdfCount})
+          <div className="flex items-center gap-2">
+            <FileIcon filename="example.pdf" size={16} />
+            <span>PDFs</span>
+          </div>
         </SelectItem>
         <SelectItem className="rounded-2xl px-3 py-2.5" value="pages">
-          Seiten & Ressourcen ({pagesCount})
+          <div className="flex items-center gap-2">
+            <Globe className="size-4" />
+            <span>Seiten & Ressourcen</span>
+          </div>
         </SelectItem>
       </SelectContent>
     </Select>

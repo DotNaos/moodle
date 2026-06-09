@@ -20,6 +20,12 @@ import type {
   CodexChatMessage,
   MoodleUIAction,
 } from "@/lib/codex-actions";
+import {
+  deleteCodexAuth,
+  getCodexAuthStatus,
+  runCodexConnectFlow,
+  type CodexDeviceCode,
+} from "@/lib/codex-auth-client";
 import { readCodexStream } from "@/lib/codex-stream-client";
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
@@ -54,28 +60,6 @@ type CodexAuthStatus = "checking" | "missing" | "connecting" | "connected";
 type LoadedResourceContext = CodexActionResult["loadedResources"];
 
 const MAX_CODEX_ACTION_TURNS = 8;
-
-type CodexAuthEvent =
-  | {
-      type: "device_code";
-      verificationUri: string;
-      userCode: string;
-      expiresInSeconds?: number;
-    }
-  | {
-      type: "browser_auth";
-      authUrl: string;
-      callbackHost?: string;
-    }
-  | { type: "completed" }
-  | { authenticated: boolean }
-  | { type: "error"; error: string };
-
-type CodexDeviceCode = {
-  verificationUri: string;
-  userCode: string;
-  expiresInSeconds?: number;
-};
 
 export function CodexPanel({
   user,
@@ -113,20 +97,14 @@ export function CodexPanel({
 
     async function checkAuth() {
       try {
-        const response = await fetch("/api/codex/auth", {
-          cache: "no-store",
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          authenticated?: boolean;
-          error?: string;
-        };
+        const payload = await getCodexAuthStatus();
 
         if (cancelled) {
           return;
         }
 
         setAuthStatus(payload.authenticated ? "connected" : "missing");
-        if (!response.ok) {
+        if (!payload.ok) {
           setError(payload.error ?? "Could not check Codex authentication.");
         }
       } catch (authError) {
@@ -179,41 +157,12 @@ export function CodexPanel({
     setError(null);
 
     try {
-      const response = await fetch("/api/codex/auth", {
-        method: "POST",
+      const connected = await runCodexConnectFlow({
+        onDeviceCode: (code) => {
+          setDeviceCode(code);
+          setCopiedCode(false);
+        },
       });
-      const payload = (await response.json().catch(() => ({}))) as CodexAuthEvent;
-
-      if (!response.ok) {
-        throw new Error("error" in payload ? payload.error : "Could not start ChatGPT sign-in.");
-      }
-
-      if ("authenticated" in payload && payload.authenticated) {
-        setDeviceCode(null);
-        setCopiedCode(false);
-        setAuthStatus("connected");
-        return;
-      }
-
-      if ("type" in payload && payload.type === "device_code") {
-        setDeviceCode({
-          verificationUri: payload.verificationUri,
-          userCode: payload.userCode,
-          expiresInSeconds: payload.expiresInSeconds,
-        });
-        setCopiedCode(false);
-      } else if ("type" in payload && payload.type === "browser_auth") {
-        window.open(payload.authUrl, "_blank", "noopener,noreferrer");
-      } else if ("type" in payload && payload.type === "completed") {
-        setDeviceCode(null);
-        setCopiedCode(false);
-        setAuthStatus("connected");
-        return;
-      } else if ("type" in payload && payload.type === "error") {
-        throw new Error(payload.error);
-      }
-
-      const connected = await waitForCodexAuth();
       if (connected) {
         setDeviceCode(null);
         setCopiedCode(false);
@@ -239,11 +188,8 @@ export function CodexPanel({
     setError(null);
 
     try {
-      const response = await fetch("/api/codex/auth", {
-        method: "DELETE",
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
+      const payload = await deleteCodexAuth();
+      if (!payload.ok) {
         throw new Error(payload.error ?? "Could not sign out of ChatGPT.");
       }
       setMessages([]);
@@ -553,35 +499,6 @@ export function CodexPanel({
       </form>
     </aside>
   );
-}
-
-async function waitForCodexAuth(): Promise<boolean> {
-  const deadline = Date.now() + 15 * 60 * 1000;
-
-  while (Date.now() < deadline) {
-    await sleep(2_000);
-
-    const response = await fetch("/api/codex/auth", {
-      cache: "no-store",
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      authenticated?: boolean;
-      error?: string;
-    };
-
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Could not check Codex authentication.");
-    }
-    if (payload.authenticated) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function buildMoodleContext({

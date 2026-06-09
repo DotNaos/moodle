@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Show, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 
@@ -12,6 +12,8 @@ import { HeaderActionsMenu } from "@/components/header-actions-menu";
 import { CodexPanel } from "@/components/codex-panel";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
+import { ChatPage } from "@/components/chat-page";
+import { HomeMobileNav } from "@/components/home-mobile-nav";
 import { HomeSidebar } from "@/components/home-sidebar";
 import { MobileBottomNav, type MobileMoodleTab } from "@/components/mobile-bottom-nav";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
@@ -48,6 +50,7 @@ import {
 } from "@/lib/moodle-api";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import { EMPTY_STUDY_OUTLINE, type StudyOutline } from "@/lib/study-outline";
+import type { HomeView } from "@/lib/home-navigation";
 import { cn } from "@/lib/utils";
 
 const MOODLE_SERVICES_URL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL ?? "https://moodle-services.os-home.net";
@@ -59,11 +62,22 @@ export default function Home() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsByCourseId, setMaterialsByCourseId] = useState<Record<string, Material[]>>({});
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const route = parseDashboardRoute(window.location.pathname, window.location.search);
+    return route.homeView === "chat" ? route.courseId : null;
+  });
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [studyMode, setStudyMode] = useState<StudyMode>("materials");
   const [navigationMode, setNavigationMode] = useState<"courses" | "materials">("courses");
-  const [homeView, setHomeView] = useState<"courses" | "calendar">("courses");
+  const [homeView, setHomeView] = useState<HomeView>(() => {
+    if (typeof window === "undefined") {
+      return "courses";
+    }
+    return parseDashboardRoute(window.location.pathname, window.location.search).homeView;
+  });
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,7 +86,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [needsConnection, setNeedsConnection] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
-  const [codexOpen, setCodexOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [courseHubOpen, setCourseHubOpen] = useState(true);
   const [mobileMaterialPreviewOpen, setMobileMaterialPreviewOpen] = useState(false);
@@ -149,7 +162,10 @@ export default function Home() {
       typeof window === "undefined"
         ? defaultDashboardRoute()
         : parseDashboardRoute(window.location.pathname, window.location.search);
-    const hasDeepLink = Boolean(initialRoute.courseId) || initialRoute.homeView === "calendar";
+    const hasDeepLink =
+      Boolean(initialRoute.courseId) ||
+      initialRoute.homeView === "calendar" ||
+      initialRoute.homeView === "chat";
 
     const cached = readDashboardCache(userId);
     if (cached && !hasDeepLink) {
@@ -220,17 +236,7 @@ export default function Home() {
     return [...groups.entries()];
   }, [materials]);
 
-  const mobileTab: MobileMoodleTab = codexOpen
-    ? studyMode === "recordings"
-      ? "recordings"
-      : studyMode === "formula"
-        ? "formula"
-      : studyMode === "tasks"
-        ? "tasks"
-        : studyMode === "script"
-          ? "script"
-          : "materials"
-    : studyMode === "tasks"
+  const mobileTab: MobileMoodleTab = studyMode === "tasks"
       ? "tasks"
       : studyMode === "script"
         ? "script"
@@ -241,7 +247,6 @@ export default function Home() {
           : "materials";
   const dashboardRouteInput = useMemo(
     () => ({
-      codexOpen,
       courseHubOpen,
       homeView,
       navigationMode,
@@ -253,7 +258,6 @@ export default function Home() {
       studyMode,
     }),
     [
-      codexOpen,
       courseHubOpen,
       homeView,
       navigationMode,
@@ -276,10 +280,26 @@ export default function Home() {
     );
   }, []);
 
+  const navigateHomeView = useCallback(
+    (value: HomeView) => {
+      navigateDashboard({
+        courseHubOpen: true,
+        homeView: value,
+        navigationMode: "courses",
+        recordingId: null,
+        selectedCourseId: null,
+        selectedMaterialId: null,
+        selectedScriptSectionId: null,
+        selectedTaskId: null,
+        studyMode: "materials",
+      });
+    },
+    [navigateDashboard],
+  );
+
   function backToCourses() {
     setSidebarCollapsed(false);
     navigateDashboard({
-      codexOpen: false,
       courseHubOpen: true,
       homeView: "courses",
       navigationMode: "courses",
@@ -294,7 +314,6 @@ export default function Home() {
 
   function openCourseRoot() {
     navigateDashboard({
-      codexOpen: false,
       courseHubOpen: false,
       selectedMaterialId: null,
       selectedScriptSectionId: null,
@@ -315,7 +334,6 @@ export default function Home() {
 
   function enterStudyMode(mode: StudyMode) {
     navigateDashboard({
-      codexOpen: false,
       courseHubOpen: false,
       navigationMode: "materials",
       studyMode: mode,
@@ -331,8 +349,6 @@ export default function Home() {
   const showSidebar = showHomeSidebar || showCourseSidebar;
 
   const navBreadcrumbProps = {
-    coursesCount: courses.length,
-    filteredCoursesCount: filteredCourses.length,
     courseHubOpen,
     homeView,
     navigationMode,
@@ -374,7 +390,10 @@ export default function Home() {
         typeof window === "undefined"
           ? defaultDashboardRoute()
           : parseDashboardRoute(window.location.pathname, window.location.search);
-      const preserveNavigation = Boolean(activeRoute.courseId);
+      const preserveNavigation =
+        activeRoute.homeView === "chat" ||
+        activeRoute.homeView === "calendar" ||
+        Boolean(activeRoute.courseId);
 
       setUser(userResponse);
       setCourses(courseList);
@@ -543,9 +562,6 @@ export default function Home() {
       if (dashboardRoutesEqual(route, dashboardRouteFromInput(dashboardRouteInputRef.current))) {
         return;
       }
-
-      setCodexOpen(route.codexOpen);
-
       if (route.homeView === "calendar" && !route.courseId) {
         setNavigationMode("courses");
         setHomeView("calendar");
@@ -559,9 +575,22 @@ export default function Home() {
         return;
       }
 
+      if (route.homeView === "chat") {
+        setNavigationMode("courses");
+        setHomeView("chat");
+        setCourseHubOpen(true);
+        setSelectedCourseId(route.courseId);
+        setSelectedMaterialId(null);
+        setSelectedTaskId(null);
+        setSelectedScriptSectionId(null);
+        setStudyOutline(EMPTY_STUDY_OUTLINE);
+        setMobileMaterialPreviewOpen(false);
+        return;
+      }
+
       if (!route.courseId) {
         setNavigationMode("courses");
-        setHomeView("courses");
+        setHomeView(route.homeView);
         setCourseHubOpen(true);
         setSelectedCourseId(null);
         setSelectedMaterialId(null);
@@ -574,9 +603,9 @@ export default function Home() {
 
       if (courses.length > 0 && !courses.some((course) => String(course.id) === route.courseId)) {
         window.history.replaceState(
-          { ...window.history.state, as: "/", url: "/" },
+          { ...window.history.state, as: "/courses", url: "/courses" },
           "",
-          "/",
+          "/courses",
         );
         void applyDashboardRouteRef.current(defaultDashboardRoute());
         return;
@@ -677,12 +706,10 @@ export default function Home() {
           >
             <DashboardHeader
               className="md:hidden"
-              codexOpen={codexOpen}
               loading={loading}
               navBreadcrumb={navBreadcrumbProps}
               refreshing={refreshing}
               user={user}
-              onToggleCodex={() => navigateDashboard({ codexOpen: !codexOpen })}
               onRefresh={() => void loadDashboard()}
             />
 
@@ -703,13 +730,11 @@ export default function Home() {
               <section className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 pb-24 md:h-full md:min-h-0 md:gap-0 md:overflow-hidden md:bg-background md:pb-0">
                 <DashboardHeader
                   className="hidden shrink-0 border-b border-border px-4 py-2.5 md:flex md:pl-4 md:pr-4"
-                  codexOpen={codexOpen}
                   loading={loading}
                   navBreadcrumb={navBreadcrumbProps}
                   refreshing={refreshing}
                   sidebarCollapsed={sidebarCollapsed}
                   user={user}
-                  onToggleCodex={() => navigateDashboard({ codexOpen: !codexOpen })}
                   onRefresh={() => void loadDashboard()}
                   onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
                 />
@@ -718,35 +743,16 @@ export default function Home() {
                     "grid min-h-0 w-full min-w-0 flex-1 gap-3 md:items-stretch md:gap-0 md:overflow-hidden",
                     showSidebar
                       ? sidebarCollapsed
-                        ? codexOpen
-                          ? "md:grid-cols-[88px_minmax(0,1fr)_420px]"
-                          : "md:grid-cols-[88px_minmax(0,1fr)]"
-                        : codexOpen
-                          ? "md:grid-cols-[220px_minmax(0,1fr)_420px]"
+                          ? "md:grid-cols-[88px_minmax(0,1fr)]"
                           : "md:grid-cols-[220px_minmax(0,1fr)]"
-                      : codexOpen
-                        ? "md:grid-cols-[minmax(0,1fr)_420px]"
-                        : "md:grid-cols-[minmax(0,1fr)]",
+                      : "md:grid-cols-[minmax(0,1fr)]",
                   )}
                 >
                 {showHomeSidebar ? (
                   <HomeSidebar
                     homeView={homeView}
                     sidebarCollapsed={sidebarCollapsed}
-                    onHomeViewChange={(value) => {
-                      navigateDashboard({
-                        codexOpen: false,
-                        courseHubOpen: true,
-                        homeView: value,
-                        navigationMode: "courses",
-                        recordingId: null,
-                        selectedCourseId: null,
-                        selectedMaterialId: null,
-                        selectedScriptSectionId: null,
-                        selectedTaskId: null,
-                        studyMode: "materials",
-                      });
-                    }}
+                    onHomeViewChange={navigateHomeView}
                   />
                 ) : null}
                 {showCourseSidebar ? (
@@ -763,12 +769,18 @@ export default function Home() {
                 ) : null}
 
                 <div className="min-h-0 min-w-0 md:h-full md:min-h-0 md:overflow-hidden">
-                  {navigationMode === "courses" ? (
+                  {homeView === "chat" ? (
+                    <ChatPage
+                      courses={courses}
+                      selectedCourseId={selectedCourseId}
+                      onCourseChange={(courseId) => navigateDashboard({ selectedCourseId: courseId })}
+                    />
+                  ) : navigationMode === "courses" ? (
                     <CoursesHomePanel
                       categoryOptionGroups={categoryOptionGroups}
                       courseListGroups={courseListGroups}
                       filteredCoursesCount={filteredCourses.length}
-                      homeView={homeView}
+                      homeView={homeView === "calendar" ? "calendar" : "courses"}
                       loading={loading}
                       query={query}
                       selectedCategory={selectedCategory}
@@ -779,23 +791,8 @@ export default function Home() {
                         setSelectedCategory(value);
                         setMaterials([]);
                         navigateDashboard({
-                          codexOpen: false,
                           courseHubOpen: true,
                           homeView: "courses",
-                          navigationMode: "courses",
-                          recordingId: null,
-                          selectedCourseId: null,
-                          selectedMaterialId: null,
-                          selectedScriptSectionId: null,
-                          selectedTaskId: null,
-                          studyMode: "materials",
-                        });
-                      }}
-                      onHomeViewChange={(value) => {
-                        navigateDashboard({
-                          codexOpen: false,
-                          courseHubOpen: true,
-                          homeView: value,
                           navigationMode: "courses",
                           recordingId: null,
                           selectedCourseId: null,
@@ -808,7 +805,6 @@ export default function Home() {
                       onQueryChange={setQuery}
                       onSelectCourse={(courseId) => {
                         navigateDashboard({
-                          codexOpen: false,
                           courseHubOpen: false,
                           homeView: "courses",
                           navigationMode: "materials",
@@ -839,7 +835,6 @@ export default function Home() {
                     onEnterStudyMode={enterStudyMode}
                     onSelectMaterial={(material) => {
                       navigateDashboard({
-                        codexOpen: false,
                         courseHubOpen: false,
                         studyMode: "materials",
                         selectedMaterialId: material.id,
@@ -946,20 +941,12 @@ export default function Home() {
                   />
                   )}
                 </div>
-                {codexOpen ? (
-                  <CodexPanel
-                    courses={courses}
-                    materials={materials}
-                    onApplyActions={applyCodexActions}
-                    pdfState={pdfState}
-                    selectedCourse={selectedCourse}
-                    selectedMaterial={selectedMaterial}
-                    user={user}
-                  />
-                ) : null}
                 </div>
               </section>
             )}
+            {!needsConnection && navigationMode === "courses" ? (
+              <HomeMobileNav activeView={homeView} onViewChange={navigateHomeView} />
+            ) : null}
             {!needsConnection && selectedCourseId && navigationMode === "materials" ? (
               <MobileBottomNav
                 activeTab={mobileTab}
@@ -981,24 +968,20 @@ type NavBreadcrumbProps = ComponentProps<typeof DashboardNavBreadcrumb>;
 
 function DashboardHeader({
   className,
-  codexOpen,
   loading,
   navBreadcrumb,
   refreshing,
   sidebarCollapsed,
   user,
-  onToggleCodex,
   onRefresh,
   onToggleSidebar,
 }: {
   className?: string;
-  codexOpen: boolean;
   loading: boolean;
   navBreadcrumb: NavBreadcrumbProps;
   refreshing: boolean;
   sidebarCollapsed?: boolean;
   user: User | null;
-  onToggleCodex: () => void;
   onRefresh: () => void;
   onToggleSidebar?: () => void;
 }) {
@@ -1021,15 +1004,6 @@ function DashboardHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <Button
-          className="h-11 px-4"
-          onClick={onToggleCodex}
-          type="button"
-          variant={codexOpen ? "default" : "secondary"}
-        >
-          <Bot aria-hidden />
-          <span className="hidden sm:inline">Codex</span>
-        </Button>
         <HeaderActionsMenu
           loading={loading}
           refreshing={refreshing}

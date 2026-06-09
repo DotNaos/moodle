@@ -460,25 +460,22 @@ describe("formula source excerpt", () => {
 
 describe("dashboard URL routing", () => {
   test("parses legacy query URLs for backward compatibility", () => {
-    const route = parseDashboardRouteSearch("?course=42&mode=formula&codex=1");
+    const route = parseDashboardRouteSearch("?course=42&mode=formula");
 
     expect(route.courseId).toBe("42");
     expect(route.mode).toBe("formula");
-    expect(route.codexOpen).toBe(true);
   });
 
   test("parses path-based course mode URLs", () => {
-    const route = parseDashboardRoute("/courses/42/tasks", "?codex=1");
+    const route = parseDashboardRoute("/courses/42/tasks", "");
 
     expect(route.courseId).toBe("42");
     expect(route.mode).toBe("tasks");
     expect(route.courseHubOpen).toBe(false);
-    expect(route.codexOpen).toBe(true);
   });
 
   test("builds URLs for selected course modes and nested targets", () => {
     expect(buildDashboardRouteURL({
-      codexOpen: false,
       courseHubOpen: false,
       homeView: "courses",
       navigationMode: "materials",
@@ -491,7 +488,6 @@ describe("dashboard URL routing", () => {
     })).toBe("/courses/42/script/section-cache");
 
     expect(buildDashboardRouteURL({
-      codexOpen: false,
       courseHubOpen: true,
       homeView: "courses",
       navigationMode: "materials",
@@ -504,7 +500,6 @@ describe("dashboard URL routing", () => {
     })).toBe("/courses/42");
 
     expect(buildDashboardRouteURL({
-      codexOpen: false,
       courseHubOpen: true,
       homeView: "calendar",
       navigationMode: "courses",
@@ -519,7 +514,6 @@ describe("dashboard URL routing", () => {
 
   test("treats courses navigation as home even when a course id is still in memory", () => {
     const route = dashboardRouteFromInput({
-      codexOpen: false,
       courseHubOpen: true,
       homeView: "courses",
       navigationMode: "courses",
@@ -532,6 +526,6 @@ describe("dashboard URL routing", () => {
     });
 
     expect(route.courseId).toBeNull();
-    expect(dashboardRoutesEqual(route, parseDashboardRoute("/"))).toBe(true);
+    expect(dashboardRoutesEqual(route, parseDashboardRoute("/courses"))).toBe(true);
   });
 });

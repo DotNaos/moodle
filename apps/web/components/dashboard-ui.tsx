@@ -1,7 +1,7 @@
 "use client";
 
 import { FileIcon } from "@dotnaos/react-ui/web";
-import { ExternalLink, FileText, ImageIcon } from "lucide-react";
+import { ExternalLink, FileArchive, FileText, Globe, ImageIcon } from "lucide-react";
 import { useState } from "react";
 
 import type { Course, Material } from "@/lib/dashboard-data";
@@ -42,16 +42,18 @@ export function CourseThumbnail({
 }: {
   course: Course;
   active?: boolean;
-  size?: "default" | "large";
+  size?: "compact" | "default" | "large";
 }) {
   const imageUrl = courseImageUrl(course);
   const [failed, setFailed] = useState(false);
-  const dimensions = size === "large" ? "h-16 w-24" : "h-14 w-16";
+  const dimensions = size === "large" ? "h-16 w-24" : size === "compact" ? "h-9 w-12" : "h-14 w-16";
+  const radius = size === "compact" ? "rounded-xl" : "rounded-2xl";
 
   return (
     <span
       className={cn(
-        "relative shrink-0 overflow-hidden rounded-2xl bg-secondary",
+        "relative shrink-0 overflow-hidden bg-secondary",
+        radius,
         dimensions,
         active && "bg-primary-foreground/15",
       )}
@@ -169,27 +171,33 @@ export function MaterialGridCard({
   material: Material;
   onSelect: () => void;
 }) {
-  const materialType = material.fileType?.toUpperCase() || material.type || "Resource";
+  const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
+  const isFile = Boolean(material.fileType) || hasExtension;
+  const isZip = material.fileType?.toLowerCase() === "zip" || /\.zip$/i.test(material.name);
+  const filename = material.fileType ? `${material.name}.${material.fileType}` : material.name;
 
   return (
     <div
       className={cn(
-        "relative flex w-36 flex-col gap-2 rounded-2xl p-3 transition-colors",
+        "group relative flex h-full w-36 flex-col gap-2 rounded-2xl p-3 transition-colors",
         active ? "bg-primary text-primary-foreground" : "bg-secondary/60 hover:bg-secondary",
       )}
     >
       <button className="flex flex-col items-start gap-2 text-left" type="button" onClick={onSelect}>
-        <FileIcon className="shrink-0" filename={material.name} size={28} />
-        <span className="line-clamp-2 text-sm font-medium leading-snug">{material.name}</span>
-        <span className={cn("text-xs", active ? "text-primary-foreground/70" : "text-muted-foreground")}>
-          {materialType}
-        </span>
+        {!isFile ? (
+          <Globe className="shrink-0 text-muted-foreground" size={28} />
+        ) : isZip ? (
+          <FileArchive className="shrink-0 text-muted-foreground" size={28} />
+        ) : (
+          <FileIcon className="shrink-0" filename={filename} size={28} />
+        )}
+        <span className="line-clamp-2 text-sm font-medium leading-snug break-words">{material.name}</span>
       </button>
       {material.url ? (
         <a
           aria-label={`Open ${material.name} in Moodle`}
           className={cn(
-            "absolute right-2 top-2 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
+            "absolute right-2 top-2 grid size-8 place-items-center rounded-full text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-foreground focus-within:opacity-100 group-hover:opacity-100",
             active && "text-primary-foreground/70 hover:bg-primary-foreground/15 hover:text-primary-foreground",
           )}
           href={material.url}
@@ -212,7 +220,11 @@ export function MaterialRow({
   material: Material;
   onSelect: () => void;
 }) {
-  const materialType = material.fileType?.toUpperCase() || material.type || "Resource";
+
+  const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
+  const isFile = Boolean(material.fileType) || hasExtension;
+  const isZip = material.fileType?.toLowerCase() === "zip" || /\.zip$/i.test(material.name);
+  const filename = material.fileType ? `${material.name}.${material.fileType}` : material.name;
 
   return (
     <div
@@ -228,20 +240,23 @@ export function MaterialRow({
             active && "bg-primary-foreground/15",
           )}
         >
-          <FileIcon filename={material.name} size={20} />
+          {!isFile ? (
+            <Globe className="text-muted-foreground" size={20} />
+          ) : isZip ? (
+            <FileArchive className="text-muted-foreground" size={20} />
+          ) : (
+            <FileIcon filename={filename} size={20} />
+          )}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{material.name}</span>
-          <span className={cn("block truncate text-xs", active ? "text-primary-foreground/70" : "text-muted-foreground")}>
-            {materialType}
-          </span>
         </span>
       </button>
       {material.url ? (
         <a
           aria-label={`Open ${material.name} in Moodle`}
           className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
+            "grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-foreground focus-within:opacity-100 group-hover:opacity-100",
             active && "text-primary-foreground/70 hover:bg-primary-foreground/15 hover:text-primary-foreground",
           )}
           href={material.url}

@@ -1,9 +1,11 @@
 "use client";
 
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Columns3, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { CalendarSubscriptionForm } from "@/components/calendar-subscription-form";
+import { CalendarEventDetail, MonthCalendarGrid } from "@/components/calendar-views";
+import { WeekTimeGrid } from "@/components/calendar-week-grid";
+import { CalendarSubscriptionSettings } from "@/components/calendar-subscription-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -22,7 +24,6 @@ import {
   parseDayKey,
   startOfMonth,
   startOfWeek,
-  WEEKDAY_LABELS,
   type CalendarGridEventPreview,
 } from "@/lib/calendar-grid";
 import { readStoredCalendarUrl } from "@/lib/calendar-storage";
@@ -115,7 +116,7 @@ export function CalendarPanel({
       const message = getErrorMessage(err);
       setError(
         message.toLowerCase().includes("calendar url is not configured")
-          ? "Noch kein Kalender hinterlegt. Speichere oben deine iCal-URL von der Schule."
+          ? "Noch kein Kalender hinterlegt. Verbinde deine iCal-URL über das Link-Symbol."
           : message,
       );
       setEvents([]);
@@ -144,90 +145,89 @@ export function CalendarPanel({
 
   if (scope === "course" && !course) {
     return (
-      <CenteredCalendarShell compact={compact}>
+      <CenteredCalendarShell compact={compact} wide={viewMode === "week"}>
         <EmptyCalendarState title="Kein Kurs ausgewählt" description="Wähle zuerst einen Kurs aus." />
       </CenteredCalendarShell>
     );
   }
 
   return (
-    <CenteredCalendarShell compact={compact}>
+    <CenteredCalendarShell compact={compact} wide={viewMode === "week"}>
       {!compact ? (
         <header className="mb-5 flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
           <CalendarHeader course={course} loading={loading} onRefresh={loadCalendar} scope={scope} />
         </header>
       ) : null}
 
-      <div className="flex flex-col gap-5">
-        {scope === "all" ? <CalendarSubscriptionForm onSaved={loadCalendar} /> : null}
-
+      <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1">
-            <Button aria-label="Vorheriger Zeitraum" size="icon" type="button" variant="secondary" onClick={() => shiftPeriod(-1)}>
-              <ChevronLeft aria-hidden />
-            </Button>
-            <Button className="px-3" type="button" variant="secondary" onClick={goToToday}>
-              Heute
-            </Button>
-            <Button aria-label="Nächster Zeitraum" size="icon" type="button" variant="secondary" onClick={() => shiftPeriod(1)}>
-              <ChevronRight aria-hidden />
-            </Button>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex items-center gap-0.5">
+              <Button aria-label="Vorheriger Zeitraum" size="icon-sm" type="button" variant="ghost" onClick={() => shiftPeriod(-1)}>
+                <ChevronLeft aria-hidden />
+              </Button>
+              <Button className="px-2.5" size="sm" type="button" variant="ghost" onClick={goToToday}>
+                Heute
+              </Button>
+              <Button aria-label="Nächster Zeitraum" size="icon-sm" type="button" variant="ghost" onClick={() => shiftPeriod(1)}>
+                <ChevronRight aria-hidden />
+              </Button>
+            </div>
+            <h2 className="text-base font-semibold tracking-tight">{periodTitle}</h2>
+            {loading ? <Spinner aria-hidden className="size-4 text-muted-foreground" /> : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-full bg-secondary p-1">
+          <div className="flex items-center gap-2">
+            {scope === "all" ? <CalendarSubscriptionSettings onSaved={loadCalendar} /> : null}
+            <div className="flex items-center gap-0.5 rounded-full bg-secondary p-0.5">
               <Button
-                className="h-8 rounded-full px-3"
+                className="h-7 gap-1 rounded-full px-2.5 text-xs"
+                size="sm"
                 type="button"
                 variant={viewMode === "week" ? "default" : "ghost"}
                 onClick={() => setViewMode("week")}
               >
+                <Columns3 aria-hidden className="size-3.5" />
                 Woche
               </Button>
               <Button
-                className="h-8 rounded-full px-3"
+                className="h-7 gap-1 rounded-full px-2.5 text-xs"
+                size="sm"
                 type="button"
                 variant={viewMode === "month" ? "default" : "ghost"}
                 onClick={() => setViewMode("month")}
               >
+                <CalendarDays aria-hidden className="size-3.5" />
                 Monat
               </Button>
             </div>
             {!compact ? (
-              <Button disabled={loading} type="button" variant="secondary" onClick={() => void loadCalendar()}>
+              <Button disabled={loading} size="icon-sm" type="button" variant="ghost" onClick={() => void loadCalendar()}>
                 {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-                Aktualisieren
               </Button>
             ) : null}
           </div>
         </div>
 
-        <div className="text-center">
-          <h2 className="text-lg font-semibold tracking-tight">{periodTitle}</h2>
-          {loading ? (
-            <p className="mt-1 inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner aria-hidden />
-              Kalender wird geladen
-            </p>
-          ) : null}
-        </div>
-
         {error ? <Alert>{error}</Alert> : null}
 
-        <CalendarGrid days={gridDays} viewMode={viewMode} onSelectDay={selectDay} />
-
-        <section className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold">{formatSelectedDayTitle(selectedDayKey)}</h3>
-          {selectedDayEvents.length === 0 ? (
-            <p className="rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground">
-              Keine Termine an diesem Tag.
-            </p>
-          ) : (
-            selectedDayEvents.map((event) => (
-              <CalendarEventRow key={event.uid || `${event.start}-${event.summary}`} event={event} />
-            ))
-          )}
-        </section>
+        {viewMode === "week" ? (
+          <WeekTimeGrid days={gridDays} events={visibleEvents} onSelectDay={selectDay} />
+        ) : (
+          <>
+            <MonthCalendarGrid days={gridDays} onSelectDay={selectDay} />
+            <section className="flex flex-col divide-y divide-border border-t border-border">
+              <h3 className="pt-5 text-sm font-medium">{formatSelectedDayTitle(selectedDayKey)}</h3>
+              {selectedDayEvents.length === 0 ? (
+                <p className="py-4 text-sm text-muted-foreground">Keine Termine an diesem Tag.</p>
+              ) : (
+                selectedDayEvents.map((event) => (
+                  <CalendarEventDetail key={event.uid || `${event.start}-${event.summary}`} event={event} />
+                ))
+              )}
+            </section>
+          </>
+        )}
       </div>
     </CenteredCalendarShell>
   );
@@ -237,97 +237,21 @@ export function CourseCalendarPanel({ course }: { course: Course | null }) {
   return <CalendarPanel course={course} scope="course" />;
 }
 
-function CenteredCalendarShell({ children, compact }: { children: ReactNode; compact?: boolean }) {
+function CenteredCalendarShell({
+  children,
+  compact,
+  wide = false,
+}: {
+  children: ReactNode;
+  compact?: boolean;
+  wide?: boolean;
+}) {
   return (
     <section className={cn("flex min-h-0 flex-1 flex-col", compact ? "overflow-hidden" : "min-h-[60dvh] overflow-hidden rounded-[1.5rem] bg-card md:min-h-0 md:rounded-[2rem]")}>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1 md:px-2 md:py-2">
-        <div className="mx-auto w-full max-w-3xl">{children}</div>
+        <div className={cn("mx-auto w-full", wide ? "max-w-6xl" : "max-w-3xl")}>{children}</div>
       </div>
     </section>
-  );
-}
-
-function CalendarGrid({
-  days,
-  viewMode,
-  onSelectDay,
-}: {
-  days: ReturnType<typeof buildCalendarMonth>;
-  viewMode: CalendarViewMode;
-  onSelectDay: (dayKey: string) => void;
-}) {
-  const previewLimit = viewMode === "week" ? 4 : 2;
-
-  return (
-    <div className="rounded-3xl bg-secondary/40 p-3 md:p-4">
-      <div className="mb-2 grid grid-cols-7 gap-1">
-        {WEEKDAY_LABELS.map((label) => (
-          <div key={label} className="px-1 py-1 text-center text-xs font-medium text-muted-foreground">
-            {label}
-          </div>
-        ))}
-      </div>
-      <div className={cn("grid grid-cols-7 gap-1", viewMode === "week" ? "min-h-36" : "")}>
-        {days.map((day) => (
-          <button
-            key={day.key}
-            className={cn(
-              "relative flex min-h-11 flex-col rounded-2xl border border-transparent bg-background px-1 py-2 text-sm text-foreground shadow-sm transition-colors",
-              viewMode === "month" ? "items-center justify-start" : "items-start justify-start px-2",
-              day.outsideRange && viewMode === "month" ? "text-muted-foreground" : "",
-              day.today && !day.selected ? "border-border" : "",
-              day.selected ? "border-primary bg-primary text-primary-foreground" : "hover:border-border",
-              viewMode === "week" ? "min-h-32" : day.events.length > 0 ? "min-h-16" : "",
-            )}
-            type="button"
-            onClick={() => onSelectDay(day.key)}
-          >
-            <span
-              className={cn(
-                "font-semibold tabular-nums",
-                viewMode === "week" ? "text-base" : "mx-auto",
-                day.selected ? "text-inherit" : "",
-              )}
-            >
-              {day.label}
-            </span>
-            <div className={cn("mt-1 flex w-full flex-col gap-0.5", viewMode === "month" ? "px-0.5" : "")}>
-              {day.events.slice(0, previewLimit).map((event) => (
-                <CalendarGridEventChip key={event.id} day={day} event={event} viewMode={viewMode} />
-              ))}
-              {day.events.length > previewLimit ? (
-                <span className={cn("px-1 text-[10px]", day.selected ? "text-primary-foreground/80" : "text-muted-foreground")}>
-                  +{day.events.length - previewLimit} weitere
-                </span>
-              ) : null}
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CalendarGridEventChip({
-  day,
-  event,
-  viewMode,
-}: {
-  day: ReturnType<typeof buildCalendarMonth>[number];
-  event: CalendarGridEventPreview;
-  viewMode: CalendarViewMode;
-}) {
-  return (
-    <span
-      className={cn(
-        "w-full truncate rounded-md px-1 py-0.5 text-left text-[10px] leading-tight",
-        day.selected ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background/85 text-foreground",
-      )}
-      title={event.summary}
-    >
-      {viewMode === "week" && event.timeLabel ? `${event.timeLabel} ` : null}
-      {event.summary}
-    </span>
   );
 }
 
@@ -358,42 +282,6 @@ function CalendarHeader({
         Aktualisieren
       </Button>
     </>
-  );
-}
-
-function CalendarEventRow({ event }: { event: CalendarEvent }) {
-  const start = parseEventDate(event.start);
-  const end = parseEventDate(event.end);
-  const sameDay = start && end ? start.toDateString() === end.toDateString() : true;
-  const description = cleanEventDescription(event.description);
-
-  return (
-    <article className="flex flex-col gap-3 rounded-2xl bg-secondary px-4 py-3 sm:flex-row sm:items-start sm:gap-5">
-      <div className="w-full shrink-0 sm:w-28">
-        <p className="text-sm font-semibold">{start ? formatDay(start) : "Termin"}</p>
-        <p className="text-xs text-muted-foreground">{start ? formatDate(start) : ""}</p>
-      </div>
-      <div className="min-w-0 flex-1">
-        <h3 className="text-base font-semibold tracking-tight">{event.summary || "Moodle-Termin"}</h3>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
-          {start ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="size-4" aria-hidden />
-              {formatTimeRange(start, end, sameDay)}
-            </span>
-          ) : null}
-          {event.location ? (
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              <MapPin className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">{event.location}</span>
-            </span>
-          ) : null}
-        </div>
-        {description ? (
-          <p className="mt-3 line-clamp-3 whitespace-pre-line text-sm leading-6 text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-    </article>
   );
 }
 
@@ -478,28 +366,7 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-function cleanEventDescription(value: string | undefined): string {
-  return (value ?? "").replace(/\\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
 function parseEventDate(value: string): Date | null {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatDay(date: Date): string {
-  return new Intl.DateTimeFormat("de-CH", { weekday: "short" }).format(date);
-}
-
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat("de-CH", { day: "2-digit", month: "2-digit" }).format(date);
-}
-
-function formatTimeRange(start: Date, end: Date | null, sameDay: boolean): string {
-  const startText = new Intl.DateTimeFormat("de-CH", { hour: "2-digit", minute: "2-digit" }).format(start);
-  if (!end || !sameDay) {
-    return startText;
-  }
-  const endText = new Intl.DateTimeFormat("de-CH", { hour: "2-digit", minute: "2-digit" }).format(end);
-  return `${startText} - ${endText}`;
 }

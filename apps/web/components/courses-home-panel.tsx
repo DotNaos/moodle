@@ -1,14 +1,17 @@
 "use client";
 
-import { CalendarDays, GraduationCap, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { useState } from "react";
 
 import { CalendarPanel } from "@/components/course-calendar-panel";
 import { CourseGridCard, CourseSidebarRow, EmptyState, LoadingRows } from "@/components/dashboard-ui";
-import { GroupedItemsView, type GroupedItemsLayout } from "@/components/grouped-items-view";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import {
+  GroupedItemsLayoutToggle,
+  GroupedItemsView,
+  type GroupedItemsLayout,
+} from "@/components/grouped-items-view";
+import type { HomePanelView } from "@/lib/home-navigation";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -44,68 +47,59 @@ export function CoursesHomePanel({
   query,
   selectedCategory,
   onCategoryChange,
-  onHomeViewChange,
   onQueryChange,
   onSelectCourse,
 }: {
   categoryOptionGroups: { other: CategoryOption[]; semesters: CategoryOption[] };
   courseListGroups: CourseListGroup[];
   filteredCoursesCount: number;
-  homeView: "courses" | "calendar";
+  homeView: HomePanelView;
   loading: boolean;
   selectedCourseId: string | null;
   query: string;
   selectedCategory: string;
   onCategoryChange: (value: string) => void;
-  onHomeViewChange: (value: "courses" | "calendar") => void;
   onQueryChange: (value: string) => void;
   onSelectCourse: (courseId: string) => void;
 }) {
+  const [layout, setLayout] = useState<GroupedItemsLayout>("list");
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-full">
-      <div className={cn("flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:hidden")}>
-        <Button
-          type="button"
-          variant={homeView === "courses" ? "default" : "secondary"}
-          onClick={() => onHomeViewChange("courses")}
-        >
-          <GraduationCap aria-hidden />
-          Kurse
-        </Button>
-        <Button
-          type="button"
-          variant={homeView === "calendar" ? "default" : "secondary"}
-          onClick={() => onHomeViewChange("calendar")}
-        >
-          <CalendarDays aria-hidden />
-          Kalender
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-6 md:py-5">
-        {homeView === "courses" ? (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            <CourseFilters
-              categoryOptionGroups={categoryOptionGroups}
-              query={query}
-              selectedCategory={selectedCategory}
-              onCategoryChange={onCategoryChange}
-              onQueryChange={onQueryChange}
-            />
-            <CourseList
-              courseListGroups={courseListGroups}
-              filteredCoursesCount={filteredCoursesCount}
-              loading={loading}
-              selectedCourseId={selectedCourseId}
-              onSelectCourse={onSelectCourse}
-            />
+      {homeView === "courses" ? (
+        <>
+          <div className="shrink-0 px-4 pt-4 pb-3 md:px-6 md:pt-5">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+              <CourseFilters
+                categoryOptionGroups={categoryOptionGroups}
+                query={query}
+                selectedCategory={selectedCategory}
+                onCategoryChange={onCategoryChange}
+                onQueryChange={onQueryChange}
+              />
+              <GroupedItemsLayoutToggle layout={layout} onLayoutChange={setLayout} />
+            </div>
           </div>
-        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-5">
+            <div className="mx-auto w-full max-w-3xl">
+              <CourseList
+                courseListGroups={courseListGroups}
+                filteredCoursesCount={filteredCoursesCount}
+                layout={layout}
+                loading={loading}
+                selectedCourseId={selectedCourseId}
+                onSelectCourse={onSelectCourse}
+              />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
           <div className="mx-auto w-full max-w-3xl">
             <CalendarPanel compact scope="all" />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -179,18 +173,18 @@ function CategorySelectGroup({ label, options }: { label: string; options: Categ
 function CourseList({
   courseListGroups,
   filteredCoursesCount,
+  layout,
   loading,
   selectedCourseId,
   onSelectCourse,
 }: {
   courseListGroups: CourseListGroup[];
   filteredCoursesCount: number;
+  layout: GroupedItemsLayout;
   loading: boolean;
   selectedCourseId: string | null;
   onSelectCourse: (courseId: string) => void;
 }) {
-  const [layout, setLayout] = useState<GroupedItemsLayout>("list");
-
   if (loading) {
     return <LoadingRows label="Loading courses" />;
   }
@@ -202,13 +196,14 @@ function CourseList({
   return (
     <GroupedItemsView
       layout={layout}
+      showLayoutToggle={false}
+      stickySectionHeaders={false}
       sections={courseListGroups.map((group) => ({
         key: group.key,
         label: group.label,
         items: group.courses,
       }))}
       getItemKey={(course) => String(course.id)}
-      onLayoutChange={setLayout}
       renderGridItem={(course) => (
         <CourseGridCard
           active={String(course.id) === selectedCourseId}

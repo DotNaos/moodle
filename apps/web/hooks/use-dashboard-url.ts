@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import {
   buildDashboardRouteURL,
+  dashboardRouteFromInput,
   parseDashboardRoute,
   readDashboardLocation,
   readDashboardRoute,
@@ -17,17 +18,17 @@ export function replaceDashboardLocation(
 ): void {
   const nextUrl = buildDashboardRouteURL(nextInput);
   const currentUrl = readDashboardLocation();
-  if (nextUrl === currentUrl) {
-    return;
+  const nextRoute = dashboardRouteFromInput(nextInput);
+
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(
+      { ...window.history.state, as: nextUrl, url: nextUrl },
+      "",
+      nextUrl,
+    );
   }
 
-  window.history.replaceState(
-    { ...window.history.state, as: nextUrl, url: nextUrl },
-    "",
-    nextUrl,
-  );
-  const [nextPathname, nextSearch = ""] = nextUrl.split("?", 2);
-  void applyRoute(parseDashboardRoute(nextPathname, nextSearch ? `?${nextSearch}` : ""));
+  void applyRoute(nextRoute);
 }
 
 export function useDashboardRouteHydration({

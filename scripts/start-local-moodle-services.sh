@@ -11,6 +11,7 @@ if [[ ! -d "$SERVICES_DIR" ]]; then
 fi
 
 cd "$SERVICES_DIR"
+docker build -t moodle-study-codex-runner:local docker/codex-runner
 docker compose -f docker-compose.dev.yml up -d --build
 
 echo "Waiting for moodle-services healthcheck..."

@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react";
 
 import type { StudyMode } from "@/components/study-mode-actions";
+import type { HomeView } from "@/lib/home-navigation";
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import type { StudyOutline } from "@/lib/study-outline";
@@ -22,8 +23,6 @@ function studyModeLabel(studyMode: StudyMode): string {
 }
 
 function buildSegments({
-  coursesCount,
-  filteredCoursesCount,
   homeView,
   navigationMode,
   selectedCourse,
@@ -37,9 +36,7 @@ function buildSegments({
   onOpenStudyModeRoot,
   courseHubOpen,
 }: {
-  coursesCount: number;
-  filteredCoursesCount: number;
-  homeView: "courses" | "calendar";
+  homeView: HomeView;
   navigationMode: "courses" | "materials";
   courseHubOpen: boolean;
   selectedCourse: Course | null;
@@ -51,16 +48,13 @@ function buildSegments({
   onBackToCourses: () => void;
   onOpenCourseRoot: () => void;
   onOpenStudyModeRoot: () => void;
-}): { segments: BreadcrumbSegment[]; meta?: string } {
+}): BreadcrumbSegment[] {
   if (navigationMode === "courses") {
     if (homeView === "calendar") {
-      return { segments: [{ label: "Kalender" }], meta: "120 Tage" };
+      return [{ label: "Kalender" }];
     }
 
-    return {
-      segments: [{ label: "Courses" }],
-      meta: `${filteredCoursesCount} / ${coursesCount}`,
-    };
+    return [{ label: "Courses" }];
   }
 
   const segments: BreadcrumbSegment[] = [{ label: "Courses", onClick: onBackToCourses }];
@@ -70,7 +64,7 @@ function buildSegments({
   }
 
   if (courseHubOpen) {
-    return { segments };
+    return segments;
   }
 
   const leafLabel = getLeafLabel({
@@ -91,7 +85,7 @@ function buildSegments({
     segments.push({ label: leafLabel });
   }
 
-  return { segments };
+  return segments;
 }
 
 function getLeafLabel({
@@ -124,8 +118,6 @@ function getLeafLabel({
 
 export function DashboardNavBreadcrumb({
   className,
-  coursesCount,
-  filteredCoursesCount,
   homeView,
   navigationMode,
   courseHubOpen,
@@ -140,9 +132,7 @@ export function DashboardNavBreadcrumb({
   onOpenStudyModeRoot,
 }: {
   className?: string;
-  coursesCount: number;
-  filteredCoursesCount: number;
-  homeView: "courses" | "calendar";
+  homeView: HomeView;
   navigationMode: "courses" | "materials";
   courseHubOpen: boolean;
   selectedCourse: Course | null;
@@ -155,9 +145,7 @@ export function DashboardNavBreadcrumb({
   onOpenCourseRoot: () => void;
   onOpenStudyModeRoot: () => void;
 }) {
-  const { segments, meta } = buildSegments({
-    coursesCount,
-    filteredCoursesCount,
+  const segments = buildSegments({
     homeView,
     navigationMode,
     courseHubOpen,
@@ -198,7 +186,6 @@ export function DashboardNavBreadcrumb({
           );
         })}
       </ol>
-      {meta ? <span className="shrink-0 text-xs text-muted-foreground">{meta}</span> : null}
     </nav>
   );
 }

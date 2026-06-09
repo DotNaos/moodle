@@ -153,7 +153,7 @@ export function CourseMainPanel({
     }
 
     return (
-      <CoursePanelShell>
+      <CoursePanelShell course={course}>
         <MaterialsOutline
           materials={materials}
           materialsBySection={materialsBySection}
@@ -167,7 +167,7 @@ export function CourseMainPanel({
 
   if (studyMode === "tasks" && !selectedTaskId) {
     return (
-      <CoursePanelShell>
+      <CoursePanelShell course={course}>
         <TaskOutline selectedTaskId={selectedTaskId} tasks={studyOutline.tasks} onSelectTask={onSelectTask} />
       </CoursePanelShell>
     );
@@ -175,7 +175,7 @@ export function CourseMainPanel({
 
   if (studyMode === "script" && !selectedScriptSectionId) {
     return (
-      <CoursePanelShell>
+      <CoursePanelShell course={course}>
         <ScriptOutline
           scriptSections={studyOutline.scriptSections}
           selectedScriptSectionId={selectedScriptSectionId}
@@ -212,11 +212,14 @@ export function CourseMainPanel({
   );
 }
 
-function CoursePanelShell({ children }: { children: ReactNode }) {
+function CoursePanelShell({ children, course }: { children: ReactNode; course?: Course | null }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-full">
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-6 md:py-5">
-        <div className="mx-auto w-full max-w-3xl">{children}</div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {course ? <CourseHero course={course} /> : null}
+        <div className="mx-auto w-full max-w-3xl px-4 py-4 md:px-6 md:py-5">
+          {children}
+        </div>
       </div>
     </section>
   );

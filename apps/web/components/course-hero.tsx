@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { Course } from "@/lib/dashboard-data";
-import { courseImageUrl, courseSubtitle, courseTitle } from "@/lib/dashboard-data";
+import { courseImageUrl, courseTitle } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
 export function CourseHero({ className, course }: { className?: string; course: Course }) {
@@ -45,18 +45,21 @@ export function CourseHero({ className, course }: { className?: string; course: 
         />
 
         <div className="relative flex h-full min-h-[inherit] flex-col justify-end px-5 py-6 md:px-8 md:py-8">
-          <p className="text-sm font-medium text-white/75">{courseSubtitle(course)}</p>
-          <h2 className="mt-1 max-w-3xl text-2xl font-semibold tracking-tight text-white text-balance md:text-3xl">
-            {courseTitle(course)}
-          </h2>
           {course.viewUrl ? (
-            <Button asChild className="mt-4 w-fit rounded-full" variant="secondary">
+            <Button
+              asChild
+              className="absolute top-5 right-5 rounded-full md:top-6 md:right-8"
+              variant="secondary"
+            >
               <a href={course.viewUrl} target="_blank" rel="noreferrer">
                 In Moodle öffnen
                 <ExternalLink aria-hidden className="size-4" />
               </a>
             </Button>
           ) : null}
+          <h2 className="max-w-3xl text-2xl font-semibold tracking-tight text-white text-balance md:text-3xl">
+            {courseTitle(course)}
+          </h2>
         </div>
       </div>
     </section>

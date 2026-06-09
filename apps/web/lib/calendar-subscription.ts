@@ -39,6 +39,26 @@ export async function saveCalendarSubscription(url: string): Promise<CalendarSub
   }
 }
 
+const FHGR_STUDIUM_URL = "https://my.fhgr.ch/index.php?id=studium";
+const FHGR_STUNDENPLAN_URL =
+  "https://my.fhgr.ch/index.php?id=445&tx_fhgrlehre_studierendenportal%5Baction%5D=stundenplan&tx_fhgrlehre_studierendenportal%5Bcontroller%5D=Studierendenportal&cHash=44eabb034aa11d69854acc3585a002cd";
+
+export function resolveFhgrCalendarHelpUrl(): string {
+  if (!hasUserSpecificQuery(FHGR_STUNDENPLAN_URL)) {
+    return FHGR_STUNDENPLAN_URL;
+  }
+  return FHGR_STUDIUM_URL;
+}
+
+function hasUserSpecificQuery(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.has("cHash");
+  } catch {
+    return true;
+  }
+}
+
 export function isLikelyCalendarUrl(value: string): boolean {
   try {
     const parsed = new URL(value.trim());

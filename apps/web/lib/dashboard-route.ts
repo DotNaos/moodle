@@ -1,4 +1,5 @@
 import type { StudyMode } from "@/components/study-mode-actions";
+import type { HomeView } from "@/lib/home-navigation";
 
 const ROUTABLE_STUDY_MODES = new Set<StudyMode>(["materials", "tasks", "script", "formula", "recordings"]);
 
@@ -15,10 +16,9 @@ const SEGMENT_TO_STUDY_MODE = Object.fromEntries(
 ) as Record<string, StudyMode>;
 
 export type DashboardRoute = {
-  codexOpen: boolean;
   courseHubOpen: boolean;
   courseId: string | null;
-  homeView: "courses" | "calendar";
+  homeView: HomeView;
   materialId: string | null;
   mode: StudyMode;
   recordingId: string | null;
@@ -27,9 +27,8 @@ export type DashboardRoute = {
 };
 
 export type DashboardRouteURLInput = {
-  codexOpen: boolean;
   courseHubOpen: boolean;
-  homeView: "courses" | "calendar";
+  homeView: HomeView;
   navigationMode: "courses" | "materials";
   recordingId: string | null;
   selectedCourseId: string | null;
@@ -48,7 +47,7 @@ export function readDashboardRoute(): DashboardRoute {
 
 export function readDashboardLocation(): string {
   if (typeof window === "undefined") {
-    return "/";
+    return "/courses";
   }
   return window.location.pathname + window.location.search;
 }
@@ -66,18 +65,23 @@ export function parseDashboardRouteSearch(search: string): DashboardRoute {
 }
 
 export function parseDashboardRoutePath(pathname: string, search = ""): DashboardRoute {
-  const params = new URLSearchParams(search);
-  const codexOpen = params.get("codex") === "1";
-  const segments = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
-
+  const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) {
-    return { ...defaultDashboardRoute(), codexOpen };
+    return defaultDashboardRoute();
+  }
+
+  if (segments[0] === "chat") {
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    return {
+      ...defaultDashboardRoute(),
+      courseId: cleanRouteParam(params.get("course")),
+      homeView: "chat",
+    };
   }
 
   if (segments[0] === "calendar") {
     return {
       ...defaultDashboardRoute(),
-      codexOpen,
       homeView: "calendar",
     };
   }
@@ -88,7 +92,6 @@ export function parseDashboardRoutePath(pathname: string, search = ""): Dashboar
 
     if (!modeSegment) {
       return {
-        codexOpen,
         courseHubOpen: false,
         courseId,
         homeView: "courses",
@@ -102,13 +105,12 @@ export function parseDashboardRoutePath(pathname: string, search = ""): Dashboar
 
     const mode = SEGMENT_TO_STUDY_MODE[modeSegment];
     if (!mode) {
-      return { ...defaultDashboardRoute(), codexOpen };
+      return defaultDashboardRoute();
     }
 
     const resourceId = segments[3] ? decodeURIComponent(segments[3]) : null;
 
     return {
-      codexOpen,
       courseHubOpen: false,
       courseId,
       homeView: "courses",
@@ -120,12 +122,11 @@ export function parseDashboardRoutePath(pathname: string, search = ""): Dashboar
     };
   }
 
-  return { ...defaultDashboardRoute(), codexOpen };
+  return defaultDashboardRoute();
 }
 
 export function defaultDashboardRoute(): DashboardRoute {
   return {
-    codexOpen: false,
     courseHubOpen: true,
     courseId: null,
     homeView: "courses",
@@ -138,7 +139,6 @@ export function defaultDashboardRoute(): DashboardRoute {
 }
 
 export function buildDashboardRouteURL({
-  codexOpen,
   courseHubOpen,
   homeView,
   navigationMode,
@@ -150,15 +150,20 @@ export function buildDashboardRouteURL({
   studyMode,
 }: DashboardRouteURLInput): string {
   if (navigationMode === "courses" || !selectedCourseId) {
-    if (homeView === "calendar") {
-      return withCodexQuery("/calendar", codexOpen);
+    if (homeView === "chat") {
+      return selectedCourseId
+        ? `/chat?course=${encodeURIComponent(selectedCourseId)}`
+        : "/chat";
     }
-    return withCodexQuery("/", codexOpen);
+    if (homeView === "calendar") {
+      return "/calendar";
+    }
+    return "/courses";
   }
 
   const courseBase = `/courses/${encodeURIComponent(selectedCourseId)}`;
   if (courseHubOpen) {
-    return withCodexQuery(courseBase, codexOpen);
+    return courseBase;
   }
 
   const modeSegment = STUDY_MODE_SEGMENTS[studyMode];
@@ -174,10 +179,10 @@ export function buildDashboardRouteURL({
             : null;
 
   if (nestedId) {
-    return withCodexQuery(`${courseBase}/${modeSegment}/${encodeURIComponent(nestedId)}`, codexOpen);
+    return `${courseBase}/${modeSegment}/${encodeURIComponent(nestedId)}`;
   }
 
-  return withCodexQuery(`${courseBase}/${modeSegment}`, codexOpen);
+  return `${courseBase}/${modeSegment}`;
 }
 
 export function dashboardRouteLocation(route: DashboardRouteURLInput): string {
@@ -185,7 +190,6 @@ export function dashboardRouteLocation(route: DashboardRouteURLInput): string {
 }
 
 export function dashboardRouteFromInput({
-  codexOpen,
   courseHubOpen,
   homeView,
   navigationMode,
@@ -198,9 +202,8 @@ export function dashboardRouteFromInput({
 }: DashboardRouteURLInput): DashboardRoute {
   if (navigationMode === "courses" || !selectedCourseId) {
     return {
-      codexOpen,
       courseHubOpen: true,
-      courseId: null,
+      courseId: navigationMode === "courses" && homeView === "chat" ? selectedCourseId : null,
       homeView,
       materialId: null,
       mode: "materials",
@@ -211,7 +214,6 @@ export function dashboardRouteFromInput({
   }
 
   return {
-    codexOpen,
     courseHubOpen,
     courseId: selectedCourseId,
     homeView,
@@ -225,7 +227,6 @@ export function dashboardRouteFromInput({
 
 export function dashboardRoutesEqual(left: DashboardRoute, right: DashboardRoute): boolean {
   return (
-    left.codexOpen === right.codexOpen &&
     left.courseHubOpen === right.courseHubOpen &&
     left.courseId === right.courseId &&
     left.homeView === right.homeView &&
@@ -239,7 +240,6 @@ export function dashboardRoutesEqual(left: DashboardRoute, right: DashboardRoute
 
 export function routeInputFromDashboardRoute(route: DashboardRoute): DashboardRouteURLInput {
   return {
-    codexOpen: route.codexOpen,
     courseHubOpen: route.courseHubOpen,
     homeView: route.homeView,
     navigationMode: route.courseId ? "materials" : "courses",
@@ -273,7 +273,6 @@ function parseLegacyDashboardRouteSearch(search: string): DashboardRoute | null 
   const courseId = cleanRouteParam(params.get("course"));
 
   return {
-    codexOpen: params.get("codex") === "1",
     courseHubOpen: Boolean(courseId) && !params.get("mode"),
     courseId,
     homeView: params.get("view") === "calendar" ? "calendar" : "courses",
@@ -283,13 +282,6 @@ function parseLegacyDashboardRouteSearch(search: string): DashboardRoute | null 
     sectionId: cleanRouteParam(params.get("section")),
     taskId: cleanRouteParam(params.get("task")),
   };
-}
-
-function withCodexQuery(path: string, codexOpen: boolean): string {
-  if (!codexOpen) {
-    return path;
-  }
-  return `${path}?codex=1`;
 }
 
 function cleanRouteParam(value: string | null): string | null {
