@@ -5,13 +5,18 @@ import { MOODLE_SERVICES_URL, moodleInternalHeaders, proxyServiceResponse } from
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
   const { userId } = await auth();
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return proxyServiceResponse(await fetch(`${MOODLE_SERVICES_URL}/api/codex/files`, {
+  const path = new URL(request.url).searchParams.get("path");
+  const upstream = path
+    ? `${MOODLE_SERVICES_URL}/api/codex/files?path=${encodeURIComponent(path)}`
+    : `${MOODLE_SERVICES_URL}/api/codex/files`;
+
+  return proxyServiceResponse(await fetch(upstream, {
     method: "GET",
     cache: "no-store",
     headers: moodleInternalHeaders(userId),

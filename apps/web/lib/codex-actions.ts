@@ -59,8 +59,13 @@ export type CodexStreamEvent =
     }
   | {
       type: "tool";
+      id?: string;
       title: string;
       status: "running" | "completed" | "failed";
+    }
+  | {
+      type: "status";
+      title: string;
     }
   | {
       type: "done";

@@ -2,7 +2,7 @@
 
 import { FileIcon } from "@dotnaos/react-ui/web";
 import { ExternalLink, FileArchive, FileText, Globe, ImageIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseImageUrl, courseTitle } from "@/lib/dashboard-data";
@@ -39,18 +39,33 @@ export function CourseThumbnail({
   course,
   active = false,
   size = "default",
+  circle = false,
 }: {
   course: Course;
   active?: boolean;
   size?: "compact" | "default" | "large";
+  circle?: boolean;
 }) {
   const imageUrl = courseImageUrl(course);
   const [failed, setFailed] = useState(false);
-  const dimensions = size === "large" ? "h-16 w-24" : size === "compact" ? "h-9 w-12" : "h-14 w-16";
-  const radius = size === "compact" ? "rounded-xl" : "rounded-2xl";
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref);
+  const dimensions = circle
+    ? size === "large"
+      ? "size-16"
+      : size === "compact"
+        ? "size-9"
+        : "size-14"
+    : size === "large"
+      ? "h-16 w-24"
+      : size === "compact"
+        ? "h-9 w-12"
+        : "h-14 w-16";
+  const radius = circle ? "rounded-full" : size === "compact" ? "rounded-xl" : "rounded-2xl";
 
   return (
     <span
+      ref={ref}
       className={cn(
         "relative shrink-0 overflow-hidden bg-secondary",
         radius,
@@ -58,7 +73,7 @@ export function CourseThumbnail({
         active && "bg-primary-foreground/15",
       )}
     >
-      {imageUrl && !failed ? (
+      {imageUrl && !failed && inView ? (
         <img
           alt=""
           className="h-full w-full object-cover"
@@ -74,6 +89,36 @@ export function CourseThumbnail({
       )}
     </span>
   );
+}
+
+// Defers image loading until the thumbnail is near the viewport, so long course
+// lists (e.g. the picker modal) only fetch the topmost few images on open.
+function useInView<T extends HTMLElement>(ref: RefObject<T | null>): boolean {
+  const [inView, setInView] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || inView) {
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inView, ref]);
+
+  return inView;
 }
 
 export function CourseSidebarRow({

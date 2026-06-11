@@ -113,7 +113,7 @@ function CourseSidebarButton({
         "flex min-h-12 w-full items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-medium transition-colors",
         active
           ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]",
+          : "text-muted-foreground hover:text-foreground",
       )}
       type="button"
       onClick={onClick}
@@ -141,7 +141,7 @@ function CourseSidebarRailItem({
         "flex w-full flex-col items-center gap-1.5 rounded-2xl px-2.5 py-3.5 text-center transition-colors",
         active
           ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          : "text-muted-foreground hover:text-foreground",
       )}
       type="button"
       onClick={onClick}

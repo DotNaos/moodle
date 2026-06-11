@@ -17,7 +17,7 @@ import {
   filterMaterialsBySection,
   type MaterialTypeFilter,
 } from "@/lib/material-filters";
-import type { ScriptSectionOutline, StudyOutline } from "@/lib/study-outline";
+import type { ScriptSectionOutline, StudyOutline, StudyTaskOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export function MaterialsOutline({
@@ -221,15 +221,43 @@ export function ScriptOutline({
 
 export function groupStudyTasksBySheet(tasks: StudyOutline["tasks"]) {
   const groups: Array<{ sheetTitle: string; tasks: StudyOutline["tasks"] }> = [];
-  for (const task of tasks) {
+  const sortedTasks = [...tasks].sort(compareStudyTasks);
+  for (const task of sortedTasks) {
+    const groupTitle = task.sectionTitle?.trim() || task.sheetTitle;
     const lastGroup = groups.at(-1);
-    if (lastGroup?.sheetTitle === task.sheetTitle) {
+    if (lastGroup?.sheetTitle === groupTitle) {
       lastGroup.tasks.push(task);
     } else {
-      groups.push({ sheetTitle: task.sheetTitle, tasks: [task] });
+      groups.push({ sheetTitle: groupTitle, tasks: [task] });
     }
   }
   return groups;
+}
+
+function compareStudyTasks(left: StudyTaskOutline, right: StudyTaskOutline): number {
+  const sheetCompare = compareNaturalStudyTitles(left.sheetTitle, right.sheetTitle);
+  if (sheetCompare !== 0) {
+    return sheetCompare;
+  }
+  const taskCompare = compareNaturalStudyTitles(left.title, right.title);
+  if (taskCompare !== 0) {
+    return taskCompare;
+  }
+  return compareNaturalStudyTitles(left.sectionTitle ?? "", right.sectionTitle ?? "");
+}
+
+function compareNaturalStudyTitles(left: string, right: string): number {
+  const leftNumber = firstNumber(left);
+  const rightNumber = firstNumber(right);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return left.localeCompare(right, "de", { numeric: true, sensitivity: "base" });
+}
+
+function firstNumber(value: string): number | null {
+  const match = value.match(/\d+/);
+  return match ? Number(match[0]) : null;
 }
 
 export function groupScriptSections(scriptSections: ScriptSectionOutline[]) {

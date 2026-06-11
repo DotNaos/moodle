@@ -182,3 +182,22 @@ button:disabled {
     @apply font-sans;
   }
 }
+@keyframes thinking-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.thinking-dot {
+  /* Longhand (not the `animation` shorthand) so per-dot `[animation-delay:*]`
+     utilities are not reset, keeping the staggered wave. ease-in-out makes the
+     vertical motion smoothly interpolated rather than a hard bounce. */
+  animation-name: thinking-bounce;
+  animation-duration: 1.1s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
 import { groupScriptSections, groupStudyTasksBySheet } from "@/components/course-study-outline";
+import { buildStudyPipelinePreviewSections } from "@/components/study-pipeline-preview";
 import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
 import {
   buildDashboardRouteURL,
@@ -77,6 +78,63 @@ describe("task outline", () => {
           { id: "sheet-02-task-1", sheetTitle: "Aufgabenblatt 02", status: "open", title: "Aufgabe 1" },
         ],
       },
+    ]);
+  });
+
+  test("sorts worksheets naturally and groups them by Moodle section when available", () => {
+    const groups = groupStudyTasksBySheet([
+      { id: "sheet-12", sectionTitle: "Ausblick", sheetTitle: "Aufgabenblatt 12", status: "open", title: "Aufgabenblatt 12" },
+      { id: "sheet-01", sectionTitle: "Einführung", sheetTitle: "Aufgabenblatt 01", status: "open", title: "Aufgabenblatt 01" },
+      { id: "sheet-03", sectionTitle: "Netztopologien", sheetTitle: "Aufgabenblatt 03", status: "open", title: "Aufgabenblatt 03" },
+      { id: "sheet-02", sectionTitle: "Einführung", sheetTitle: "Aufgabenblatt 02", status: "open", title: "Aufgabenblatt 02" },
+    ]);
+
+    expect(groups.map((group) => [group.sheetTitle, group.tasks.map((task) => task.sheetTitle)])).toEqual([
+      ["Einführung", ["Aufgabenblatt 01", "Aufgabenblatt 02"]],
+      ["Netztopologien", ["Aufgabenblatt 03"]],
+      ["Ausblick", ["Aufgabenblatt 12"]],
+    ]);
+  });
+});
+
+describe("study pipeline preview", () => {
+  test("groups resources by section and highlights task solution links", () => {
+    const sections = buildStudyPipelinePreviewSections({
+      courseId: "22584",
+      createdAt: "2026-06-11T08:00:00.000Z",
+      missingSolutions: [],
+      stage: "",
+      status: "planned",
+      summary: {
+        linkedSolutions: 1,
+        missingSolutions: 0,
+        other: 0,
+        scripts: 1,
+        slides: 1,
+        solutions: 1,
+        tasks: 1,
+        totalResources: 3,
+      },
+      materials: [
+        { id: "teil-01", name: "Teil 01", sectionId: "s1", sectionName: "Teil 01", type: "slide" },
+        { id: "task-01", name: "Aufgabenblatt 01", sectionId: "s1", sectionName: "Teil 01", type: "task" },
+        { id: "solution-01", name: "Aufgabenblatt 01 Lösung", sectionId: "s1", sectionName: "Teil 01", type: "solution" },
+      ],
+      taskLinks: [
+        {
+          status: "linked",
+          task: { id: "task-01", name: "Aufgabenblatt 01", type: "task" },
+          solution: { id: "solution-01", name: "Aufgabenblatt 01 Lösung", type: "solution" },
+        },
+      ],
+    });
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.name).toBe("Teil 01");
+    expect(sections[0]?.items.map((item) => [item.name, item.kind])).toEqual([
+      ["Teil 01", "slide"],
+      ["Aufgabenblatt 01", "task"],
+      ["Aufgabenblatt 01 Lösung", "solution"],
     ]);
   });
 });
@@ -327,6 +385,42 @@ describe("script markdown renderer", () => {
 });
 
 describe("task view display normalization", () => {
+  test("sorts worksheets by their natural Aufgabenblatt number", () => {
+    const view = normalizeTaskViewForDisplay({
+      courseId: "22584",
+      generatedAt: "2026-06-08T00:00:00.000Z",
+      progress: { checked: 0, correct: 0, needsReview: 0, open: 3, wrong: 0 },
+      resources: [],
+      scriptMarkdown: "",
+      sheets: [
+        {
+          kind: "PDF",
+          resourceId: "sheet-12",
+          tasks: [{ parts: [], promptMarkdown: "Zwoelf.", sourceResourceId: "sheet-12", status: "open", taskId: "12", title: "Aufgabenblatt 12" }],
+          title: "Aufgabenblatt 12",
+        },
+        {
+          kind: "PDF",
+          resourceId: "sheet-01",
+          tasks: [{ parts: [], promptMarkdown: "Eins.", sourceResourceId: "sheet-01", status: "open", taskId: "01", title: "Aufgabenblatt 01" }],
+          title: "Aufgabenblatt 01",
+        },
+        {
+          kind: "PDF",
+          resourceId: "sheet-02",
+          tasks: [{ parts: [], promptMarkdown: "Zwei.", sourceResourceId: "sheet-02", status: "open", taskId: "02", title: "Aufgabenblatt 02" }],
+          title: "Aufgabenblatt 02",
+        },
+      ],
+    });
+
+    expect(view.sheets.map((sheet) => sheet.title)).toEqual([
+      "Aufgabenblatt 01",
+      "Aufgabenblatt 02",
+      "Aufgabenblatt 12",
+    ]);
+  });
+
   test("splits a study bundle worksheet into selectable Aufgabe sections", () => {
     const view = normalizeTaskViewForDisplay({
       courseId: "22584",
@@ -486,6 +580,18 @@ describe("dashboard URL routing", () => {
       selectedTaskId: null,
       studyMode: "script",
     })).toBe("/courses/42/script/section-cache");
+
+    expect(buildDashboardRouteURL({
+      courseHubOpen: false,
+      homeView: "courses",
+      navigationMode: "materials",
+      recordingId: null,
+      selectedCourseId: "42",
+      selectedMaterialId: null,
+      selectedScriptSectionId: null,
+      selectedTaskId: "sheet-01-task-1",
+      studyMode: "tasks",
+    })).toBe("/courses/42/tasks/sheet-01-task-1");
 
     expect(buildDashboardRouteURL({
       courseHubOpen: true,

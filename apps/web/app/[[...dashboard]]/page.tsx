@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
 import { Show, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 
@@ -88,6 +88,7 @@ export default function Home() {
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [courseHubOpen, setCourseHubOpen] = useState(true);
+  const [chatSidebarOpen, setChatSidebarOpen] = useState(false);
   const [mobileMaterialPreviewOpen, setMobileMaterialPreviewOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedScriptSectionId, setSelectedScriptSectionId] = useState<string | null>(null);
@@ -730,12 +731,14 @@ export default function Home() {
               <section className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 pb-24 md:h-full md:min-h-0 md:gap-0 md:overflow-hidden md:bg-background md:pb-0">
                 <DashboardHeader
                   className="hidden shrink-0 border-b border-border px-4 py-2.5 md:flex md:pl-4 md:pr-4"
+                  chatSidebarOpen={chatSidebarOpen}
                   loading={loading}
                   navBreadcrumb={navBreadcrumbProps}
                   refreshing={refreshing}
                   sidebarCollapsed={sidebarCollapsed}
                   user={user}
                   onRefresh={() => void loadDashboard()}
+                  onToggleChat={homeView === "chat" ? undefined : () => setChatSidebarOpen((current) => !current)}
                   onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
                 />
                 <div
@@ -768,11 +771,18 @@ export default function Home() {
                   />
                 ) : null}
 
-                <div className="min-h-0 min-w-0 md:h-full md:min-h-0 md:overflow-hidden">
+                <div className="flex min-h-0 min-w-0 md:h-full md:min-h-0 md:overflow-hidden">
+                  <div className="min-h-0 min-w-0 flex-1 md:h-full md:min-h-0 md:overflow-hidden">
                   {homeView === "chat" ? (
                     <ChatPage
                       courses={courses}
+                      loadMaterials={loadMaterials}
+                      materials={materials}
+                      pdfState={pdfState}
                       selectedCourseId={selectedCourseId}
+                      selectedMaterial={selectedMaterial}
+                      user={user}
+                      onApplyActions={applyCodexActions}
                       onCourseChange={(courseId) => navigateDashboard({ selectedCourseId: courseId })}
                     />
                   ) : navigationMode === "courses" ? (
@@ -913,6 +923,9 @@ export default function Home() {
                       });
                     }}
                     onSelectedScriptSectionIdChange={(sectionId) => {
+                      if (sectionId === selectedScriptSectionId) {
+                        return;
+                      }
                       navigateDashboard({
                         courseHubOpen: false,
                         selectedScriptSectionId: sectionId,
@@ -922,6 +935,9 @@ export default function Home() {
                       });
                     }}
                     onSelectedTaskIdChange={(taskId) => {
+                      if (taskId === selectedTaskId) {
+                        return;
+                      }
                       navigateDashboard({
                         courseHubOpen: false,
                         selectedTaskId: taskId,
@@ -940,6 +956,24 @@ export default function Home() {
                     pdfScrollCommand={pdfScrollCommand}
                   />
                   )}
+                  </div>
+                  {chatSidebarOpen && homeView !== "chat" ? (
+                    <div className="hidden w-[400px] shrink-0 md:h-full lg:block">
+                      <ChatPage
+                        courses={courses}
+                        loadMaterials={loadMaterials}
+                        materials={materials}
+                        pdfState={pdfState}
+                        selectedCourseId={selectedCourseId}
+                        selectedMaterial={selectedMaterial}
+                        user={user}
+                        variant="sidebar"
+                        onApplyActions={applyCodexActions}
+                        onClose={() => setChatSidebarOpen(false)}
+                        onCourseChange={(courseId) => navigateDashboard({ selectedCourseId: courseId })}
+                      />
+                    </div>
+                  ) : null}
                 </div>
                 </div>
               </section>
@@ -972,18 +1006,22 @@ function DashboardHeader({
   navBreadcrumb,
   refreshing,
   sidebarCollapsed,
+  chatSidebarOpen,
   user,
   onRefresh,
   onToggleSidebar,
+  onToggleChat,
 }: {
   className?: string;
   loading: boolean;
   navBreadcrumb: NavBreadcrumbProps;
   refreshing: boolean;
   sidebarCollapsed?: boolean;
+  chatSidebarOpen?: boolean;
   user: User | null;
   onRefresh: () => void;
   onToggleSidebar?: () => void;
+  onToggleChat?: () => void;
 }) {
   return (
     <header className={cn("flex min-h-0 w-full min-w-0 items-center gap-2", className)}>
@@ -1004,6 +1042,18 @@ function DashboardHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {onToggleChat ? (
+          <Button
+            aria-label={chatSidebarOpen ? "Chat schließen" : "Chat öffnen"}
+            className={cn("shrink-0", chatSidebarOpen ? "text-foreground" : "")}
+            onClick={onToggleChat}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MessageSquare aria-hidden />
+          </Button>
+        ) : null}
         <HeaderActionsMenu
           loading={loading}
           refreshing={refreshing}

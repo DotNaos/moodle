@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import {
   buildDashboardRouteURL,
   dashboardRouteFromInput,
+  dashboardRoutesEqual,
   parseDashboardRoute,
   readDashboardLocation,
   readDashboardRoute,
@@ -19,6 +20,11 @@ export function replaceDashboardLocation(
   const nextUrl = buildDashboardRouteURL(nextInput);
   const currentUrl = readDashboardLocation();
   const nextRoute = dashboardRouteFromInput(nextInput);
+  const currentRoute = readDashboardRoute();
+
+  if (nextUrl === currentUrl && dashboardRoutesEqual(nextRoute, currentRoute)) {
+    return;
+  }
 
   if (nextUrl !== currentUrl) {
     window.history.replaceState(

@@ -165,7 +165,7 @@ export function CourseMainPanel({
     );
   }
 
-  if (studyMode === "tasks" && !selectedTaskId) {
+  if (studyMode === "tasks" && !selectedTaskId && studyOutline.tasks.length > 0) {
     return (
       <CoursePanelShell course={course}>
         <TaskOutline selectedTaskId={selectedTaskId} tasks={studyOutline.tasks} onSelectTask={onSelectTask} />
@@ -173,7 +173,7 @@ export function CourseMainPanel({
     );
   }
 
-  if (studyMode === "script" && !selectedScriptSectionId) {
+  if (studyMode === "script" && !selectedScriptSectionId && studyOutline.scriptSections.length > 0) {
     return (
       <CoursePanelShell course={course}>
         <ScriptOutline

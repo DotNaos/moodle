@@ -7,6 +7,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  StudyPipelinePreview,
+  type StudyPipelineStage,
+  type StudyPipelineStatusResponse,
+} from "@/components/study-pipeline-preview";
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import type { StudyOutline } from "@/lib/study-outline";
@@ -145,6 +150,9 @@ export function TaskStudyPanel({
   const [checking, setChecking] = useState(false);
   const [chatting, setChatting] = useState(false);
   const [scriptIncluded, setScriptIncluded] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<StudyPipelineStatusResponse | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [runningStage, setRunningStage] = useState<StudyPipelineStage | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refiningTarget, setRefiningTarget] = useState<string | null>(null);
@@ -162,7 +170,7 @@ export function TaskStudyPanel({
   const courseId = course ? String(course.id) : null;
   const tasks = useMemo(() => view?.sheets.flatMap((sheet) => sheet.tasks) ?? [], [view]);
   const selectedTask = useMemo(
-    () => tasks.find((task) => task.taskId === selectedTaskId) ?? tasks[0] ?? null,
+    () => selectedTaskId ? tasks.find((task) => task.taskId === selectedTaskId) ?? null : null,
     [selectedTaskId, tasks],
   );
   const selectedSheet = useMemo(
@@ -183,8 +191,6 @@ export function TaskStudyPanel({
     const requestId = loadRequestId.current + 1;
     loadRequestId.current = requestId;
     setView(null);
-    onSelectedTaskIdChange(null);
-    onSelectedScriptSectionIdChange(null);
     onStudyOutlineChange(EMPTY_STUDY_OUTLINE);
     setAnswer("");
     setChatMessages([]);
@@ -200,7 +206,7 @@ export function TaskStudyPanel({
       };
     }
     if (courseId) {
-      void loadView(courseId, false, mode === "script", {
+      void loadPipelineStatus(courseId, mode === "script", {
         requestId,
         signal: controller.signal,
       });
@@ -209,12 +215,6 @@ export function TaskStudyPanel({
       controller.abort();
     };
   }, [courseId, mode, taskViewOverride]);
-
-  useEffect(() => {
-    if (courseId && mode === "script" && view && !scriptIncluded && !loading) {
-      void loadView(courseId, false, true);
-    }
-  }, [courseId, loading, mode, scriptIncluded, view]);
 
   useEffect(() => {
     if (!courseId) {
@@ -246,17 +246,10 @@ export function TaskStudyPanel({
       return;
     }
     onStudyOutlineChange({
-      tasks: view.sheets.flatMap((sheet) =>
-        sheet.tasks.map((task) => ({
-          id: task.taskId,
-          sheetTitle: sheet.title,
-          status: task.status,
-          title: task.title,
-        })),
-      ),
+      tasks: buildTaskOutline(view, pipelineStatus),
       scriptSections: extractScriptSections(view.scriptMarkdown),
     });
-  }, [onStudyOutlineChange, view]);
+  }, [onStudyOutlineChange, pipelineStatus, view]);
 
   if (!course || !courseId) {
     return (
@@ -270,23 +263,71 @@ export function TaskStudyPanel({
     );
   }
 
+  async function loadPipelineStatus(
+    id: string,
+    includeScript: boolean,
+    request?: { requestId: number; signal: AbortSignal },
+  ) {
+    setStatusLoading(true);
+    setLoading(false);
+    setError(null);
+    setMessage(null);
+    try {
+      const status = await studyPipelineRequest<StudyPipelineStatusResponse>(
+        `/courses/${encodeURIComponent(id)}/study-pipeline`,
+        request?.signal ? { signal: request.signal } : undefined,
+      );
+      if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
+        return;
+      }
+      setPipelineStatus(status);
+      if (status.stage === "curated") {
+        await loadView(id, includeScript, request);
+      }
+    } catch (statusError) {
+      if (!isAbortError(statusError)) {
+        setError(formatStudyPipelineError(statusError));
+      }
+    } finally {
+      if (!request || (!request.signal.aborted && request.requestId === loadRequestId.current)) {
+        setStatusLoading(false);
+      }
+    }
+  }
+
+  async function runPipelineStage(stage: StudyPipelineStage) {
+    if (!courseId || runningStage) {
+      return;
+    }
+    setRunningStage(stage);
+    setError(null);
+    setMessage(stageMessage(stage, mode));
+    try {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/${stage}`, {
+        method: "POST",
+        body: JSON.stringify({ includeScript: mode === "script" }),
+      });
+      await loadPipelineStatus(courseId, mode === "script");
+      if (stage === "curated") {
+        await loadView(courseId, mode === "script");
+      }
+      setMessage(stageDoneMessage(stage, mode));
+    } catch (stageError) {
+      setError(formatStudyPipelineError(stageError));
+    } finally {
+      setRunningStage(null);
+    }
+  }
+
   async function loadView(
     id: string,
-    compile: boolean,
     includeScript = mode === "script",
     request?: { requestId: number; signal: AbortSignal },
   ) {
     setLoading(true);
     setError(null);
-    setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
+    setMessage(null);
     try {
-      if (compile) {
-        await studyPipelineRequest(`/courses/${encodeURIComponent(id)}/study-pipeline/${includeScript ? "curated" : "extracted"}`, {
-          method: "POST",
-          body: JSON.stringify({ includeScript }),
-          signal: request?.signal,
-        });
-      }
       const nextView = await studyPipelineRequest<TaskViewResponse>(
         `/courses/${encodeURIComponent(id)}/study-pipeline/task-view?includeScript=${includeScript ? "1" : "0"}`,
         request?.signal ? { signal: request.signal } : undefined,
@@ -295,13 +336,9 @@ export function TaskStudyPanel({
         return;
       }
       applyView(nextView, includeScript);
-      setMessage(compile ? (includeScript ? "Built script." : `Built ${nextView.sheets.flatMap((sheet) => sheet.tasks).length} tasks.`) : null);
+      setMessage(null);
     } catch (loadError) {
       if (isAbortError(loadError)) {
-        return;
-      }
-      if (!compile && shouldBuildStudyPipeline(getErrorMessage(loadError))) {
-        await loadView(id, true, includeScript, request);
         return;
       }
       setError(formatStudyPipelineError(loadError));
@@ -317,11 +354,6 @@ export function TaskStudyPanel({
     setView(displayView);
     onTaskViewChange?.(displayView);
     setScriptIncluded(includeScript);
-    onSelectedTaskIdChange(
-      selectedTaskId && displayView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
-        ? selectedTaskId
-        : displayView.sheets[0]?.tasks[0]?.taskId ?? null,
-    );
   }
 
   async function loadChat(taskId: string) {
@@ -537,7 +569,7 @@ export function TaskStudyPanel({
           setRefineStream((current) => [...current.slice(-5), line]);
         }
       });
-      await loadView(courseId, false, mode === "script" || scriptIncluded);
+      await loadView(courseId, mode === "script" || scriptIncluded);
       setMessage("Codex-improved version saved separately from the extracted source.");
     } catch (refineError) {
       const message = getErrorMessage(refineError);
@@ -567,16 +599,18 @@ export function TaskStudyPanel({
           </div>
           <p className="mt-1 truncate text-sm text-muted-foreground">{courseTitle(course)}</p>
         </div>
-        <Button
-          className="w-fit"
-          disabled={loading}
-          onClick={() => void loadView(courseId, true, mode === "script")}
-          type="button"
-          variant="secondary"
-        >
-          {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-          Aktualisieren
-        </Button>
+        {view ? (
+          <Button
+            className="w-fit"
+            disabled={loading || runningStage === "curated"}
+            onClick={() => void runPipelineStage("curated")}
+            type="button"
+            variant="secondary"
+          >
+            {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+            Neu erstellen
+          </Button>
+        ) : null}
       </div>
 
       {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
@@ -594,26 +628,37 @@ export function TaskStudyPanel({
           </div>
         </div>
       ) : null}
-      <CodexModelPicker
-        authChecking={codexAuthChecking}
-        connected={codexConnected}
-        error={modelError}
-        loading={modelLoading}
-        models={refineModels}
-        onModelChange={(modelId) => {
-          const nextModel = refineModels.find((model) => model.id === modelId) ?? null;
-          setSelectedRefineModel(modelId);
-          setSelectedReasoningEffort((current) => nextReasoningEffort(nextModel, current));
-        }}
-        onReasoningChange={setSelectedReasoningEffort}
-        onInstructionsChange={setRefineInstructions}
-        instructions={refineInstructions}
-        reasoningValue={selectedReasoningEffort}
-        selectedModel={selectedModel}
-        value={selectedRefineModel}
-      />
+      {view ? (
+        <CodexModelPicker
+          authChecking={codexAuthChecking}
+          connected={codexConnected}
+          error={modelError}
+          loading={modelLoading}
+          models={refineModels}
+          onModelChange={(modelId) => {
+            const nextModel = refineModels.find((model) => model.id === modelId) ?? null;
+            setSelectedRefineModel(modelId);
+            setSelectedReasoningEffort((current) => nextReasoningEffort(nextModel, current));
+          }}
+          onReasoningChange={setSelectedReasoningEffort}
+          onInstructionsChange={setRefineInstructions}
+          instructions={refineInstructions}
+          reasoningValue={selectedReasoningEffort}
+          selectedModel={selectedModel}
+          value={selectedRefineModel}
+        />
+      ) : null}
 
-      {loading && !view ? (
+      {!view && !loading ? (
+        <StudyPipelinePreview
+          course={course}
+          loading={statusLoading}
+          mode={mode}
+          onRunStage={(stage) => void runPipelineStage(stage)}
+          runningStage={runningStage}
+          status={pipelineStatus}
+        />
+      ) : loading && !view ? (
         <div className="grid min-h-0 flex-1 place-items-center text-sm text-muted-foreground">
           <span className="flex items-center gap-2"><Spinner aria-hidden /> Loading study material</span>
         </div>
@@ -1075,12 +1120,57 @@ export function normalizeTaskViewForDisplay(view: TaskViewResponse): TaskViewRes
     ...view,
     scriptSections: asArray(view.scriptSections),
     resources: asArray(view.resources),
-    sheets: asArray(view.sheets).map((sheet) => ({
-      ...sheet,
-      solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
-      tasks: asArray(sheet.tasks).flatMap(splitTaskByHeadings),
-    })),
+    sheets: asArray(view.sheets)
+      .map((sheet) => ({
+        ...sheet,
+        solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
+        tasks: asArray(sheet.tasks)
+          .flatMap(splitTaskByHeadings)
+          .sort(compareTaskViewTasks),
+      }))
+      .sort(compareTaskViewSheets),
   };
+}
+
+function buildTaskOutline(
+  view: TaskViewResponse,
+  pipelineStatus: StudyPipelineStatusResponse | null,
+): StudyOutline["tasks"] {
+  const materialsById = new Map(asArray(pipelineStatus?.materials).map((material) => [material.id, material]));
+  return view.sheets.flatMap((sheet) =>
+    sheet.tasks.map((task) => {
+      const material = materialsById.get(task.sourceResourceId) ?? materialsById.get(sheet.resourceId);
+      return {
+        id: task.taskId,
+        sectionTitle: material?.sectionName,
+        sheetTitle: sheet.title,
+        status: task.status,
+        title: task.title,
+      };
+    }),
+  );
+}
+
+function compareTaskViewSheets(left: TaskViewResponse["sheets"][number], right: TaskViewResponse["sheets"][number]): number {
+  return compareNaturalStudyTitles(left.title, right.title);
+}
+
+function compareTaskViewTasks(left: TaskViewTask, right: TaskViewTask): number {
+  return compareNaturalStudyTitles(left.title, right.title);
+}
+
+function compareNaturalStudyTitles(left: string, right: string): number {
+  const leftNumber = firstNumber(left);
+  const rightNumber = firstNumber(right);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return left.localeCompare(right, "de", { numeric: true, sensitivity: "base" });
+}
+
+function firstNumber(value: string): number | null {
+  const match = value.match(/\d+/);
+  return match ? Number(match[0]) : null;
 }
 
 function splitTaskByHeadings(task: TaskViewTask): TaskViewTask[] {
@@ -1872,10 +1962,6 @@ function studyPipelineEndpoint(path: string): string {
   return `/api/study-pipeline${path}`;
 }
 
-function shouldBuildStudyPipeline(message: string): boolean {
-  return /not found|missing|no .*generated|no .*snapshot|no .*artifact|dataset|task forge|study bundle|failed with 404/i.test(message);
-}
-
 async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
   const response = await fetch("/api/codex/run", {
     method: "POST",
@@ -1910,6 +1996,26 @@ function formatStudyPipelineError(error: unknown): string {
   return getErrorMessage(error)
     .replace(/^Task Forge failed/i, "Moodle study pipeline failed")
     .replace(/^Study bundle/i, "Moodle study pipeline");
+}
+
+function stageMessage(stage: StudyPipelineStage, mode: Mode): string {
+  if (stage === "raw") {
+    return "Moodle-Rohdaten werden vorbereitet...";
+  }
+  if (stage === "extracted") {
+    return "Texte werden aus den Moodle-Ressourcen extrahiert...";
+  }
+  return mode === "script" ? "Script wird erstellt..." : "Aufgaben werden erstellt...";
+}
+
+function stageDoneMessage(stage: StudyPipelineStage, mode: Mode): string {
+  if (stage === "raw") {
+    return "Moodle-Rohdaten sind vorbereitet.";
+  }
+  if (stage === "extracted") {
+    return "Texte sind extrahiert.";
+  }
+  return mode === "script" ? "Script wurde erstellt." : "Aufgaben wurden erstellt.";
 }
 
 function isAbortError(error: unknown): boolean {

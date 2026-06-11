@@ -1,5 +1,6 @@
 export type StudyTaskOutline = {
   id: string;
+  sectionTitle?: string;
   sheetTitle: string;
   status: string;
   title: string;
