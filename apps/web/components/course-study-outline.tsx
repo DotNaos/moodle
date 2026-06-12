@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { EmptyState, LoadingRows, MaterialGridCard, MaterialRow } from "@/components/dashboard-ui";
-import { GroupedItemsView, GroupedSectionHeader, type GroupedItemsLayout } from "@/components/grouped-items-view";
+import { GroupedItemsView, type GroupedItemsLayout } from "@/components/grouped-items-view";
 import {
   Select,
   SelectContent,
@@ -174,8 +174,8 @@ export function TaskOutline({
   const nextTask = orderedTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="rounded-3xl bg-secondary/60 px-5 py-5">
+    <div className="flex flex-col gap-5">
+      <header className="rounded-3xl bg-secondary/60 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Dein Fortschritt</p>
@@ -200,8 +200,8 @@ export function TaskOutline({
             </span>
           )}
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-background">
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
+          <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${progress}%` }} />
         </div>
         <p className="mt-2 truncate text-xs text-muted-foreground">
           {nextTask
@@ -210,115 +210,97 @@ export function TaskOutline({
         </p>
       </header>
 
-      {groups.map((group) => (
-        <section className="flex flex-col gap-2.5" key={group.title}>
-          <GroupedSectionHeader label={group.title} />
-          {group.sheets.map((sheet) => (
-            <TaskSheetCard
-              key={sheet.title}
-              onSelectTask={onSelectTask}
-              onTaskStatusChange={onTaskStatusChange}
-              selectedTaskId={selectedTaskId}
-              sheet={sheet}
-            />
-          ))}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function TaskSheetCard({
-  onSelectTask,
-  onTaskStatusChange,
-  selectedTaskId,
-  sheet,
-}: {
-  onSelectTask: (taskId: string) => void;
-  onTaskStatusChange: (taskId: string, status: "done" | "open") => void;
-  selectedTaskId: string | null;
-  sheet: { title: string; tasks: StudyOutline["tasks"] };
-}) {
-  const doneCount = sheet.tasks.filter((task) => isDoneTaskStatus(task.status)).length;
-  const complete = doneCount === sheet.tasks.length;
-
-  return (
-    <div className="rounded-3xl bg-secondary/40 p-2">
-      <div className="flex items-center justify-between gap-3 px-3 pb-1.5 pt-2">
-        <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{sheet.title}</h3>
-        <span
-          className={cn(
-            "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums",
-            complete ? "bg-emerald-500/15 text-emerald-600" : "bg-background text-muted-foreground",
-          )}
-        >
-          {doneCount}/{sheet.tasks.length}
-        </span>
-      </div>
-      <div className="flex flex-col gap-0.5">
-        {sheet.tasks.map((task) => {
-          const done = isDoneTaskStatus(task.status);
-          const active = selectedTaskId === task.id;
-          const statusPill = !done && task.status !== "open" ? taskStatusLabel(task.status) : null;
-          const displayTitle = taskDisplayTitle(task.sheetTitle, task.title);
-          return (
-            <div
-              className={cn(
-                "group flex items-center gap-1 rounded-2xl pr-2 transition-colors",
-                active ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-              )}
-              key={task.id}
-            >
-              <button
-                aria-label={done ? `${displayTitle} als offen markieren` : `${displayTitle} als erledigt markieren`}
+      {groups.map((group) => {
+        const groupTasks = group.sheets.flatMap((sheet) => sheet.tasks);
+        const groupDone = groupTasks.filter((task) => isDoneTaskStatus(task.status)).length;
+        const groupProgress = Math.round((groupDone / groupTasks.length) * 100);
+        const groupComplete = groupDone === groupTasks.length;
+        return (
+          <section className="flex flex-col gap-1.5" key={group.title}>
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{group.title}</h3>
+              <span
                 className={cn(
-                  "grid size-10 shrink-0 place-items-center rounded-full transition-colors",
-                  done
-                    ? "text-emerald-500 hover:bg-emerald-500/10"
-                    : active
-                      ? "text-primary-foreground/80 hover:bg-primary-foreground/15"
-                      : "text-muted-foreground hover:bg-background hover:text-foreground",
+                  "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
+                  groupComplete ? "bg-emerald-500/15 text-emerald-600" : "bg-secondary text-muted-foreground",
                 )}
-                onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
-                type="button"
               >
-                {done ? <CheckCircle2 className="size-5" aria-hidden /> : <Circle className="size-5" aria-hidden />}
-              </button>
-              <button
-                className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 text-left"
-                onClick={() => onSelectTask(task.id)}
-                type="button"
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-sm font-medium",
-                    done && !active && "text-muted-foreground line-through decoration-muted-foreground/40",
-                  )}
-                >
-                  {displayTitle}
-                </span>
-                {statusPill ? (
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background text-muted-foreground",
-                    )}
-                  >
-                    {statusPill}
-                  </span>
-                ) : null}
-                <ChevronRight
-                  aria-hidden
-                  className={cn(
-                    "size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
-                    active ? "text-primary-foreground/80" : "text-muted-foreground",
-                  )}
-                />
-              </button>
+                {groupDone}/{groupTasks.length}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            <div className="mx-1 h-1 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-[width]"
+                style={{ width: `${groupProgress}%` }}
+              />
+            </div>
+            <div className="mt-1 flex flex-col gap-0.5 rounded-2xl bg-secondary/40 p-1.5">
+              {groupTasks.map((task) => {
+                const done = isDoneTaskStatus(task.status);
+                const active = selectedTaskId === task.id;
+                const statusPill = !done && task.status !== "open" ? taskStatusLabel(task.status) : null;
+                const displayTitle = taskDisplayTitle(task.sheetTitle, task.title);
+                return (
+                  <div
+                    className={cn(
+                      "group flex items-center gap-0.5 rounded-xl pr-2 transition-colors",
+                      active ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
+                    )}
+                    key={task.id}
+                  >
+                    <button
+                      aria-label={done ? `${displayTitle} als offen markieren` : `${displayTitle} als erledigt markieren`}
+                      className={cn(
+                        "grid size-9 shrink-0 place-items-center rounded-full transition-colors",
+                        done
+                          ? "text-emerald-500 hover:bg-emerald-500/10"
+                          : active
+                            ? "text-primary-foreground/80 hover:bg-primary-foreground/15"
+                            : "text-muted-foreground hover:bg-background hover:text-foreground",
+                      )}
+                      onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
+                      type="button"
+                    >
+                      {done ? <CheckCircle2 className="size-[18px]" aria-hidden /> : <Circle className="size-[18px]" aria-hidden />}
+                    </button>
+                    <button
+                      className="flex min-h-10 min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
+                      onClick={() => onSelectTask(task.id)}
+                      type="button"
+                    >
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-sm font-medium",
+                          done && !active && "text-muted-foreground line-through decoration-muted-foreground/40",
+                        )}
+                      >
+                        {displayTitle}
+                      </span>
+                      {statusPill ? (
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                            active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background text-muted-foreground",
+                          )}
+                        >
+                          {statusPill}
+                        </span>
+                      ) : null}
+                      <ChevronRight
+                        aria-hidden
+                        className={cn(
+                          "size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
+                          active ? "text-primary-foreground/80" : "text-muted-foreground",
+                        )}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

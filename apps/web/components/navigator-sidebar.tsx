@@ -426,7 +426,7 @@ function TaskDrillList({
           {totalCount > 0 ? <span>{progress}%</span> : null}
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+          <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${progress}%` }} />
         </div>
       </div>
       {totalCount > 0 ? (
