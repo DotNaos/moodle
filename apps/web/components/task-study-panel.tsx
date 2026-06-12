@@ -1119,7 +1119,7 @@ export function TaskStudyPanel({
                   />
                 </div>
                 {/* Mobile HUD: task navigation bottom-left (chat FAB owns bottom-right). */}
-                <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 flex items-center gap-1 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border backdrop-blur md:hidden">
+                <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 flex items-center gap-1 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border backdrop-blur md:hidden [[data-mobile-chat=open]_&]:hidden">
                   <button
                     aria-label="Vorherige Aufgabe"
                     className="grid size-10 place-items-center rounded-full text-foreground transition-colors disabled:opacity-35"
@@ -1545,7 +1545,7 @@ function TaskTestMode({
 
       {/* Mobile test HUD: answer bottom-left, steps centered, solution next to
           the global chat FAB bottom-right. */}
-      <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 md:hidden">
+      <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 md:hidden [[data-mobile-chat=open]_&]:hidden">
         <button
           aria-label="Antwort schreiben"
           className="grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95"
@@ -1556,7 +1556,7 @@ function TaskTestMode({
         </button>
       </div>
       {steps.length > 1 ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[max(env(safe-area-inset-bottom),1rem)] z-10 flex justify-center md:hidden">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[max(env(safe-area-inset-bottom),1rem)] z-10 flex justify-center md:hidden [[data-mobile-chat=open]_&]:hidden">
           <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border backdrop-blur">
             <button
               aria-label="Vorheriger Schritt"
@@ -1586,7 +1586,7 @@ function TaskTestMode({
         <button
           aria-label={solutionOpen ? "Lösung verbergen" : "Lösung anzeigen"}
           className={cn(
-            "fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-[4.75rem] z-20 grid size-12 place-items-center rounded-full shadow-lg ring-1 backdrop-blur transition-transform active:scale-95 md:hidden",
+            "fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-[4.75rem] z-20 grid size-12 place-items-center rounded-full shadow-lg ring-1 backdrop-blur transition-transform active:scale-95 md:hidden [[data-mobile-chat=open]_&]:hidden",
             solutionOpen
               ? "bg-amber-500/15 text-amber-600 ring-amber-500/30"
               : "bg-background/90 text-foreground ring-border",

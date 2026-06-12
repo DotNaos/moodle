@@ -88,7 +88,7 @@ export function MobileQuickChat({
     <div className="flex shrink-0 items-center gap-2 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2">
       <button
         aria-label="Chat schließen"
-        className="grid size-11 shrink-0 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-md ring-1 ring-border/50 backdrop-blur-md transition-colors hover:text-foreground"
+        className="grid size-11 shrink-0 place-items-center rounded-full bg-background text-muted-foreground shadow-md ring-1 ring-border/50 transition-colors hover:text-foreground"
         onClick={() => {
           setExpanded(false);
           onClose();
@@ -99,7 +99,7 @@ export function MobileQuickChat({
       </button>
       <input
         autoFocus
-        className="h-11 min-w-0 flex-1 rounded-full bg-background/80 px-4 text-sm shadow-md ring-1 ring-border/50 outline-none backdrop-blur-md placeholder:text-muted-foreground"
+        className="h-11 min-w-0 flex-1 rounded-full bg-background px-4 text-sm shadow-md ring-1 ring-border/50 outline-none placeholder:text-muted-foreground"
         enterKeyHint="send"
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {
@@ -113,7 +113,7 @@ export function MobileQuickChat({
       />
       <button
         aria-label={expanded ? "Verkleinern" : "Als Drawer öffnen"}
-        className="grid size-11 shrink-0 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-md ring-1 ring-border/50 backdrop-blur-md transition-colors hover:text-foreground"
+        className="grid size-11 shrink-0 place-items-center rounded-full bg-background text-muted-foreground shadow-md ring-1 ring-border/50 transition-colors hover:text-foreground"
         onClick={() => setExpanded((current) => !current)}
         type="button"
       >
@@ -121,7 +121,7 @@ export function MobileQuickChat({
       </button>
       <button
         aria-label="Senden"
-        className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform active:scale-95 disabled:opacity-50"
+        className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform active:scale-95 disabled:bg-secondary disabled:text-muted-foreground"
         disabled={chat.running || prompt.trim().length === 0}
         onClick={send}
         type="button"

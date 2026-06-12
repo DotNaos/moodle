@@ -839,7 +839,12 @@ export default function Home() {
       </Show>
 
       <Show when="signed-in">
-        <main className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-background">
+        {/* data-mobile-chat lets fixed HUD controls hide themselves via CSS
+            while the quick chat overlay is active. */}
+        <main
+          className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-background"
+          data-mobile-chat={mobileChatOpen ? "open" : "closed"}
+        >
           <TopBar
             actions={
               <div className="ml-1 flex items-center gap-1">
@@ -880,17 +885,19 @@ export default function Home() {
               Opens the chat as an overlay sheet, never the dedicated page. */}
           {!needsConnection && activeDocument?.kind !== "chat-session" ? (
             <>
-              <button
-                aria-label="Chat öffnen"
-                className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
-                onClick={() => {
-                  setMobileChatMounted(true);
-                  setMobileChatOpen(true);
-                }}
-                type="button"
-              >
-                <MessageSquare aria-hidden className="size-5" />
-              </button>
+              {!mobileChatOpen ? (
+                <button
+                  aria-label="Chat öffnen"
+                  className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
+                  onClick={() => {
+                    setMobileChatMounted(true);
+                    setMobileChatOpen(true);
+                  }}
+                  type="button"
+                >
+                  <MessageSquare aria-hidden className="size-5" />
+                </button>
+              ) : null}
               {mobileChatMounted ? (
                 <MobileQuickChat
                   courses={courses}
