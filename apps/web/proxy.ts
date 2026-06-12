@@ -5,6 +5,21 @@ import { getClerkSigningKid, handshakeTokenKid } from "@/lib/clerk-signing-kid";
 
 const clerkHandler = clerkMiddleware();
 
+function maybeBlockProductionDevRoute(request: NextRequest): NextResponse | null {
+  if (!request.nextUrl.pathname.startsWith("/dev")) {
+    return null;
+  }
+  if (process.env.NODE_ENV === "development") {
+    return NextResponse.next();
+  }
+  return new NextResponse("Not Found", {
+    status: 404,
+    headers: {
+      "cache-control": "no-store",
+    },
+  });
+}
+
 async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextResponse | null> {
   if (process.env.NODE_ENV !== "development") {
     return null;
@@ -48,6 +63,11 @@ async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextRe
 }
 
 export default async function proxy(request: NextRequest, event: NextFetchEvent) {
+  const devRouteResponse = maybeBlockProductionDevRoute(request);
+  if (devRouteResponse) {
+    return devRouteResponse;
+  }
+
   const staleHandshakeRedirect = await maybeRedirectStaleHandshake(request);
   if (staleHandshakeRedirect) {
     return staleHandshakeRedirect;
@@ -58,6 +78,7 @@ export default async function proxy(request: NextRequest, event: NextFetchEvent)
 
 export const config = {
   matcher: [
+    "/dev/:path*",
     "/((?!_next|dev|api/dev/clear-clerk|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|pdf|webmanifest)).*)",
     "/(api|trpc)/((?!dev/clear-clerk).*)",
   ],
