@@ -39,8 +39,12 @@ export function MobileSheet({
       <div
         aria-hidden={!open}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-3xl bg-card shadow-2xl",
-          expanded ? "h-[94dvh]" : fixedHeight ? "h-[65dvh]" : "max-h-[65dvh]",
+          "fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden bg-card shadow-2xl",
+          // Expanded is an edgeless fullscreen view (page-level, not browser
+          // fullscreen); collapsed is the rounded bottom drawer.
+          expanded
+            ? "h-dvh rounded-none pt-[env(safe-area-inset-top)]"
+            : cn("rounded-t-3xl", fixedHeight ? "h-[65dvh]" : "max-h-[65dvh]"),
           dragOffset === 0 && "transition-all duration-200",
           !open && "pointer-events-none invisible translate-y-full",
         )}
