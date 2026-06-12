@@ -8,7 +8,7 @@ import { parseDashboardRouteSearch, type DashboardRoute } from "@/lib/dashboard-
 // Opening a document never moves `path` implicitly except through
 // `openDocument`, which aligns the path with the document's natural list.
 
-export type CourseMode = "materials" | "tasks" | "script" | "formula" | "recordings";
+export type CourseMode = "materials" | "tasks" | "script" | "formula" | "recordings" | "pipeline";
 
 // "formula" has no item list to drill into; it opens directly as a document.
 export type DrillableCourseMode = Exclude<CourseMode, "formula">;
@@ -44,9 +44,10 @@ export const COURSE_MODE_LABELS: Record<CourseMode, string> = {
   script: "Script",
   formula: "Formeln",
   recordings: "Videos",
+  pipeline: "Pipeline",
 };
 
-const DRILLABLE_COURSE_MODES = new Set<string>(["materials", "tasks", "script", "recordings"]);
+const DRILLABLE_COURSE_MODES = new Set<string>(["materials", "tasks", "script", "recordings", "pipeline"]);
 
 export function homeState(): NavigatorState {
   return { path: { kind: "home" }, document: null };
@@ -241,7 +242,7 @@ export function parseNavigatorLocation(pathname: string, search = ""): Navigator
     }
     const drillMode = mode as DrillableCourseMode;
     const resourceId = segments[3];
-    if (!resourceId) {
+    if (!resourceId || drillMode === "pipeline") {
       return { path: { kind: "course-mode", courseId, mode: drillMode }, document: null };
     }
     const document: NavigatorDocument =

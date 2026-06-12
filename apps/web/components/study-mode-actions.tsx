@@ -1,11 +1,11 @@
 "use client";
 
-import { BookOpenText, CheckCircle2, Files, Sigma, Video } from "lucide-react";
+import { BookOpenText, CheckCircle2, Files, GitBranch, Sigma, Video } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type StudyMode = "materials" | "tasks" | "script" | "formula" | "recordings";
+export type StudyMode = "materials" | "tasks" | "script" | "formula" | "recordings" | "pipeline";
 
 export function StudyModeActions({
   studyMode,
@@ -15,6 +15,7 @@ export function StudyModeActions({
   onScript,
   onFormula,
   onRecordings,
+  onPipeline,
 }: {
   studyMode: StudyMode;
   layout?: "grid" | "main";
@@ -23,6 +24,7 @@ export function StudyModeActions({
   onScript: () => void;
   onFormula?: () => void;
   onRecordings: () => void;
+  onPipeline?: () => void;
 }) {
   return (
     <div
@@ -73,6 +75,16 @@ export function StudyModeActions({
         layout={layout}
         onClick={onRecordings}
       />
+      {onPipeline ? (
+        <StudyModeButton
+          active={studyMode === "pipeline"}
+          icon={<GitBranch aria-hidden />}
+          label="Pipeline"
+          description="Verarbeitung prüfen"
+          layout={layout}
+          onClick={onPipeline}
+        />
+      ) : null}
     </div>
   );
 }

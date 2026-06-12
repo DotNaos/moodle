@@ -79,7 +79,7 @@ export type StudyTestContext = {
 };
 
 export type StudyChatContext = {
-  mode: "materials" | "tasks" | "script" | "formula" | "recordings";
+  mode: "materials" | "tasks" | "script" | "formula" | "recordings" | "pipeline";
   selectedTask?: {
     taskId: string;
     title: string;

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Files,
+  GitBranch,
   Plus,
   Sigma,
   Video,
@@ -36,6 +37,7 @@ export const COURSE_MODE_ITEMS: CourseModeItem[] = [
   { mode: "script", icon: BookOpenText, label: COURSE_MODE_LABELS.script, description: "Zusammengefasstes Script" },
   { mode: "formula", icon: Sigma, label: COURSE_MODE_LABELS.formula, description: "Formelsammlung" },
   { mode: "recordings", icon: Video, label: COURSE_MODE_LABELS.recordings, description: "Webex-Aufzeichnungen" },
+  { mode: "pipeline", icon: GitBranch, label: COURSE_MODE_LABELS.pipeline, description: "Verarbeitung prüfen" },
 ];
 
 export type NavigatorListVariant = "full" | "sidebar";

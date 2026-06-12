@@ -707,6 +707,11 @@ describe("dashboard URL routing", () => {
     expect(route.courseId).toBe("42");
     expect(route.mode).toBe("tasks");
     expect(route.courseHubOpen).toBe(false);
+
+    const pipelineRoute = parseDashboardRoute("/courses/42/pipeline", "");
+    expect(pipelineRoute.courseId).toBe("42");
+    expect(pipelineRoute.mode).toBe("pipeline");
+    expect(pipelineRoute.courseHubOpen).toBe(false);
   });
 
   test("keeps modern chat URLs from being parsed as legacy course routes", () => {
@@ -765,6 +770,18 @@ describe("dashboard URL routing", () => {
       selectedTaskId: null,
       studyMode: "materials",
     })).toBe("/calendar");
+
+    expect(buildDashboardRouteURL({
+      courseHubOpen: false,
+      homeView: "courses",
+      navigationMode: "materials",
+      recordingId: null,
+      selectedCourseId: "42",
+      selectedMaterialId: null,
+      selectedScriptSectionId: null,
+      selectedTaskId: null,
+      studyMode: "pipeline",
+    })).toBe("/courses/42/pipeline");
   });
 
   test("treats courses navigation as home even when a course id is still in memory", () => {

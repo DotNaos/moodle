@@ -41,6 +41,7 @@ describe("navigator URL mapping", () => {
       { path: { kind: "course", courseId: "42" }, document: null },
       { path: { kind: "course-mode", courseId: "42", mode: "materials" }, document: null },
       { path: { kind: "course-mode", courseId: "42", mode: "tasks" }, document: null },
+      { path: { kind: "course-mode", courseId: "42", mode: "pipeline" }, document: null },
       { path: { kind: "calendar" }, document: null },
       { path: { kind: "chat" }, document: null },
     ];
@@ -95,6 +96,14 @@ describe("navigator URL mapping", () => {
   test("unknown URLs fall back to landing", () => {
     expect(parseNavigatorLocation("/nonsense/deep").path.kind).toBe("home");
     expect(parseNavigatorLocation("/courses/42/unknown").path).toEqual({ kind: "course", courseId: "42" });
+  });
+
+  test("pipeline is a course-level inspector route without nested documents", () => {
+    const state = parseNavigatorLocation("/courses/42/pipeline");
+    expect(state).toEqual({ path: { kind: "course-mode", courseId: "42", mode: "pipeline" }, document: null });
+
+    const nested = parseNavigatorLocation("/courses/42/pipeline/node-1");
+    expect(nested).toEqual({ path: { kind: "course-mode", courseId: "42", mode: "pipeline" }, document: null });
   });
 
   test("legacy query URLs convert to navigator states", () => {
