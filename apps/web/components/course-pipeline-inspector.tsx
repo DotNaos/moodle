@@ -8,6 +8,7 @@ import {
   GitBranch,
   Layers,
   Loader2,
+  RotateCcw,
   RefreshCw,
   Search,
   Sparkles,
@@ -27,6 +28,42 @@ import { courseTitle } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
 type InspectorTab = "resources" | "buckets" | "runs" | "blueprint" | "review";
+
+type PipelineRunRecord = {
+  id: string;
+  sourceId: string;
+  courseId: string;
+  resourceId?: string;
+  fileHash?: string;
+  stage: string;
+  engine: string;
+  configHash: string;
+  ownership: "shared" | "user_owned" | string;
+  createdBy?: string;
+  status: string;
+  artifactRoot: string;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+  artifactRefs?: Array<{ id: string; kind: string; uri?: string; storageKey?: string }>;
+};
+
+type ActiveRunSelectionRecord = {
+  sourceId: string;
+  resourceId?: string;
+  stage: string;
+  activeRunId: string;
+  selectedBy?: string;
+  selectedAt: string;
+  reason: string;
+};
+
+type PipelineRunsResponse = {
+  courseId: string;
+  runs: PipelineRunRecord[];
+  activeSelections: ActiveRunSelectionRecord[];
+};
 
 type CoursePipelineInspectorProps = {
   course: Course;
@@ -52,8 +89,10 @@ export function CoursePipelineInspector({
   const [activeTab, setActiveTab] = useState<InspectorTab>("resources");
   const [inventory, setInventory] = useState<CourseInventoryResponse | null>(null);
   const [status, setStatus] = useState<StudyPipelineStatusResponse | null>(null);
+  const [runs, setRuns] = useState<PipelineRunsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
 
   const inventorySections = useMemo(() => buildInventorySections(inventory), [inventory]);
   useEffect(() => {
@@ -65,9 +104,10 @@ export function CoursePipelineInspector({
     setLoading(true);
     setError(null);
     try {
-      const [statusResult, inventoryResult] = await Promise.allSettled([
+      const [statusResult, inventoryResult, runsResult] = await Promise.allSettled([
         studyPipelineRequest<StudyPipelineStatusResponse>(courseId, ""),
         studyPipelineRequest<CourseInventoryResponse>(courseId, "/inventory"),
+        studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs"),
       ]);
       if (statusResult.status === "fulfilled") {
         setStatus(statusResult.value);
@@ -75,7 +115,10 @@ export function CoursePipelineInspector({
       if (inventoryResult.status === "fulfilled") {
         setInventory(inventoryResult.value);
       }
-      const failed = [statusResult, inventoryResult].find((result) => result.status === "rejected");
+      if (runsResult.status === "fulfilled") {
+        setRuns(runsResult.value);
+      }
+      const failed = [statusResult, inventoryResult, runsResult].find((result) => result.status === "rejected");
       if (failed?.status === "rejected") {
         setError(formatStudyPipelineError(failed.reason));
       }
@@ -83,6 +126,22 @@ export function CoursePipelineInspector({
       setError(formatStudyPipelineError(loadError));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function selectActiveRun(runId: string) {
+    setSelectingRunId(runId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/runs/${encodeURIComponent(runId)}/select`, {
+        reason: "selected in course pipeline inspector",
+      });
+      const nextRuns = await studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs");
+      setRuns(nextRuns);
+    } catch (selectError) {
+      setError(formatStudyPipelineError(selectError));
+    } finally {
+      setSelectingRunId(null);
     }
   }
 
@@ -141,7 +200,13 @@ export function CoursePipelineInspector({
           ) : activeTab === "buckets" ? (
             <BucketsTab sections={inventorySections} />
           ) : activeTab === "runs" ? (
-            <RunsTab loading={loading} status={status} />
+            <RunsTab
+              loading={loading}
+              onSelectRun={(runId) => void selectActiveRun(runId)}
+              runs={runs}
+              selectingRunId={selectingRunId}
+              status={status}
+            />
           ) : activeTab === "blueprint" ? (
             <BlueprintTab inventory={inventory} status={status} />
           ) : (
@@ -248,27 +313,75 @@ function BucketsTab({ sections }: { sections: ReturnType<typeof buildInventorySe
   );
 }
 
-function RunsTab({ loading, status }: { loading: boolean; status: StudyPipelineStatusResponse | null }) {
-  if (loading && !status) {
+function RunsTab({
+  loading,
+  onSelectRun,
+  runs,
+  selectingRunId,
+  status,
+}: {
+  loading: boolean;
+  onSelectRun: (runId: string) => void;
+  runs: PipelineRunsResponse | null;
+  selectingRunId: string | null;
+  status: StudyPipelineStatusResponse | null;
+}) {
+  const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
+  if (loading && !runs && !status) {
     return <LoadingPanel label="Runs loading" />;
   }
-  if (!status) {
+  if (!runs || runs.runs.length === 0) {
     return (
       <EmptyInspectorState
         icon={RefreshCw}
-        title="No run status loaded"
-        description="Refresh to load the current pipeline status for this course."
+        title="No pipeline runs stored"
+        description="Request tasks or run a pipeline stage to create the first immutable run record."
       />
     );
   }
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      <Metric label="Status" value={status.status} />
-      <Metric label="Stage" value={status.stage || "not started"} />
-      <Metric label="Resources" value={String(status.summary.totalResources)} />
-      <Metric label="Task PDFs" value={String(status.summary.tasks)} />
-      <Metric label="Linked solutions" value={String(status.summary.linkedSolutions)} />
-      <Metric label="Missing solutions" value={String(status.summary.missingSolutions)} />
+    <div className="grid gap-3">
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Current status" value={status?.status ?? "unknown"} />
+        <Metric label="Current stage" value={status?.stage || "not started"} />
+        <Metric label="Stored runs" value={String(runs.runs.length)} />
+        <Metric label="Active selections" value={String(runs.activeSelections.length)} />
+      </div>
+      <div className="grid gap-2">
+        {runs.runs.map((run) => {
+          const active = activeRunIds.has(run.id);
+          return (
+            <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={run.id}>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{run.stage}</p>
+                  <Badge variant={run.status === "failed" ? "destructive" : active ? "default" : "secondary"}>
+                    {active ? "active" : run.status}
+                  </Badge>
+                  <Badge variant="outline">{run.ownership === "user_owned" ? "user-owned" : "shared"}</Badge>
+                </div>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {run.engine} · {run.configHash} · {formatDateTime(run.createdAt)}
+                </p>
+                {run.fileHash ? <p className="mt-1 truncate text-xs text-muted-foreground">File hash: {run.fileHash}</p> : null}
+                {run.error ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-destructive">{run.error}</p> : null}
+                <p className="mt-2 truncate text-[11px] text-muted-foreground/80">{run.id}</p>
+              </div>
+              <div className="flex items-center gap-2 md:justify-end">
+                <Button
+                  disabled={active || selectingRunId === run.id}
+                  onClick={() => onSelectRun(run.id)}
+                  type="button"
+                  variant="secondary"
+                >
+                  {selectingRunId === run.id ? <Spinner aria-hidden /> : <RotateCcw aria-hidden />}
+                  {active ? "Aktiv" : "Als aktiv setzen"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -419,6 +532,36 @@ async function studyPipelineRequest<T>(courseId: string, suffix: string): Promis
   return payload as T;
 }
 
+async function studyPipelinePost<T>(courseId: string, suffix: string, body: unknown): Promise<T> {
+  const response = await fetch(
+    `/api/study-pipeline/courses/${encodeURIComponent(courseId)}/study-pipeline${suffix}`,
+    {
+      body: JSON.stringify(body),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    },
+  );
+  const payload = await response.json().catch(() => ({})) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? `Moodle study pipeline failed with ${response.status}.`);
+  }
+  return payload as T;
+}
+
 function formatStudyPipelineError(error: unknown): string {
   return error instanceof Error ? error.message : "Moodle study pipeline failed.";
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value || "unknown time";
+  }
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  });
 }
