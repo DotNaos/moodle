@@ -1,10 +1,12 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
 import { groupScriptSections, groupStudyTasksBySection, groupStudyTasksBySheet } from "@/components/course-study-outline";
 import { buildBlockTypeSummary, documentDiagnosticCounts } from "@/components/extracted-document-inspector";
-import { buildInventorySections, buildStudyPipelinePreviewSections } from "@/components/study-pipeline-preview";
+import { buildInventorySections, buildStudyPipelinePreviewSections, StudyPipelinePreview } from "@/components/study-pipeline-preview";
 import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
 import {
   buildDashboardRouteURL,
@@ -128,6 +130,33 @@ describe("task outline", () => {
 });
 
 describe("study pipeline preview", () => {
+  test("renders the normal request state without pipeline internals", () => {
+    const html = renderToStaticMarkup(React.createElement(StudyPipelinePreview, {
+      course: { id: 22584, fullname: "High Performance Computing" },
+      extractedDocuments: null,
+      extractedError: null,
+      extractedLoading: false,
+      inventory: null,
+      inventoryError: null,
+      inventoryLoading: false,
+      loading: false,
+      mode: "tasks",
+      onLoadExtractedDocuments: () => undefined,
+      onRefreshInventory: () => undefined,
+      onRunStage: () => undefined,
+      runningStage: null,
+      status: null,
+    }));
+
+    expect(html).toContain("Aufgaben anfordern");
+    expect(html).toContain("Problem melden");
+    expect(html).toContain("Status anschauen");
+    expect(html).toContain("Noch nicht gestartet");
+    expect(html).not.toContain("Kurs-Mapping");
+    expect(html).not.toContain("Erweiterte Schritte");
+    expect(html).not.toContain("PDF-/Block-Inspector");
+  });
+
   test("groups resources by section and highlights task solution links", () => {
     const sections = buildStudyPipelinePreviewSections({
       courseId: "22584",
