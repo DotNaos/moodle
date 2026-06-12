@@ -4,7 +4,7 @@ import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CourseHero } from "@/components/course-hero";
-import { MaterialsOutline, ScriptOutline, TaskOutline } from "@/components/course-study-outline";
+import { MaterialsOutline, TaskOutline } from "@/components/course-study-outline";
 import { FileViewer } from "@/components/file-viewer";
 import { FormulaCollectionPanel } from "@/components/formula-collection-panel";
 import { StudyPipelineAction } from "@/components/study-pipeline-action";
@@ -192,18 +192,6 @@ export function CourseMainPanel({
           tasks={studyOutline.tasks}
           onSelectTask={onSelectTask}
           onTaskStatusChange={onTaskStatusChange}
-        />
-      </CoursePanelShell>
-    );
-  }
-
-  if (studyMode === "script" && !selectedScriptSectionId && studyOutline.scriptSections.length > 0) {
-    return (
-      <CoursePanelShell course={course}>
-        <ScriptOutline
-          scriptSections={studyOutline.scriptSections}
-          selectedScriptSectionId={selectedScriptSectionId}
-          onSelectScriptSection={onSelectScriptSection}
         />
       </CoursePanelShell>
     );

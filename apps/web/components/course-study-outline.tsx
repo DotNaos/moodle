@@ -320,38 +320,6 @@ export function TaskOutline({
   );
 }
 
-export function ScriptOutline({
-  scriptSections,
-  selectedScriptSectionId,
-  onSelectScriptSection,
-}: {
-  scriptSections: StudyOutline["scriptSections"];
-  selectedScriptSectionId: string | null;
-  onSelectScriptSection: (sectionId: string) => void;
-}) {
-  if (scriptSections.length === 0) {
-    return <LoadingRows label="Loading sections" />;
-  }
-  return (
-    <div className="flex flex-col gap-0.5">
-      {scriptSections.map((section) => (
-        <button
-          className={cn(
-            "min-h-11 rounded-lg py-2 pr-3 text-left text-sm transition-colors",
-            section.level > 1 ? "pl-6" : "pl-3",
-            selectedScriptSectionId === section.id ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-          )}
-          key={`${section.id}-${section.blockIndex}`}
-          onClick={() => onSelectScriptSection(section.id)}
-          type="button"
-        >
-          <span className="line-clamp-2 font-medium">{section.title}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function groupStudyTasksBySheet(tasks: StudyOutline["tasks"]) {
   const groups: Array<{ sheetTitle: string; tasks: StudyOutline["tasks"] }> = [];
   const sortedTasks = [...tasks].sort(compareStudyTasks);

@@ -2355,6 +2355,9 @@ function ScriptReader({
     [view?.scriptMarkdown, view?.scriptSections],
   );
   const [scrollProgress, setScrollProgress] = useState(0);
+  // Scroll-spy: the chapter currently at the top of the viewport drives the
+  // highlight in the table of contents.
+  const [visibleChapterId, setVisibleChapterId] = useState<string | null>(null);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -2378,22 +2381,37 @@ function ScriptReader({
     }
     const maxScroll = container.scrollHeight - container.clientHeight;
     setScrollProgress(maxScroll > 0 ? Math.min(100, Math.max(0, (container.scrollTop / maxScroll) * 100)) : 100);
+
+    const containerTop = container.getBoundingClientRect().top;
+    let current: string | null = null;
+    for (const element of container.querySelectorAll<HTMLElement>("[data-script-chapter-id]")) {
+      if (element.getBoundingClientRect().top - containerTop > 140) {
+        break;
+      }
+      current = element.dataset.scriptChapterId ?? null;
+    }
+    setVisibleChapterId(current);
   }
 
+  const activeChapterId =
+    visibleChapterId ??
+    chapters.find((item) => item.id === selectedSectionId || item.state?.id === selectedSectionId)?.id ??
+    null;
+
   return (
-    <div className="grid min-h-0 flex-1 bg-background 2xl:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 border-r border-border bg-background px-4 py-5 2xl:block">
-        <div className="sticky top-0">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Course Script</p>
-          <h3 className="mt-2 line-clamp-2 text-base font-semibold leading-tight">{courseTitleText}</h3>
-          <nav className="mt-5 max-h-[calc(100dvh-14rem)] space-y-1 overflow-auto pr-1">
-            {chapters.map((chapter) => (
+    <div className="grid min-h-0 flex-1 bg-background xl:grid-cols-[250px_minmax(0,1fr)]">
+      <aside className="hidden min-h-0 flex-col border-r border-border bg-background px-3 py-5 xl:flex">
+        <p className="px-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Inhalt</p>
+        <nav className="mt-3 min-h-0 flex-1 space-y-0.5 overflow-auto pr-1">
+          {chapters.map((chapter, index) => {
+            const active = activeChapterId === chapter.id;
+            return (
               <button
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-[1.25rem] px-3 py-2 text-left text-sm transition-colors",
-                  selectedSectionId === chapter.id || selectedSectionId === chapter.state?.id
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-secondary",
+                  "flex w-full items-baseline gap-2 rounded-xl px-2 py-1.5 text-left text-[13px] leading-snug transition-colors",
+                  active
+                    ? "bg-secondary font-medium text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                 )}
                 key={chapter.id}
                 onClick={() => {
@@ -2403,31 +2421,29 @@ function ScriptReader({
                 }}
                 type="button"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 font-medium">{chapter.title}</span>
-                  <span className={cn("mt-1 block text-xs", selectedSectionId === chapter.id || selectedSectionId === chapter.state?.id ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                    {chapter.state?.statusLabel ?? "Machine extracted"}
-                  </span>
+                <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/60">
+                  {index + 1}
                 </span>
+                <span className="line-clamp-2 min-w-0 flex-1">{chapter.title}</span>
+                {chapter.state?.status === "codex-improved" ? (
+                  <Sparkles aria-hidden className="size-3 shrink-0 self-center text-primary" />
+                ) : null}
               </button>
-            ))}
-          </nav>
-        </div>
+            );
+          })}
+        </nav>
       </aside>
 
       <div className="flex min-h-0 flex-col">
-        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Reading progress</p>
-              <p className="mt-1 truncate text-sm font-medium">{Math.round(scrollProgress)}% through this script</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <ContentStateBadge state={scriptAggregateState(view?.scriptSections)} />
-            </div>
+        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur md:px-8">
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {Math.round(scrollProgress)}% gelesen
+            </p>
+            <ContentStateBadge state={scriptAggregateState(view?.scriptSections)} />
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${scrollProgress}%` }} />
           </div>
         </div>
 
