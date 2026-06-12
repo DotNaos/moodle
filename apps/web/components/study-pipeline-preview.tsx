@@ -62,12 +62,14 @@ export type CourseInventoryResponse = {
     ambiguousTaskGroups: number;
     references: number;
     interactions: number;
+    ignoredAllowed?: number;
     unknown: number;
   };
   lectureMaterial: CourseInventoryNode[];
   taskGroups: CourseInventoryTaskGroup[];
   references: CourseInventoryNode[];
   interactions: CourseInventoryNode[];
+  ignoredAllowed?: CourseInventoryNode[];
   unknown: CourseInventoryNode[];
 };
 
@@ -242,18 +244,17 @@ export function StudyPipelinePreview({
               </div>
 
               {groupedInventory.length > 0 ? (
-                <details className="group rounded-2xl bg-background/60 px-4 py-3">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                <div className="rounded-2xl bg-background/60 px-4 py-3">
+                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Layers aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">Weitere Buckets</span>
-                    <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                  </summary>
-                  <div className="mt-3 flex flex-col gap-3">
+                    Klassifizierungs-Buckets
+                  </p>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
                     {groupedInventory.map((section) => (
                       <InventoryBucket key={section.id} section={section} />
                     ))}
                   </div>
-                </details>
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -358,33 +359,61 @@ function TaskGroupRow({ group }: { group: CourseInventoryTaskGroup }) {
       {group.solution ? (
         <p className="mt-2 truncate text-xs text-muted-foreground">Lösung: {group.solution.name}</p>
       ) : null}
-      {missing || ambiguous ? (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{group.pairingReason}</p>
-      ) : null}
+      <div className="mt-2 flex flex-col gap-1.5">
+        <ReasonLine label="Zuordnung" value={group.pairingReason} />
+        <ReasonLine label="Blatt" value={group.sheet.reason} />
+        {group.solution ? <ReasonLine label="Lösung" value={group.solution.reason} /> : null}
+        {ambiguous && group.solutionCandidates?.length ? (
+          <ReasonLine
+            label="Kandidaten"
+            value={group.solutionCandidates.map((candidate) => candidate.name).join(", ")}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function InventoryBucket({ section }: { section: { id: string; label: string; items: CourseInventoryNode[] } }) {
+function InventoryBucket({ section }: { section: InventorySection }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="mb-1.5 line-clamp-1 text-xs font-medium text-muted-foreground">
         {section.label} · {section.items.length}
       </p>
-      <div className="flex flex-wrap gap-1.5">
-        {section.items.slice(0, 10).map((item) => (
-          <span className="inline-flex max-w-64 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground" key={item.id}>
-            <FileText aria-hidden className="size-3 shrink-0" />
-            <span className="truncate">{item.name}</span>
-          </span>
+      <div className="flex flex-col gap-1.5">
+        {section.items.slice(0, 6).map((item) => (
+          <div className="min-w-0 rounded-2xl bg-secondary/70 px-3 py-2" key={`${section.id}:${item.id}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{item.name}</span>
+              <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+                {confidenceLabel(item.confidence)}
+              </span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+              {item.reason || fallbackClassificationReason(item)}
+            </p>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
+              {item.role} · {item.type}
+              {item.sectionName ? ` · ${item.sectionName}` : ""}
+            </p>
+          </div>
         ))}
-        {section.items.length > 10 ? (
-          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-            +{section.items.length - 10}
-          </span>
+        {section.items.length > 6 ? (
+          <p className="px-1 text-xs text-muted-foreground">+{section.items.length - 6} weitere Ressourcen</p>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ReasonLine({ label, value }: { label: string; value?: string }) {
+  if (!value) {
+    return null;
+  }
+  return (
+    <p className="text-xs leading-5 text-muted-foreground">
+      <span className="font-medium text-foreground">{label}:</span> {value}
+    </p>
   );
 }
 
@@ -447,16 +476,62 @@ export function buildStudyPipelinePreviewSections(status: StudyPipelineStatusRes
   return [...sections.values()];
 }
 
+type InventorySection = {
+  id: string;
+  label: string;
+  items: CourseInventoryNode[];
+};
+
 export function buildInventorySections(inventory: CourseInventoryResponse | null) {
   if (!inventory) {
     return [];
   }
+  const assignmentSheets = inventory.taskGroups.map((group) => group.sheet);
+  const solutions = uniqueInventoryNodes(
+    inventory.taskGroups.flatMap((group) => [
+      ...(group.solution ? [group.solution] : []),
+      ...(group.solutionCandidates ?? []),
+    ]),
+  );
   return [
     { id: "lecture", label: "Vorlesungsmaterial", items: inventory.lectureMaterial },
+    { id: "assignments", label: "Aufgabenblätter", items: assignmentSheets },
+    { id: "solutions", label: "Lösungen", items: solutions },
     { id: "references", label: "Referenzen", items: inventory.references },
     { id: "interactions", label: "Interaktionen", items: inventory.interactions },
+    { id: "ignored", label: "Ignoriert", items: inventory.ignoredAllowed ?? [] },
     { id: "unknown", label: "Unbekannt", items: inventory.unknown },
   ].filter((section) => section.items.length > 0);
+}
+
+function uniqueInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[] {
+  const seen = new Set<string>();
+  const unique: CourseInventoryNode[] = [];
+  for (const node of nodes) {
+    if (seen.has(node.id)) {
+      continue;
+    }
+    seen.add(node.id);
+    unique.push(node);
+  }
+  return unique;
+}
+
+function confidenceLabel(confidence: string): string {
+  if (confidence === "high") {
+    return "hoch";
+  }
+  if (confidence === "medium") {
+    return "mittel";
+  }
+  if (confidence === "low") {
+    return "niedrig";
+  }
+  return confidence || "unklar";
+}
+
+function fallbackClassificationReason(item: CourseInventoryNode): string {
+  return `Als ${item.bucket || item.role || "unbekannt"} klassifiziert.`;
 }
 
 function markKind(

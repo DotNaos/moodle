@@ -168,7 +168,7 @@ describe("study pipeline preview", () => {
     ]);
   });
 
-  test("builds inventory bucket sections without task groups", () => {
+  test("builds inventory bucket sections with task groups and classification buckets", () => {
     const sections = buildInventorySections({
       courseId: "22584",
       generatedAt: "2026-06-12T08:00:00.000Z",
@@ -181,19 +181,42 @@ describe("study pipeline preview", () => {
         references: 1,
         taskGroups: 2,
         totalResources: 5,
+        ignoredAllowed: 1,
         unknown: 1,
       },
       lectureMaterial: [{ id: "teil-01", name: "Teil 01", bucket: "lecture_material", confidence: "high", reason: "", role: "lecture_source", type: "slide" }],
-      taskGroups: [],
+      taskGroups: [
+        {
+          id: "sheet-01",
+          title: "Aufgabenblatt 01",
+          pairingConfidence: "high",
+          pairingReason: "same normalized sheet number",
+          pairingStatus: "paired",
+          sheet: { id: "task-01", name: "Aufgabenblatt 01", bucket: "assignment_sheet", confidence: "high", reason: "title contains Aufgabenblatt 01", role: "assignment_sheet", type: "pdf" },
+          solution: { id: "solution-01", name: "Aufgabenblatt 01 Lösung", bucket: "solution_pdf", confidence: "high", reason: "title contains Lösung", role: "solution_pdf", type: "pdf" },
+        },
+        {
+          id: "sheet-09",
+          title: "Aufgabenblatt 09",
+          pairingConfidence: "high",
+          pairingReason: "no matching solution PDF found",
+          pairingStatus: "missing_solution",
+          sheet: { id: "task-09", name: "Aufgabenblatt 09", bucket: "assignment_sheet", confidence: "high", reason: "title contains Aufgabenblatt 09", role: "assignment_sheet", type: "pdf" },
+        },
+      ],
       references: [{ id: "modul", name: "Modulbeschreibung", bucket: "reference", confidence: "medium", reason: "", role: "course_reference", type: "other" }],
       interactions: [{ id: "forum", name: "Forum", bucket: "interaction", confidence: "medium", reason: "", role: "course_interaction", type: "other" }],
+      ignoredAllowed: [{ id: "zoom", name: "Zoom Link", bucket: "ignored_allowed", confidence: "medium", reason: "external meeting tool", role: "interaction", type: "external_tool" }],
       unknown: [{ id: "unknown", name: "Extern", bucket: "unknown", confidence: "low", reason: "", role: "unknown", type: "other" }],
     });
 
     expect(sections.map((section) => [section.id, section.items.map((item) => item.name)])).toEqual([
       ["lecture", ["Teil 01"]],
+      ["assignments", ["Aufgabenblatt 01", "Aufgabenblatt 09"]],
+      ["solutions", ["Aufgabenblatt 01 Lösung"]],
       ["references", ["Modulbeschreibung"]],
       ["interactions", ["Forum"]],
+      ["ignored", ["Zoom Link"]],
       ["unknown", ["Extern"]],
     ]);
   });
