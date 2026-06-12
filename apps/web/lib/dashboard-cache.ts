@@ -1,6 +1,6 @@
 import type { Course, Material, User } from "@/lib/dashboard-data";
 
-const CACHE_PREFIX = "moodle-web-dashboard:";
+const CACHE_PREFIX = "moodle-web-dashboard:v2:";
 const CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 12;
 
 export type DashboardCache = {
