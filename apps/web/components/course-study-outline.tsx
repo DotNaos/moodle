@@ -10,7 +10,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import { ArrowRight, CheckCircle2, ChevronRight, Circle, Filter, Layers, Globe } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronRight, Circle, Filter, Layers, Globe, Play } from "lucide-react";
 import { FileIcon } from "@dotnaos/react-ui/web";
 import type { Material } from "@/lib/dashboard-data";
 import {
@@ -217,18 +217,31 @@ export function TaskOutline({
         const groupDone = groupTasks.filter((task) => isDoneTaskStatus(task.status)).length;
         const groupProgress = Math.round((groupDone / groupTasks.length) * 100);
         const groupComplete = groupDone === groupTasks.length;
+        const groupNextTask = groupTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
         return (
           <section className="flex flex-col gap-1.5" key={group.title}>
             <div className="flex items-center justify-between gap-3 px-1">
               <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{group.title}</h3>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
-                  groupComplete ? "bg-emerald-500/15 text-emerald-600" : "bg-secondary text-muted-foreground",
-                )}
-              >
-                {groupDone}/{groupTasks.length}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
+                    groupComplete ? "bg-emerald-500/15 text-emerald-600" : "bg-secondary text-muted-foreground",
+                  )}
+                >
+                  {groupDone}/{groupTasks.length}
+                </span>
+                {groupNextTask ? (
+                  <button
+                    aria-label={`${group.title} ${groupDone > 0 ? "fortsetzen" : "starten"}`}
+                    className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+                    onClick={() => onSelectTask(groupNextTask.id)}
+                    type="button"
+                  >
+                    <Play aria-hidden className="size-3.5" />
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="mx-1 h-1 overflow-hidden rounded-full bg-secondary">
               <div
