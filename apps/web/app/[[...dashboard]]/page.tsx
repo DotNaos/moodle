@@ -27,7 +27,7 @@ import { CalendarPanel } from "@/components/course-calendar-panel";
 import { ChatPage } from "@/components/chat-page";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
-import { MobileSheet } from "@/components/mobile-sheet";
+import { MobileQuickChat } from "@/components/mobile-quick-chat";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import {
   CalendarEventDetailPanel,
@@ -892,22 +892,18 @@ export default function Home() {
                 <MessageSquare aria-hidden className="size-5" />
               </button>
               {mobileChatMounted ? (
-                <MobileSheet fixedHeight label="Chat" open={mobileChatOpen} onClose={() => setMobileChatOpen(false)}>
-                  <ChatPage
-                    courses={courses}
-                    loadMaterials={ensureCourseMaterials}
-                    materials={materials}
-                    pdfState={pdfState}
-                    selectedCourseId={activeCourseId}
-                    selectedMaterial={selectedMaterial}
-                    studyContext={studyChatContext}
-                    user={user}
-                    variant="sidebar"
-                    onApplyActions={applyCodexActions}
-                    onClose={() => setMobileChatOpen(false)}
-                    onCourseChange={() => {}}
-                  />
-                </MobileSheet>
+                <MobileQuickChat
+                  courses={courses}
+                  materials={materials}
+                  open={mobileChatOpen}
+                  pdfState={pdfState}
+                  selectedCourseId={activeCourseId}
+                  selectedMaterial={selectedMaterial}
+                  studyContext={studyChatContext}
+                  user={user}
+                  onApplyActions={applyCodexActions}
+                  onClose={() => setMobileChatOpen(false)}
+                />
               ) : null}
             </>
           ) : null}
