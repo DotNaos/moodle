@@ -1,7 +1,7 @@
 "use client";
 
 import katex from "katex";
-import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, MessageCircle, MoreHorizontal, PanelRightClose, PanelRightOpen, Play, RefreshCw, Rows3, Settings2, Sparkles, WandSparkles, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Play, RefreshCw, Rows3, Settings2, Sparkles, Square, WandSparkles, X } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,6 +21,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
+import { MobileSheet } from "@/components/mobile-sheet";
 import {
   StudyPipelinePreview,
   type CourseInventoryResponse,
@@ -32,7 +33,7 @@ import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import type { StudyOutline } from "@/lib/study-outline";
-import { EMPTY_STUDY_OUTLINE } from "@/lib/study-outline";
+import { EMPTY_STUDY_OUTLINE, taskDisplayTitle } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export type TaskViewResponse = {
@@ -218,6 +219,17 @@ export function TaskStudyPanel({
     : -1;
   const previousTask = selectedTaskIndex > 0 ? flatTasks[selectedTaskIndex - 1] : null;
   const nextTask = selectedTaskIndex >= 0 ? flatTasks[selectedTaskIndex + 1] ?? null : null;
+  // The chapter (Moodle section) the selected task's sheet belongs to.
+  const selectedTaskChapter = useMemo(() => {
+    if (!selectedTask) {
+      return null;
+    }
+    const materials = asArray(pipelineStatus?.materials);
+    const material =
+      materials.find((item) => item.id === selectedTask.sourceResourceId) ??
+      materials.find((item) => item.id === selectedSheet?.resourceId);
+    return material?.sectionName?.trim() || null;
+  }, [pipelineStatus, selectedSheet, selectedTask]);
 
   // Live tutor context for the Codex chat: while the test mode is active, the
   // chat sees the focused subtask, the answer draft, and the stored solution.
@@ -567,9 +579,10 @@ export function TaskStudyPanel({
   }
 
   async function updateSelectedTaskStatus(status: "done" | "open") {
-    if (!selectedTask || !courseId || updatingTaskStatus) {
+    if (!selectedTask || !courseId || !view || updatingTaskStatus) {
       return;
     }
+    const nextView = updateTaskStatusInView(view, selectedTask.taskId, status);
     setUpdatingTaskStatus(true);
     setError(null);
     try {
@@ -580,14 +593,8 @@ export function TaskStudyPanel({
           body: JSON.stringify({ status }),
         },
       );
-      setView((current) => {
-        if (!current) {
-          return current;
-        }
-        const nextView = updateTaskStatusInView(current, selectedTask.taskId, status);
-        onTaskViewChange?.(nextView);
-        return nextView;
-      });
+      setView(nextView);
+      onTaskViewChange?.(nextView);
       setMessage(status === "done" ? "Aufgabe als erledigt markiert." : "Aufgabe wieder geöffnet.");
     } catch (statusError) {
       setError(getErrorMessage(statusError));
@@ -730,17 +737,79 @@ export function TaskStudyPanel({
   const pageIcon = mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />;
   const fatalLoadError = Boolean(error && !view && !loading && !runningStage);
 
+  // Shared between the desktop header dropdown and the floating mobile one.
+  const actionMenuItems = (
+    <>
+      {selectedTask?.sourceResourceId || selectedSheet?.resourceId ? (
+        <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedTask?.sourceResourceId ?? selectedSheet?.resourceId ?? null)}>
+          <FileText aria-hidden />
+          Original-PDF öffnen
+        </DropdownMenuItem>
+      ) : null}
+      {selectedSheet?.solutionResourceId ? (
+        <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedSheet.solutionResourceId!)}>
+          <FileText aria-hidden />
+          Lösungs-PDF öffnen
+        </DropdownMenuItem>
+      ) : null}
+      {selectedTask?.contentState?.id ? (
+        <DropdownMenuItem
+          disabled={!codexConnected || !selectedRefineModel || refiningTarget === `task:${selectedTask.contentState.id}`}
+          onSelect={() => void refineStudyContent("task", selectedTask.contentState?.id ?? selectedTask.sourceResourceId)}
+        >
+          {refiningTarget === `task:${selectedTask.contentState.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
+          Extraktion verbessern
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem onSelect={() => setCodexSettingsOpen((open) => !open)}>
+        <Settings2 aria-hidden />
+        Codex-Einstellungen
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        disabled={loading || Boolean(runningStage)}
+        onSelect={() => void runPipelineStage("raw")}
+      >
+        {runningStage === "raw" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
+        Rohdaten laden
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={loading || Boolean(runningStage)}
+        onSelect={() => void runPipelineStage("extracted")}
+      >
+        {runningStage === "extracted" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
+        Texte extrahieren
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={loading || Boolean(runningStage)}
+        onSelect={() => void runPipelineStage("curated")}
+      >
+        {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+        Neu erstellen
+      </DropdownMenuItem>
+    </>
+  );
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-visible">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between md:px-6">
+      {/* The top bar breadcrumb already names the task on mobile, so the
+          header only exists on md+; mobile gets floating corner controls. */}
+      <div
+        className={cn(
+          "items-center justify-between gap-3 border-b border-border px-4 py-3.5 md:px-6",
+          selectedTask ? "hidden md:flex" : "flex",
+        )}
+      >
         {selectedTask ? (
           <div className="min-w-0">
             <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              {selectedSheet?.title ?? "Aufgabenblatt"}
+              {selectedTaskChapter ?? selectedSheet?.title ?? "Aufgabenblatt"}
               {selectedTaskIndex >= 0 ? ` · ${selectedTaskIndex + 1} von ${flatTasks.length}` : ""}
             </p>
             <div className="mt-0.5 flex min-w-0 items-center gap-2">
-              <h2 className="truncate text-lg font-semibold tracking-tight">{selectedTask.title}</h2>
+              <h2 className="truncate text-lg font-semibold tracking-tight">
+                {taskDisplayTitle(selectedSheet?.title, selectedTask.title)}
+              </h2>
               {taskMode === "test" ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-primary-foreground">
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary-foreground" />
@@ -765,7 +834,7 @@ export function TaskStudyPanel({
           </div>
         )}
         {view ? (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             {selectedTask ? (
               <>
                 {taskMode === "test" ? (
@@ -800,6 +869,7 @@ export function TaskStudyPanel({
                 ) : null}
                 <Button
                   className={cn(
+                    "hidden md:inline-flex",
                     isDoneTaskStatus(selectedTask.status) &&
                       "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 hover:text-emerald-600",
                   )}
@@ -824,6 +894,7 @@ export function TaskStudyPanel({
                   </Button>
                 ) : (
                   <Button
+                    className="hidden md:inline-flex"
                     onClick={() => {
                       setTaskMode("test");
                       setTestComposerOpen(true);
@@ -843,53 +914,7 @@ export function TaskStudyPanel({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-56 rounded-2xl border-0 bg-popover p-1.5 shadow-lg">
-                {selectedTask?.sourceResourceId || selectedSheet?.resourceId ? (
-                  <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedTask?.sourceResourceId ?? selectedSheet?.resourceId ?? null)}>
-                    <FileText aria-hidden />
-                    Original-PDF öffnen
-                  </DropdownMenuItem>
-                ) : null}
-                {selectedSheet?.solutionResourceId ? (
-                  <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedSheet.solutionResourceId!)}>
-                    <FileText aria-hidden />
-                    Lösungs-PDF öffnen
-                  </DropdownMenuItem>
-                ) : null}
-                {selectedTask?.contentState?.id ? (
-                  <DropdownMenuItem
-                    disabled={!codexConnected || !selectedRefineModel || refiningTarget === `task:${selectedTask.contentState.id}`}
-                    onSelect={() => void refineStudyContent("task", selectedTask.contentState?.id ?? selectedTask.sourceResourceId)}
-                  >
-                    {refiningTarget === `task:${selectedTask.contentState.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
-                    Extraktion verbessern
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem onSelect={() => setCodexSettingsOpen((open) => !open)}>
-                  <Settings2 aria-hidden />
-                  Codex-Einstellungen
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={loading || Boolean(runningStage)}
-                  onSelect={() => void runPipelineStage("raw")}
-                >
-                  {runningStage === "raw" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
-                  Rohdaten laden
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={loading || Boolean(runningStage)}
-                  onSelect={() => void runPipelineStage("extracted")}
-                >
-                  {runningStage === "extracted" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
-                  Texte extrahieren
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={loading || Boolean(runningStage)}
-                  onSelect={() => void runPipelineStage("curated")}
-                >
-                  {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-                  Neu erstellen
-                </DropdownMenuItem>
+                {actionMenuItems}
               </DropdownMenuContent>
             </DropdownMenu>
             {!selectedTask ? (
@@ -907,6 +932,77 @@ export function TaskStudyPanel({
           </div>
         ) : null}
       </div>
+
+      {/* Mobile corner controls: actions menu top-left; mode controls top-right
+          (play and stop share the same spot). */}
+      {view && selectedTask ? (
+        <>
+          <div className="fixed left-3 top-14 z-30 md:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="Aktionen"
+                  className="grid size-10 place-items-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border backdrop-blur transition-transform active:scale-95"
+                  type="button"
+                >
+                  <MoreHorizontal aria-hidden className="size-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-56 rounded-2xl border-0 bg-popover p-1.5 shadow-lg">
+                {actionMenuItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="fixed right-3 top-14 z-30 flex items-center gap-2 md:hidden">
+            {taskMode === "test" ? (
+              <button
+                aria-label="Test beenden"
+                className="grid size-10 place-items-center rounded-full bg-red-500/15 text-red-600 shadow-md ring-1 ring-red-500/30 backdrop-blur transition-transform active:scale-95"
+                onClick={() => setTaskMode("view")}
+                type="button"
+              >
+                <Square aria-hidden className="size-4 fill-current" />
+              </button>
+            ) : (
+              <>
+                <button
+                  aria-label={isDoneTaskStatus(selectedTask.status) ? "Als offen markieren" : "Als erledigt markieren"}
+                  className={cn(
+                    "grid size-10 place-items-center rounded-full shadow-md ring-1 backdrop-blur transition-transform active:scale-95",
+                    isDoneTaskStatus(selectedTask.status)
+                      ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30"
+                      : "bg-background/90 text-foreground ring-border",
+                  )}
+                  disabled={updatingTaskStatus}
+                  onClick={() =>
+                    void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")
+                  }
+                  type="button"
+                >
+                  {updatingTaskStatus ? (
+                    <Spinner aria-hidden className="size-4" />
+                  ) : isDoneTaskStatus(selectedTask.status) ? (
+                    <CheckCircle2 aria-hidden className="size-4" />
+                  ) : (
+                    <Circle aria-hidden className="size-4" />
+                  )}
+                </button>
+                <button
+                  aria-label="Test starten"
+                  className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-md backdrop-blur transition-transform active:scale-95"
+                  onClick={() => {
+                    setTaskMode("test");
+                    setTestComposerOpen(true);
+                  }}
+                  type="button"
+                >
+                  <Play aria-hidden className="size-4" />
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      ) : null}
 
       {error && !fatalLoadError ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
       {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">{message}</div> : null}
@@ -984,36 +1080,6 @@ export function TaskStudyPanel({
         <div
           className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden"
         >
-          {selectedTask && taskMode !== "test" ? (
-            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 md:hidden">
-              {view?.sheets.map((sheet) => (
-                <section className="mb-5" key={sheet.resourceId}>
-                  <h3 className="mb-2 line-clamp-2 px-2 text-xs font-medium uppercase text-muted-foreground">
-                    {sheet.title}
-                  </h3>
-                  <div className="flex flex-col gap-1">
-                    {sheet.tasks.map((task) => (
-                      <button
-                        className={cn(
-                          "rounded-2xl px-3 py-2 text-left text-sm transition-colors",
-                          task.taskId === selectedTask?.taskId ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-                        )}
-                        key={task.taskId}
-                        onClick={() => onSelectedTaskIdChange(task.taskId)}
-                        type="button"
-                      >
-                        <span className="line-clamp-2 font-medium">{task.title}</span>
-                        <span className={cn("mt-1 block text-xs", task.taskId === selectedTask?.taskId ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                          {task.status.replace("_", " ")}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )) ?? null}
-            </aside>
-          ) : null}
-
           <main
             className={cn(
               "min-h-0 bg-background",
@@ -1045,15 +1111,42 @@ export function TaskStudyPanel({
                 task={selectedTask}
               />
             ) : selectedTask ? (
-              <article className="mx-auto max-w-[86ch]">
+              <article className="mx-auto max-w-[86ch] pb-28 md:pb-0">
                 <div className="py-2">
                   <MarkdownBlock
                     onCitationClick={(resourceId) => setPreviewResourceId(resourceId)}
                     text={taskPromptText(selectedTask)}
                   />
                 </div>
-                <footer className="sticky bottom-0 z-10 mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background/95 pb-3 pt-4 backdrop-blur">
+                {/* Mobile HUD: task navigation bottom-left (chat FAB owns bottom-right). */}
+                <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 flex items-center gap-1 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border backdrop-blur md:hidden [[data-mobile-chat=open]_&]:hidden">
+                  <button
+                    aria-label="Vorherige Aufgabe"
+                    className="grid size-10 place-items-center rounded-full text-foreground transition-colors disabled:opacity-35"
+                    disabled={!previousTask}
+                    onClick={() => previousTask && onSelectedTaskIdChange(previousTask.taskId)}
+                    type="button"
+                  >
+                    <ArrowLeft aria-hidden className="size-4" />
+                  </button>
+                  {selectedTaskIndex >= 0 ? (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {selectedTaskIndex + 1}/{flatTasks.length}
+                    </span>
+                  ) : null}
+                  <button
+                    aria-label="Nächste Aufgabe"
+                    className="grid size-10 place-items-center rounded-full text-foreground transition-colors disabled:opacity-35"
+                    disabled={!nextTask}
+                    onClick={() => nextTask && onSelectedTaskIdChange(nextTask.taskId)}
+                    type="button"
+                  >
+                    <ArrowRight aria-hidden className="size-4" />
+                  </button>
+                </div>
+                <footer className="mt-10 hidden items-center justify-between gap-2 border-t border-border bg-background/95 pb-3 pt-4 backdrop-blur md:sticky md:bottom-0 md:z-10 md:flex">
                   <Button
+                    aria-label="Vorherige Aufgabe"
                     disabled={!previousTask}
                     onClick={() => previousTask && onSelectedTaskIdChange(previousTask.taskId)}
                     type="button"
@@ -1062,33 +1155,40 @@ export function TaskStudyPanel({
                     <ArrowLeft aria-hidden />
                     Vorherige
                   </Button>
-                  {!isDoneTaskStatus(selectedTask.status) ? (
+                  <div className="flex items-center gap-2">
                     <Button
+                      className={cn(
+                        isDoneTaskStatus(selectedTask.status) &&
+                          "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 hover:text-emerald-600",
+                      )}
                       disabled={updatingTaskStatus}
                       onClick={() =>
-                        void (async () => {
-                          await updateSelectedTaskStatus("done");
-                          if (nextTask) {
-                            onSelectedTaskIdChange(nextTask.taskId);
-                          }
-                        })()
+                        void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")
                       }
                       type="button"
+                      variant="secondary"
                     >
-                      {updatingTaskStatus ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
-                      {nextTask ? "Erledigt & weiter" : "Erledigt"}
+                      {updatingTaskStatus ? (
+                        <Spinner aria-hidden />
+                      ) : isDoneTaskStatus(selectedTask.status) ? (
+                        <CheckCircle2 aria-hidden />
+                      ) : (
+                        <Circle aria-hidden />
+                      )}
+                      Erledigt
                     </Button>
-                  ) : nextTask ? (
-                    <Button onClick={() => onSelectedTaskIdChange(nextTask.taskId)} type="button">
-                      Nächste Aufgabe
-                      <ArrowRight aria-hidden />
-                    </Button>
-                  ) : (
-                    <span className="inline-flex min-h-10 items-center gap-2 rounded-full bg-emerald-500/15 px-4 text-sm font-medium text-emerald-600">
-                      <CheckCircle2 aria-hidden className="size-4" />
-                      Alle Aufgaben erledigt
-                    </span>
-                  )}
+                    {nextTask ? (
+                      <Button onClick={() => onSelectedTaskIdChange(nextTask.taskId)} type="button">
+                        Weiter
+                        <ArrowRight aria-hidden />
+                      </Button>
+                    ) : isDoneTaskStatus(selectedTask.status) ? (
+                      <span className="inline-flex min-h-10 items-center gap-2 rounded-full bg-emerald-500/15 px-4 text-sm font-medium text-emerald-600">
+                        <CheckCircle2 aria-hidden className="size-4" />
+                        Alle erledigt
+                      </span>
+                    ) : null}
+                  </div>
                 </footer>
               </article>
             ) : (
@@ -1222,6 +1322,16 @@ function TaskTestMode({
   const solutionPDFAvailable = Boolean(courseId && solutionResourceId);
   const [solutionTab, setSolutionTab] = useState<"pdf" | "text">(solutionPDFAvailable ? "pdf" : "text");
   const hasSolution = Boolean(solutionMarkdown) || solutionPDFAvailable;
+  // On mobile the composer lives in a bottom sheet instead of the page flow.
+  const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
+  // Close the sheet once grading finishes so the feedback below is visible.
+  const wasCheckingRef = useRef(false);
+  useEffect(() => {
+    if (wasCheckingRef.current && !checking) {
+      setMobileComposerOpen(false);
+    }
+    wasCheckingRef.current = checking;
+  }, [checking]);
 
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const answer = answers[step.id] ?? "";
@@ -1295,64 +1405,19 @@ function TaskTestMode({
           split && composerOpen && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(24rem,40%)] lg:overflow-hidden",
         )}
       >
-        <div className={cn("px-4 py-6 md:px-8", split && composerOpen && "lg:min-h-0 lg:overflow-y-auto")}>
+        <div className={cn("px-4 pb-28 pt-6 md:px-8 md:py-6", split && composerOpen && "lg:min-h-0 lg:overflow-y-auto")}>
           <div className="mx-auto w-full max-w-2xl">
             {solutionOpen && hasSolution ? (
-              <section className="mb-7 overflow-hidden rounded-3xl border border-amber-500/30 bg-amber-500/10">
-                <div className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold">
-                  <Lightbulb aria-hidden className="size-4 shrink-0 text-amber-500" />
-                  Lösung
-                  {solutionPDFAvailable && solutionMarkdown ? (
-                    <div className="ml-1 inline-flex shrink-0 items-center rounded-full bg-background/70 p-0.5">
-                      <button
-                        className={cn(
-                          "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
-                          solutionTab === "pdf" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                        )}
-                        onClick={() => setSolutionTab("pdf")}
-                        type="button"
-                      >
-                        PDF
-                      </button>
-                      <button
-                        className={cn(
-                          "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
-                          solutionTab === "text" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                        )}
-                        onClick={() => setSolutionTab("text")}
-                        type="button"
-                      >
-                        Text
-                      </button>
-                    </div>
-                  ) : null}
-                  <button
-                    aria-label="Lösung schließen"
-                    className="ml-auto grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                    onClick={() => setSolutionOpen(false)}
-                    type="button"
-                  >
-                    <X aria-hidden className="size-3.5" />
-                  </button>
-                </div>
-                {solutionTab === "pdf" && courseId && solutionResourceId ? (
-                  <div className="h-[55dvh] min-h-72 bg-muted">
-                    <PDFDocumentViewer
-                      allowFloat
-                      courseId={courseId}
-                      materialId={solutionResourceId}
-                      onStateChange={() => {}}
-                      scrollCommand={null}
-                      title="Lösung"
-                      url={`/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(solutionResourceId)}/pdf`}
-                    />
-                  </div>
-                ) : solutionMarkdown ? (
-                  <div className="max-h-[50dvh] overflow-y-auto px-5 pb-4">
-                    <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
-                  </div>
-                ) : null}
-              </section>
+              <TaskSolutionPanel
+                className="mb-7 hidden md:block"
+                courseId={courseId}
+                onCitationClick={onCitationClick}
+                onClose={() => setSolutionOpen(false)}
+                onTabChange={setSolutionTab}
+                solutionMarkdown={solutionMarkdown}
+                solutionResourceId={solutionResourceId}
+                solutionTab={solutionTab}
+              />
             ) : null}
 
             {contextMarkdown ? (
@@ -1381,7 +1446,7 @@ function TaskTestMode({
 
         <div
           className={cn(
-            "px-4 pb-4 md:px-6",
+            "hidden px-4 pb-4 md:block md:px-6",
             split && composerOpen && "lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:py-4 lg:pl-0 lg:pr-4",
             split && !composerOpen && "lg:hidden",
           )}
@@ -1477,7 +1542,267 @@ function TaskTestMode({
           Antwort schreiben
         </button>
       ) : null}
+
+      {/* Mobile test HUD: answer bottom-left, steps centered, solution next to
+          the global chat FAB bottom-right. */}
+      <div className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] left-4 z-20 md:hidden [[data-mobile-chat=open]_&]:hidden">
+        <button
+          aria-label="Antwort schreiben"
+          className="grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95"
+          onClick={() => setMobileComposerOpen(true)}
+          type="button"
+        >
+          <Pencil aria-hidden className="size-5" />
+        </button>
+      </div>
+      {steps.length > 1 ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[max(env(safe-area-inset-bottom),1rem)] z-10 flex justify-center md:hidden [[data-mobile-chat=open]_&]:hidden">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border backdrop-blur">
+            <button
+              aria-label="Vorheriger Schritt"
+              className="grid size-10 place-items-center rounded-full text-foreground transition-colors disabled:opacity-35"
+              disabled={stepIndex === 0}
+              onClick={() => goToStep(stepIndex - 1)}
+              type="button"
+            >
+              <ArrowLeft aria-hidden className="size-4" />
+            </button>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {stepIndex + 1}/{steps.length}
+            </span>
+            <button
+              aria-label="Nächster Schritt"
+              className="grid size-10 place-items-center rounded-full text-foreground transition-colors disabled:opacity-35"
+              disabled={stepIndex >= steps.length - 1}
+              onClick={() => goToStep(stepIndex + 1)}
+              type="button"
+            >
+              <ArrowRight aria-hidden className="size-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {hasSolution ? (
+        <button
+          aria-label={solutionOpen ? "Lösung verbergen" : "Lösung anzeigen"}
+          className={cn(
+            "fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-[4.75rem] z-20 grid size-12 place-items-center rounded-full shadow-lg ring-1 backdrop-blur transition-transform active:scale-95 md:hidden [[data-mobile-chat=open]_&]:hidden",
+            solutionOpen
+              ? "bg-amber-500/15 text-amber-600 ring-amber-500/30"
+              : "bg-background/90 text-foreground ring-border",
+          )}
+          onClick={() => setSolutionOpen((current) => !current)}
+          type="button"
+        >
+          <Lightbulb aria-hidden className="size-5" />
+        </button>
+      ) : null}
+
+      {solutionOpen && hasSolution ? (
+        <MobileSheet label="Lösung" onClose={() => setSolutionOpen(false)}>
+          {(expanded, setExpanded) => (
+            <div className="flex h-full flex-col">
+              <div className="flex shrink-0 items-center gap-2 px-4 pb-2">
+                <Lightbulb aria-hidden className="size-4 shrink-0 text-amber-500" />
+                <span className="text-sm font-semibold">Lösung</span>
+                {solutionPDFAvailable && solutionMarkdown ? (
+                  <div className="ml-1 inline-flex shrink-0 items-center rounded-full bg-secondary p-0.5">
+                    <button
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                        solutionTab === "pdf" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
+                      )}
+                      onClick={() => setSolutionTab("pdf")}
+                      type="button"
+                    >
+                      PDF
+                    </button>
+                    <button
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                        solutionTab === "text" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
+                      )}
+                      onClick={() => setSolutionTab("text")}
+                      type="button"
+                    >
+                      Text
+                    </button>
+                  </div>
+                ) : null}
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <button
+                    aria-label={expanded ? "Verkleinern" : "Maximieren"}
+                    className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    onClick={() => setExpanded(!expanded)}
+                    type="button"
+                  >
+                    {expanded ? <Minimize2 aria-hidden className="size-4" /> : <Maximize2 aria-hidden className="size-4" />}
+                  </button>
+                  <button
+                    aria-label="Lösung schließen"
+                    className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    onClick={() => setSolutionOpen(false)}
+                    type="button"
+                  >
+                    <X aria-hidden className="size-4" />
+                  </button>
+                </div>
+              </div>
+              {solutionTab === "pdf" && courseId && solutionResourceId ? (
+                <div className={cn("bg-muted", expanded ? "min-h-0 flex-1" : "h-[50dvh]")}>
+                  <PDFDocumentViewer
+                    embedded
+                    courseId={courseId}
+                    materialId={solutionResourceId}
+                    onStateChange={() => {}}
+                    scrollCommand={null}
+                    title="Lösung"
+                    url={`/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(solutionResourceId)}/pdf`}
+                  />
+                </div>
+              ) : solutionMarkdown ? (
+                <div
+                  className={cn(
+                    "overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom),1rem)]",
+                    expanded ? "min-h-0 flex-1" : "max-h-[50dvh]",
+                  )}
+                >
+                  <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
+                </div>
+              ) : null}
+            </div>
+          )}
+        </MobileSheet>
+      ) : null}
+
+      {mobileComposerOpen ? (
+        <MobileSheet label="Antwortbereich" onClose={() => setMobileComposerOpen(false)}>
+          {(expanded, setExpanded) => (
+            <div className={cn("flex flex-col px-4 pb-[max(env(safe-area-inset-bottom),1rem)]", expanded && "h-full")}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold">{step.label ?? "Deine Antwort"}</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    aria-label={expanded ? "Verkleinern" : "Maximieren"}
+                    className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    onClick={() => setExpanded(!expanded)}
+                    type="button"
+                  >
+                    {expanded ? <Minimize2 aria-hidden className="size-4" /> : <Maximize2 aria-hidden className="size-4" />}
+                  </button>
+                  <button
+                    aria-label="Schließen"
+                    className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    onClick={() => setMobileComposerOpen(false)}
+                    type="button"
+                  >
+                    <X aria-hidden className="size-4" />
+                  </button>
+                </div>
+              </div>
+              <textarea
+                autoFocus
+                className={cn(
+                  "min-h-36 w-full resize-none rounded-2xl bg-secondary/50 px-3.5 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground",
+                  expanded && "min-h-0 flex-1",
+                )}
+                onChange={(event) =>
+                  setAnswers((current) => ({ ...current, [step.id]: event.target.value }))
+                }
+                placeholder={step.label ? `Deine Antwort zu ${step.label}…` : "Deine Antwort…"}
+                value={answer}
+              />
+              <div className="mt-2 flex shrink-0 items-center justify-between gap-2">
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{wordCount} Wörter</span>
+                <Button disabled={!canGrade} onClick={grade} type="button">
+                  {checking ? <Spinner aria-hidden /> : <Sparkles aria-hidden />}
+                  Bewerten
+                </Button>
+              </div>
+            </div>
+          )}
+        </MobileSheet>
+      ) : null}
     </div>
+  );
+}
+
+function TaskSolutionPanel({
+  className,
+  courseId,
+  onCitationClick,
+  onClose,
+  onTabChange,
+  solutionMarkdown,
+  solutionResourceId,
+  solutionTab,
+}: {
+  className?: string;
+  courseId: string | null;
+  onCitationClick: (resourceId: string) => void;
+  onClose: () => void;
+  onTabChange: (tab: "pdf" | "text") => void;
+  solutionMarkdown: string | null;
+  solutionResourceId: string | null;
+  solutionTab: "pdf" | "text";
+}) {
+  const solutionPDFAvailable = Boolean(courseId && solutionResourceId);
+  return (
+    <section className={cn("overflow-hidden rounded-3xl border border-amber-500/30 bg-amber-500/10", className)}>
+      <div className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold">
+        <Lightbulb aria-hidden className="size-4 shrink-0 text-amber-500" />
+        Lösung
+        {solutionPDFAvailable && solutionMarkdown ? (
+          <div className="ml-1 inline-flex shrink-0 items-center rounded-full bg-background/70 p-0.5">
+            <button
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                solutionTab === "pdf" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => onTabChange("pdf")}
+              type="button"
+            >
+              PDF
+            </button>
+            <button
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                solutionTab === "text" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => onTabChange("text")}
+              type="button"
+            >
+              Text
+            </button>
+          </div>
+        ) : null}
+        <button
+          aria-label="Lösung schließen"
+          className="ml-auto grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          onClick={onClose}
+          type="button"
+        >
+          <X aria-hidden className="size-3.5" />
+        </button>
+      </div>
+      {solutionTab === "pdf" && courseId && solutionResourceId ? (
+        <div className="h-[55dvh] min-h-72 bg-muted">
+          <PDFDocumentViewer
+            allowFloat
+            courseId={courseId}
+            materialId={solutionResourceId}
+            onStateChange={() => {}}
+            scrollCommand={null}
+            title="Lösung"
+            url={`/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(solutionResourceId)}/pdf`}
+          />
+        </div>
+      ) : solutionMarkdown ? (
+        <div className="max-h-[50dvh] overflow-y-auto px-5 pb-4">
+          <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -2030,6 +2355,9 @@ function ScriptReader({
     [view?.scriptMarkdown, view?.scriptSections],
   );
   const [scrollProgress, setScrollProgress] = useState(0);
+  // Scroll-spy: the chapter currently at the top of the viewport drives the
+  // highlight in the table of contents.
+  const [visibleChapterId, setVisibleChapterId] = useState<string | null>(null);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -2053,22 +2381,37 @@ function ScriptReader({
     }
     const maxScroll = container.scrollHeight - container.clientHeight;
     setScrollProgress(maxScroll > 0 ? Math.min(100, Math.max(0, (container.scrollTop / maxScroll) * 100)) : 100);
+
+    const containerTop = container.getBoundingClientRect().top;
+    let current: string | null = null;
+    for (const element of container.querySelectorAll<HTMLElement>("[data-script-chapter-id]")) {
+      if (element.getBoundingClientRect().top - containerTop > 140) {
+        break;
+      }
+      current = element.dataset.scriptChapterId ?? null;
+    }
+    setVisibleChapterId(current);
   }
 
+  const activeChapterId =
+    visibleChapterId ??
+    chapters.find((item) => item.id === selectedSectionId || item.state?.id === selectedSectionId)?.id ??
+    null;
+
   return (
-    <div className="grid min-h-0 flex-1 bg-background 2xl:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 border-r border-border bg-background px-4 py-5 2xl:block">
-        <div className="sticky top-0">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Course Script</p>
-          <h3 className="mt-2 line-clamp-2 text-base font-semibold leading-tight">{courseTitleText}</h3>
-          <nav className="mt-5 max-h-[calc(100dvh-14rem)] space-y-1 overflow-auto pr-1">
-            {chapters.map((chapter) => (
+    <div className="grid min-h-0 flex-1 bg-background xl:grid-cols-[250px_minmax(0,1fr)]">
+      <aside className="hidden min-h-0 flex-col border-r border-border bg-background px-3 py-5 xl:flex">
+        <p className="px-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Inhalt</p>
+        <nav className="mt-3 min-h-0 flex-1 space-y-0.5 overflow-auto pr-1">
+          {chapters.map((chapter, index) => {
+            const active = activeChapterId === chapter.id;
+            return (
               <button
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-[1.25rem] px-3 py-2 text-left text-sm transition-colors",
-                  selectedSectionId === chapter.id || selectedSectionId === chapter.state?.id
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-secondary",
+                  "flex w-full items-baseline gap-2 rounded-xl px-2 py-1.5 text-left text-[13px] leading-snug transition-colors",
+                  active
+                    ? "bg-secondary font-medium text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                 )}
                 key={chapter.id}
                 onClick={() => {
@@ -2078,31 +2421,29 @@ function ScriptReader({
                 }}
                 type="button"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 font-medium">{chapter.title}</span>
-                  <span className={cn("mt-1 block text-xs", selectedSectionId === chapter.id || selectedSectionId === chapter.state?.id ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                    {chapter.state?.statusLabel ?? "Machine extracted"}
-                  </span>
+                <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/60">
+                  {index + 1}
                 </span>
+                <span className="line-clamp-2 min-w-0 flex-1">{chapter.title}</span>
+                {chapter.state?.status === "codex-improved" ? (
+                  <Sparkles aria-hidden className="size-3 shrink-0 self-center text-primary" />
+                ) : null}
               </button>
-            ))}
-          </nav>
-        </div>
+            );
+          })}
+        </nav>
       </aside>
 
       <div className="flex min-h-0 flex-col">
-        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Reading progress</p>
-              <p className="mt-1 truncate text-sm font-medium">{Math.round(scrollProgress)}% through this script</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <ContentStateBadge state={scriptAggregateState(view?.scriptSections)} />
-            </div>
+        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur md:px-8">
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {Math.round(scrollProgress)}% gelesen
+            </p>
+            <ContentStateBadge state={scriptAggregateState(view?.scriptSections)} />
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${scrollProgress}%` }} />
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${scrollProgress}%` }} />
           </div>
         </div>
 

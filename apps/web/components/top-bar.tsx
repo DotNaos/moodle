@@ -34,9 +34,10 @@ export function TopBar({
   return (
     <header className="flex h-12 w-full min-w-0 shrink-0 items-center gap-1 border-b border-border px-2 md:px-3">
       {showSidebarToggle && onToggleSidebar ? (
+        // The sidebar only exists on md+; on mobile the toggle would do nothing.
         <button
           aria-label="Sidebar ein-/ausblenden"
-          className={ICON_BUTTON_CLASS}
+          className={cn(ICON_BUTTON_CLASS, "hidden md:grid")}
           onClick={onToggleSidebar}
           type="button"
         >
@@ -44,7 +45,23 @@ export function TopBar({
         </button>
       ) : null}
 
-      <div className="flex shrink-0 items-center gap-0.5">
+      {/* Mobile: a single back button that drills one level up. */}
+      <button
+        aria-label="Eine Ebene zurück"
+        className={cn(ICON_BUTTON_CLASS, "md:hidden")}
+        disabled={breadcrumbs.length <= 1}
+        onClick={() => {
+          const parent = breadcrumbs[breadcrumbs.length - 2];
+          if (parent) {
+            onNavigate(parent.target);
+          }
+        }}
+        type="button"
+      >
+        <ArrowLeft aria-hidden className="size-5" />
+      </button>
+
+      <div className="hidden shrink-0 items-center gap-0.5 md:flex">
         <button
           aria-label="Zurück"
           className={ICON_BUTTON_CLASS}
@@ -67,7 +84,7 @@ export function TopBar({
 
       <button
         aria-label="Home"
-        className={ICON_BUTTON_CLASS}
+        className={cn(ICON_BUTTON_CLASS, "hidden md:grid")}
         onClick={() => onNavigate(breadcrumbs[0]?.target ?? { path: { kind: "home" }, document: null })}
         type="button"
       >
@@ -78,9 +95,13 @@ export function TopBar({
         {breadcrumbs.slice(1).map((crumb, index) => {
           const isCurrent = index === breadcrumbs.length - 2;
           return (
-            <span className={cn("flex items-center gap-0.5", isCurrent ? "min-w-0" : "shrink-0")} key={crumb.id}>
+            // Mobile shows only the current location; the full trail is md+.
+            <span
+              className={cn("items-center gap-0.5", isCurrent ? "flex min-w-0" : "hidden shrink-0 md:flex")}
+              key={crumb.id}
+            >
               {index > 0 ? (
-                <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" />
+                <ChevronRight aria-hidden className="hidden size-3.5 shrink-0 text-muted-foreground/60 md:block" />
               ) : null}
               {isCurrent ? (
                 <span aria-current="page" className="truncate px-2 py-1 text-sm font-medium text-foreground">

@@ -564,7 +564,7 @@ function compactChatText(value: string): string {
   return `${normalized.slice(0, 77).trim()}...`;
 }
 
-function ChatMessageBubble({ message }: { message: CodexChatUIMessage }) {
+export function ChatMessageBubble({ message }: { message: CodexChatUIMessage }) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   if (message.role === "user") {

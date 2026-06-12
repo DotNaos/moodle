@@ -30,6 +30,7 @@ type FloatState = "inline" | "opening" | "open" | "closing";
 export function PDFDocumentViewer({
   allowFloat = false,
   courseId,
+  embedded = false,
   externalUrl,
   expanded = false,
   materialId,
@@ -43,6 +44,9 @@ export function PDFDocumentViewer({
   // reload) instead of delegating expansion to the parent.
   allowFloat?: boolean;
   courseId: string | null;
+  // Hides the built-in title chrome for hosts that render their own header
+  // (e.g. mobile bottom sheets).
+  embedded?: boolean;
   externalUrl?: string;
   expanded?: boolean;
   materialId: string;
@@ -625,16 +629,20 @@ export function PDFDocumentViewer({
         )}
         style={floating ? panelStyle : undefined}
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-muted via-muted/70 to-transparent"
-        />
-        <div className={cn("pointer-events-none absolute inset-x-0 top-0 z-20 flex items-baseline gap-2 px-4 pt-3", floating && "pr-14")}>
-          <h3 className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">{title}</h3>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {currentPage} / {pageCount}
-          </span>
-        </div>
+        {!embedded ? (
+          <>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-muted via-muted/70 to-transparent"
+            />
+            <div className={cn("pointer-events-none absolute inset-x-0 top-0 z-20 flex items-baseline gap-2 px-4 pt-3", floating && "pr-14")}>
+              <h3 className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">{title}</h3>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {currentPage} / {pageCount}
+              </span>
+            </div>
+          </>
+        ) : null}
         {floating ? (
           <button
             aria-label="Großansicht schließen"
@@ -649,7 +657,8 @@ export function PDFDocumentViewer({
         <div
           ref={containerRef}
           className={cn(
-            "min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-16 pt-12 [-webkit-overflow-scrolling:touch] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4",
+            "min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-16 [-webkit-overflow-scrolling:touch] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4",
+            embedded ? "pt-3" : "pt-12",
             visualZoom > 1.01 ? "[touch-action:none]" : "[touch-action:pan-y_pinch-zoom]",
           )}
           data-pannable={visualZoom > 1.01}

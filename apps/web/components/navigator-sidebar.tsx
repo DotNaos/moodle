@@ -16,7 +16,7 @@ import {
   type NavigatorPath,
   type NavigatorState,
 } from "@/lib/navigator";
-import type { StudyOutline } from "@/lib/study-outline";
+import { taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 type CourseListGroup = {
@@ -426,65 +426,61 @@ function TaskDrillList({
           {totalCount > 0 ? <span>{progress}%</span> : null}
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+          <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${progress}%` }} />
         </div>
       </div>
       {totalCount > 0 ? (
         <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
           {groups.map((group) => (
             <section key={group.title}>
-              <p className="mb-1.5 line-clamp-1 px-1 text-[11px] font-medium text-muted-foreground">{group.title}</p>
+              <p className="mb-1.5 line-clamp-1 px-1 text-xs font-semibold text-foreground">{group.title}</p>
               <div className="space-y-1">
-                {group.sheets.map((sheet) => (
-                  <div className="space-y-1" key={sheet.title}>
-                    <p className="line-clamp-1 px-1 text-xs font-semibold text-foreground">{sheet.title}</p>
-                    {sheet.tasks.map((task) => {
-                      const done = isDoneTaskStatus(task.status);
-                      const active = activeTaskId === task.id;
-                      return (
-                        <div
+                {group.sheets.flatMap((sheet) => sheet.tasks).map((task) => {
+                  const done = isDoneTaskStatus(task.status);
+                  const active = activeTaskId === task.id;
+                  const displayTitle = taskDisplayTitle(task.sheetTitle, task.title);
+                  return (
+                    <div
+                      className={cn(
+                        "flex min-h-9 min-w-0 items-center gap-0.5 rounded-xl pr-1 transition-colors",
+                        active ? "bg-secondary" : "hover:bg-secondary/60",
+                      )}
+                      key={task.id}
+                    >
+                      <button
+                        aria-label={done ? `${displayTitle} als offen markieren` : `${displayTitle} als erledigt markieren`}
+                        className={cn(
+                          "grid size-8 shrink-0 place-items-center rounded-lg transition-colors",
+                          done
+                            ? "text-emerald-600 hover:bg-emerald-500/10"
+                            : "text-muted-foreground hover:bg-background hover:text-foreground",
+                        )}
+                        onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
+                        type="button"
+                      >
+                        {done ? <CheckCircle2 aria-hidden className="size-4" /> : <Circle aria-hidden className="size-4" />}
+                      </button>
+                      <button
+                        className="min-w-0 flex-1 py-1.5 text-left text-xs"
+                        onClick={() => onOpenTask(task.id)}
+                        type="button"
+                      >
+                        <span
                           className={cn(
-                            "flex min-h-9 min-w-0 items-center gap-0.5 rounded-xl pr-1 transition-colors",
-                            active ? "bg-secondary" : "hover:bg-secondary/60",
+                            "block truncate font-medium",
+                            active ? "text-foreground" : "text-muted-foreground",
+                            done && !active && "line-through decoration-muted-foreground/40",
                           )}
-                          key={task.id}
                         >
-                          <button
-                            aria-label={done ? `${task.title} als offen markieren` : `${task.title} als erledigt markieren`}
-                            className={cn(
-                              "grid size-8 shrink-0 place-items-center rounded-lg transition-colors",
-                              done
-                                ? "text-emerald-600 hover:bg-emerald-500/10"
-                                : "text-muted-foreground hover:bg-background hover:text-foreground",
-                            )}
-                            onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
-                            type="button"
-                          >
-                            {done ? <CheckCircle2 aria-hidden className="size-4" /> : <Circle aria-hidden className="size-4" />}
-                          </button>
-                          <button
-                            className="min-w-0 flex-1 py-1.5 text-left text-xs"
-                            onClick={() => onOpenTask(task.id)}
-                            type="button"
-                          >
-                            <span
-                              className={cn(
-                                "block truncate font-medium",
-                                active ? "text-foreground" : "text-muted-foreground",
-                                done && !active && "line-through decoration-muted-foreground/40",
-                              )}
-                            >
-                              {task.title}
-                            </span>
-                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                              {taskStatusLabel(task.status)}
-                            </span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                          {displayTitle}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {taskStatusLabel(task.status)}
+                        </span>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           ))}
