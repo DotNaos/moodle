@@ -1,9 +1,10 @@
 "use client";
 
-import { BookOpenText, CheckCircle2, FileText, Layers, Loader2, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { BookOpenText, CheckCircle2, ChevronDown, FileText, Layers, Loader2, Sparkles } from "lucide-react";
+import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import type { Course } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
@@ -64,103 +65,80 @@ export function StudyPipelinePreview({
   onRunStage,
 }: StudyPipelinePreviewProps) {
   const sections = useMemo(() => buildStudyPipelinePreviewSections(status), [status]);
-  const [selectedSectionIds, setSelectedSectionIds] = useState<Set<string>>(new Set());
-  const selectedCount = sections.filter((section) => selectedSectionIds.has(section.id)).length;
-
-  function selectFirst(count: number) {
-    setSelectedSectionIds(new Set(sections.slice(0, count).map((section) => section.id)));
-  }
-
-  function toggleSection(id: string) {
-    setSelectedSectionIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }
+  const summary = status?.summary;
+  const resourceCount = sections.reduce((total, section) => total + section.items.length, 0);
+  const busy = loading || Boolean(runningStage);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-background">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <header className="border-b border-border pb-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            {mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />}
-            {mode === "script" ? "Script vorbereiten" : "Aufgaben vorbereiten"}
-          </div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">{courseTitle(course)}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Noch kein fertiger Study-Stand geladen. Prüfe zuerst die gefundenen Moodle-Ressourcen und starte dann bewusst
-            die Erstellung.
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 md:px-6 md:py-14">
+        <header className="flex flex-col items-center text-center">
+          <span className="grid size-14 place-items-center rounded-full bg-secondary text-muted-foreground">
+            {mode === "script" ? (
+              <BookOpenText aria-hidden className="size-6" />
+            ) : (
+              <CheckCircle2 aria-hidden className="size-6" />
+            )}
+          </span>
+          <h2 className="mt-4 text-xl font-semibold tracking-tight">
+            {mode === "script" ? "Noch kein Script erstellt" : "Noch keine Aufgaben erstellt"}
+          </h2>
+          <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+            {loading
+              ? "Moodle-Ressourcen werden geprüft…"
+              : mode === "script"
+                ? `Aus den Materialien von ${courseTitle(course)} wird ein durchsuchbares Script mit Quellenverweisen erstellt.`
+                : `Aus den Aufgabenblättern von ${courseTitle(course)} werden übbare Aufgaben mit Lösungs-Check erstellt.`}
           </p>
+          <div className="mt-5">
+            <StageButton
+              disabled={busy}
+              label={mode === "script" ? "Script erstellen" : "Aufgaben erstellen"}
+              primary
+              running={runningStage === "curated"}
+              stage="curated"
+              onRunStage={onRunStage}
+            />
+          </div>
+          {runningStage ? (
+            <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner aria-hidden className="size-3.5" />
+              Das kann ein paar Minuten dauern – die Ansicht aktualisiert sich danach automatisch.
+            </p>
+          ) : null}
         </header>
 
-        <PipelineSummary loading={loading} status={status} />
-
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h3 className="text-base font-semibold">Ressourcen-Vorschau</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Gruppiert nach Moodle-Abschnitten. Aufgabenblätter und Lösungen werden hervorgehoben.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={sections.length === 0}
-                onClick={() => selectFirst(4)}
-                type="button"
-                variant="secondary"
-              >
-                Erste 4 Abschnitte markieren
-              </Button>
-              <Button
-                disabled={sections.length === 0}
-                onClick={() => setSelectedSectionIds(new Set(sections.map((section) => section.id)))}
-                type="button"
-                variant="secondary"
-              >
-                Alle markieren
-              </Button>
-            </div>
+        {summary ? (
+          <div className="flex flex-wrap justify-center gap-2">
+            <StatChip label="Ressourcen" value={summary.totalResources} />
+            <StatChip label="Aufgabenblätter" value={summary.tasks} />
+            <StatChip label="Lösungen verknüpft" value={summary.linkedSolutions} />
           </div>
+        ) : null}
 
-          {sections.length === 0 ? (
-            <div className="rounded-[1.5rem] bg-secondary px-5 py-6 text-sm text-muted-foreground">
-              {loading ? "Lade Moodle-Ressourcen..." : "Keine Ressourcen-Vorschau verfügbar."}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
+        {sections.length > 0 ? (
+          <details className="group rounded-3xl bg-secondary/40 px-5 py-4">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+              <Layers aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">Gefundene Ressourcen ({resourceCount})</span>
+              <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
               {sections.map((section) => (
-                <button
-                  className={cn(
-                    "flex w-full flex-col gap-2 rounded-[1.5rem] px-4 py-3 text-left transition-colors",
-                    selectedSectionIds.has(section.id) ? "bg-primary text-primary-foreground" : "bg-secondary/70 hover:bg-secondary",
-                  )}
-                  key={section.id}
-                  onClick={() => toggleSection(section.id)}
-                  type="button"
-                >
-                  <span className="flex items-center gap-2">
-                    <Layers aria-hidden className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{section.name}</span>
-                    <span className="shrink-0 text-xs opacity-75">{section.items.length} Ressourcen</span>
-                  </span>
-                  <span className="flex flex-wrap gap-1.5">
+                <div key={section.id}>
+                  <p className="mb-1.5 line-clamp-1 text-xs font-medium text-muted-foreground">
+                    {section.name} · {section.items.length}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
                     {section.items.slice(0, 8).map((item) => (
                       <span
                         className={cn(
                           "inline-flex max-w-64 items-center gap-1 rounded-full px-2.5 py-1 text-xs",
-                          selectedSectionIds.has(section.id)
-                            ? "bg-primary-foreground/15"
-                            : item.kind === "task"
-                              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
-                              : item.kind === "solution"
-                                ? "bg-sky-500/12 text-sky-700 dark:text-sky-300"
-                                : "bg-background text-muted-foreground",
+                          item.kind === "task"
+                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+                            : item.kind === "solution"
+                              ? "bg-sky-500/12 text-sky-700 dark:text-sky-300"
+                              : "bg-background text-muted-foreground",
                         )}
                         key={item.id}
                       >
@@ -173,82 +151,63 @@ export function StudyPipelinePreview({
                         +{section.items.length - 8}
                       </span>
                     ) : null}
-                  </span>
-                </button>
+                  </div>
+                </div>
               ))}
             </div>
-          )}
-        </section>
+          </details>
+        ) : null}
 
-        <section className="border-t border-border pt-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
-              <h3 className="text-base font-semibold">Erstellung starten</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Teilbereich-Erstellung ist im Backend noch nicht getrennt verfügbar. Die Markierung oben ist deshalb
-                aktuell eine Vorschau für den nächsten Schritt; die Buttons unten starten die bestehenden Pipeline-Stufen.
-              </p>
-              {selectedCount > 0 ? (
-                <p className="mt-2 text-sm text-foreground">{selectedCount} Abschnitt(e) markiert.</p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StageButton
-                label="Rohdaten holen"
-                running={runningStage === "raw"}
-                stage="raw"
-                onRunStage={onRunStage}
-              />
-              <StageButton
-                label="Texte extrahieren"
-                running={runningStage === "extracted"}
-                stage="extracted"
-                onRunStage={onRunStage}
-              />
-              <StageButton
-                label={mode === "script" ? "Script erstellen" : "Aufgaben erstellen"}
-                primary
-                running={runningStage === "curated"}
-                stage="curated"
-                onRunStage={onRunStage}
-              />
-            </div>
+        <details className="group rounded-3xl bg-secondary/40 px-5 py-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+            <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">Erweiterte Schritte</span>
+            <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Die Erstellung läuft in Stufen. Normalerweise reicht der Button oben – hier kannst du einzelne Stufen
+            gezielt neu ausführen.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StageButton
+              disabled={busy}
+              label="Rohdaten holen"
+              running={runningStage === "raw"}
+              stage="raw"
+              onRunStage={onRunStage}
+            />
+            <StageButton
+              disabled={busy}
+              label="Texte extrahieren"
+              running={runningStage === "extracted"}
+              stage="extracted"
+              onRunStage={onRunStage}
+            />
           </div>
-        </section>
+        </details>
       </div>
     </div>
   );
 }
 
-function PipelineSummary({ loading, status }: { loading: boolean; status: StudyPipelineStatusResponse | null }) {
-  const summary = status?.summary;
-  const stageLabel = status?.stage ? stageText(status.stage) : "Noch nicht erstellt";
+function StatChip({ label, value }: { label: string; value: number }) {
   return (
-    <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      <SummaryPill label="Stand" value={loading ? "Lädt..." : stageLabel} />
-      <SummaryPill label="Ressourcen" value={String(summary?.totalResources ?? 0)} />
-      <SummaryPill label="Aufgaben" value={String(summary?.tasks ?? 0)} />
-      <SummaryPill label="Verknüpfte Lösungen" value={String(summary?.linkedSolutions ?? 0)} />
-    </section>
-  );
-}
-
-function SummaryPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-full bg-secondary px-4 py-3">
-      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold">{value}</p>
-    </div>
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3.5 py-1.5 text-xs">
+      <span className="font-semibold tabular-nums text-foreground">{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
   );
 }
 
 function StageButton({
+  disabled = false,
   label,
   onRunStage,
   primary = false,
   running,
   stage,
 }: {
+  disabled?: boolean;
   label: string;
   onRunStage: (stage: StudyPipelineStage) => void;
   primary?: boolean;
@@ -256,7 +215,12 @@ function StageButton({
   stage: StudyPipelineStage;
 }) {
   return (
-    <Button disabled={running} onClick={() => onRunStage(stage)} type="button" variant={primary ? "default" : "secondary"}>
+    <Button
+      disabled={disabled || running}
+      onClick={() => onRunStage(stage)}
+      type="button"
+      variant={primary ? "default" : "secondary"}
+    >
       {running ? <Loader2 aria-hidden className="animate-spin" /> : <Sparkles aria-hidden />}
       {label}
     </Button>
@@ -299,9 +263,3 @@ function markKind(
   }
 }
 
-function stageText(stage: string): string {
-  if (stage === "curated") return "Script/Aufgaben erstellt";
-  if (stage === "extracted") return "Texte extrahiert";
-  if (stage === "raw") return "Rohdaten vorhanden";
-  return stage;
-}

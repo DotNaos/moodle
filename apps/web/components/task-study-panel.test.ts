@@ -597,6 +597,14 @@ describe("dashboard URL routing", () => {
     expect(route.courseHubOpen).toBe(false);
   });
 
+  test("keeps modern chat URLs from being parsed as legacy course routes", () => {
+    const route = parseDashboardRoute("/chat", "?course=42");
+
+    expect(route.homeView).toBe("chat");
+    expect(route.courseId).toBe("42");
+    expect(route.mode).toBe("materials");
+  });
+
   test("builds URLs for selected course modes and nested targets", () => {
     expect(buildDashboardRouteURL({
       courseHubOpen: false,

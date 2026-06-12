@@ -53,6 +53,10 @@ export function readDashboardLocation(): string {
 }
 
 export function parseDashboardRoute(pathname: string, search = ""): DashboardRoute {
+  const firstSegment = pathname.split("/").filter(Boolean)[0];
+  if (firstSegment === "chat" || firstSegment === "calendar") {
+    return parseDashboardRoutePath(pathname, search);
+  }
   const legacyRoute = parseLegacyDashboardRouteSearch(search);
   if (legacyRoute) {
     return legacyRoute;

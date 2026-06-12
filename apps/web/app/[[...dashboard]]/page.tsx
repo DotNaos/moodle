@@ -1,26 +1,43 @@
 "use client";
 
-import { Menu, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { Show, useAuth } from "@clerk/nextjs";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FullPageLoading, SignedOutHome } from "@/components/home-states";
-import { DashboardNavBreadcrumb } from "@/components/dashboard-nav-breadcrumb";
 import { HeaderActionsMenu } from "@/components/header-actions-menu";
-import { CodexPanel } from "@/components/codex-panel";
+import { CalendarPanel } from "@/components/course-calendar-panel";
+import { ChatPage } from "@/components/chat-page";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
-import { ChatPage } from "@/components/chat-page";
 import { HomeMobileNav } from "@/components/home-mobile-nav";
-import { HomeSidebar } from "@/components/home-sidebar";
 import { MobileBottomNav, type MobileMoodleTab } from "@/components/mobile-bottom-nav";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
-import { CourseSidebar } from "@/components/course-sidebar";
+import {
+  CalendarEventDetailPanel,
+  CalendarEventsPanel,
+  ChatSessionsPanel,
+  CourseModesPanel,
+  LandingPanel,
+} from "@/components/navigator-panels";
+import { NavigatorSidebar } from "@/components/navigator-sidebar";
+import { TopBar } from "@/components/top-bar";
 import type { StudyMode } from "@/components/study-mode-actions";
+import type { TaskViewResponse } from "@/components/task-study-panel";
+import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import { useCodexMoodleActions } from "@/hooks/use-codex-moodle-actions";
-import { replaceDashboardLocation, useDashboardRouteHydration } from "@/hooks/use-dashboard-url";
+import { useNavigator } from "@/hooks/use-navigator";
 import { useWebexRecordings } from "@/hooks/use-webex-recordings";
 import { clearDashboardCache, readDashboardCache, writeDashboardCache } from "@/lib/dashboard-cache";
 import type { Course, Material, User } from "@/lib/dashboard-data";
@@ -33,14 +50,13 @@ import {
   normalizeCourses,
   normalizeMaterials,
 } from "@/lib/dashboard-data";
+import type { HomeView } from "@/lib/home-navigation";
 import {
-  dashboardRouteFromInput,
-  dashboardRoutesEqual,
-  defaultDashboardRoute,
-  parseDashboardRoute,
-  type DashboardRoute,
-  type DashboardRouteURLInput,
-} from "@/lib/dashboard-route";
+  navigatorBreadcrumbs,
+  type CourseMode,
+  type NavigatorLabelResolvers,
+  type NavigatorPath,
+} from "@/lib/navigator";
 import {
   apiRequest,
   getErrorMessage,
@@ -49,35 +65,30 @@ import {
   pruneMaterialCache,
 } from "@/lib/moodle-api";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
+import type { StudyChatContext, StudyTestContext } from "@/lib/codex-chat";
+import { readRecentChats } from "@/lib/recent-chat-storage";
 import { EMPTY_STUDY_OUTLINE, type StudyOutline } from "@/lib/study-outline";
-import type { HomeView } from "@/lib/home-navigation";
+import { buildTaskLinksByResourceId, taskIdForMaterial } from "@/lib/task-material-links";
 import { cn } from "@/lib/utils";
 
 const MOODLE_SERVICES_URL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL ?? "https://moodle-services.os-home.net";
+const SIDEBAR_WIDTH_STORAGE_KEY = "moodle.dashboard.sidebarWidth";
+const SIDEBAR_DEFAULT_WIDTH = 280;
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 420;
+const CHAT_SIDEBAR_WIDTH_STORAGE_KEY = "moodle.dashboard.chatSidebarWidth";
+const CHAT_SIDEBAR_DEFAULT_WIDTH = 400;
+const CHAT_SIDEBAR_MIN_WIDTH = 320;
+const CHAT_SIDEBAR_MAX_WIDTH = 640;
 
 export default function Home() {
   const { isLoaded, isSignedIn, userId } = useAuth();
-  const applyDashboardRouteRef = useRef<(route: DashboardRoute) => void>(() => {});
+  const navigator = useNavigator();
+  const { path, document: activeDocument } = navigator.state;
+
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsByCourseId, setMaterialsByCourseId] = useState<Record<string, Material[]>>({});
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    const route = parseDashboardRoute(window.location.pathname, window.location.search);
-    return route.homeView === "chat" ? route.courseId : null;
-  });
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
-  const [studyMode, setStudyMode] = useState<StudyMode>("materials");
-  const [navigationMode, setNavigationMode] = useState<"courses" | "materials">("courses");
-  const [homeView, setHomeView] = useState<HomeView>(() => {
-    if (typeof window === "undefined") {
-      return "courses";
-    }
-    return parseDashboardRoute(window.location.pathname, window.location.search).homeView;
-  });
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -86,17 +97,30 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [needsConnection, setNeedsConnection] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [courseHubOpen, setCourseHubOpen] = useState(true);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return SIDEBAR_DEFAULT_WIDTH;
+    }
+    const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    return clampSidebarWidth(Number.isFinite(stored) ? stored : SIDEBAR_DEFAULT_WIDTH);
+  });
   const [chatSidebarOpen, setChatSidebarOpen] = useState(false);
-  const [mobileMaterialPreviewOpen, setMobileMaterialPreviewOpen] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedScriptSectionId, setSelectedScriptSectionId] = useState<string | null>(null);
+  const [chatSidebarWidth, setChatSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return CHAT_SIDEBAR_DEFAULT_WIDTH;
+    }
+    const stored = Number(window.localStorage.getItem(CHAT_SIDEBAR_WIDTH_STORAGE_KEY));
+    return clampChatSidebarWidth(Number.isFinite(stored) ? stored : CHAT_SIDEBAR_DEFAULT_WIDTH);
+  });
+  const [testActivity, setTestActivity] = useState<StudyTestContext | null>(null);
   const [studyOutline, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
+  const [taskView, setTaskView] = useState<TaskViewResponse | null>(null);
   const [pdfState, setPDFState] = useState<PDFViewState | null>(null);
   const [pdfScrollCommand, setPDFScrollCommand] = useState<PDFScrollCommand | null>(null);
-  const materialsRequestId = useRef(0);
   const dashboardBootstrappedUserIdRef = useRef<string | null>(null);
+  const pendingMaterialsRef = useRef(new Set<string>());
+
   const {
     loadRecordings,
     recordingsByCourseId,
@@ -105,71 +129,263 @@ export default function Home() {
     selectRecording,
     selectedRecordingForCourse,
   } = useWebexRecordings();
-  const { applyCodexActions } = useCodexMoodleActions({
-    courses,
-    materials,
-    materialsByCourseId,
-    selectedCategory,
-    selectedCourseId,
-    user,
-    userId,
-    pdfState,
-    loadMaterials,
-    setError,
-    setNavigationMode,
-    setPDFScrollCommand,
-    setSelectedCourseId,
-    setSelectedMaterialId,
-  });
 
+  // Navigation-derived values: the navigator is the single source of truth,
+  // everything the legacy panels expect is computed from it.
+  const activeCourseId = useMemo(() => {
+    if (activeDocument && "courseId" in activeDocument) {
+      return activeDocument.courseId;
+    }
+    if (path.kind === "course" || path.kind === "course-mode") {
+      return path.courseId;
+    }
+    return null;
+  }, [activeDocument, path]);
+
+  const studyMode: StudyMode =
+    activeDocument?.kind === "material"
+      ? "materials"
+      : activeDocument?.kind === "task"
+        ? "tasks"
+        : activeDocument?.kind === "script-section"
+          ? "script"
+          : activeDocument?.kind === "formula"
+            ? "formula"
+            : activeDocument?.kind === "recording"
+              ? "recordings"
+              : path.kind === "course-mode"
+                ? path.mode
+                : "materials";
+
+  const selectedMaterialId = activeDocument?.kind === "material" ? activeDocument.materialId : null;
+  const selectedTaskId = activeDocument?.kind === "task" ? activeDocument.taskId : null;
+  const selectedScriptSectionId = activeDocument?.kind === "script-section" ? activeDocument.sectionId : null;
+
+  const materials = useMemo(
+    () => (activeCourseId ? materialsByCourseId[activeCourseId] ?? [] : []),
+    [activeCourseId, materialsByCourseId],
+  );
+  const selectedCourse = useMemo(
+    () => courses.find((course) => String(course.id) === activeCourseId) ?? null,
+    [courses, activeCourseId],
+  );
+  const selectedMaterial = useMemo(
+    () => (selectedMaterialId ? materials.find((material) => material.id === selectedMaterialId) ?? null : null),
+    [materials, selectedMaterialId],
+  );
+  const selectedRecording = activeDocument?.kind === "recording" ? selectedRecordingForCourse(activeCourseId) : null;
+
+  const calendarEnabled =
+    Boolean(isSignedIn) &&
+    !needsConnection &&
+    (path.kind === "home" ||
+      path.kind === "calendar" ||
+      activeDocument?.kind === "calendar-grid" ||
+      activeDocument?.kind === "calendar-event");
+  const calendar = useCalendarEvents(calendarEnabled);
+
+  const dataRef = useRef({ courses, materialsByCourseId, selectedCategory, user });
+  dataRef.current = { courses, materialsByCourseId, selectedCategory, user };
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CHAT_SIDEBAR_WIDTH_STORAGE_KEY, String(chatSidebarWidth));
+  }, [chatSidebarWidth]);
+
+  const handleChatSidebarResizeStart = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = chatSidebarWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        setChatSidebarWidth(clampChatSidebarWidth(startWidth - (moveEvent.clientX - startX)));
+      };
+      const handlePointerUp = () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+      };
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+    },
+    [chatSidebarWidth],
+  );
+
+  const handleSidebarResizeStart = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        setSidebarWidth(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+      };
+      const handlePointerUp = () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+      };
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+    },
+    [sidebarWidth],
+  );
+
+  const resizeSidebarBy = useCallback((delta: number) => {
+    setSidebarWidth((current) => clampSidebarWidth(current + delta));
+  }, []);
+
+  function handleMoodleDisconnected(disconnectError: unknown) {
+    if (userId) {
+      clearDashboardCache(userId);
+    }
+    pendingMaterialsRef.current.clear();
+    setUser(null);
+    setCourses([]);
+    setMaterialsByCourseId({});
+    resetRecordings();
+    setStudyOutline(EMPTY_STUDY_OUTLINE);
+    setTaskView(null);
+    setSelectedCategory("all");
+    setMaterialsLoading(false);
+    setNeedsConnection(true);
+    setConnectionMessage(getMoodleConnectionMessage(disconnectError));
+    setError(null);
+  }
+
+  const ensureCourseMaterials = useCallback(
+    async (courseId: string): Promise<Material[]> => {
+      const cached = dataRef.current.materialsByCourseId[courseId];
+      if (cached) {
+        return cached;
+      }
+      if (pendingMaterialsRef.current.has(courseId)) {
+        return [];
+      }
+      pendingMaterialsRef.current.add(courseId);
+      setMaterialsLoading(true);
+      try {
+        const response = await apiRequest<{ materials?: Material[] } | Material[]>(
+          `/courses/${encodeURIComponent(courseId)}/materials`,
+        );
+        const nextMaterials = normalizeMaterials(response);
+        setMaterialsByCourseId((current) => ({ ...current, [courseId]: nextMaterials }));
+        if (userId) {
+          writeDashboardCache(userId, {
+            user: dataRef.current.user,
+            courses: dataRef.current.courses,
+            materialsByCourseId: { ...dataRef.current.materialsByCourseId, [courseId]: nextMaterials },
+            selectedCourseId: courseId,
+            selectedCategory: dataRef.current.selectedCategory,
+            selectedMaterialId: null,
+          });
+        }
+        return nextMaterials;
+      } catch (loadError) {
+        if (isMoodleNotConnected(loadError)) {
+          handleMoodleDisconnected(loadError);
+        } else {
+          setError(getErrorMessage(loadError));
+        }
+        return [];
+      } finally {
+        pendingMaterialsRef.current.delete(courseId);
+        setMaterialsLoading(false);
+      }
+    },
+    // handleMoodleDisconnected is stable enough: it only touches setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userId],
+  );
+
+  async function loadDashboard(options: { background?: boolean } = {}) {
+    if (!userId) {
+      return;
+    }
+    setLoading(!options.background && courses.length === 0);
+    setRefreshing(options.background || courses.length > 0);
+    setError(null);
+    setConnectionMessage(null);
+
+    try {
+      const [userResponse, coursesResponse] = await Promise.all([
+        apiRequest<User>("/me"),
+        apiRequest<{ courses?: Course[] } | Course[]>("/courses"),
+      ]);
+      const courseList = normalizeCourses(coursesResponse);
+      const nextMaterialsByCourseId = pruneMaterialCache(materialsByCourseId, courseList);
+      const nextSelectedCategory =
+        selectedCategory === "all" || courseList.some((course) => courseCategoryKey(course) === selectedCategory)
+          ? selectedCategory
+          : "all";
+
+      setUser(userResponse);
+      setCourses(courseList);
+      setMaterialsByCourseId(nextMaterialsByCourseId);
+      setNeedsConnection(false);
+      setConnectionMessage(null);
+      setSelectedCategory(nextSelectedCategory);
+      writeDashboardCache(userId, {
+        user: userResponse,
+        courses: courseList,
+        materialsByCourseId: nextMaterialsByCourseId,
+        selectedCourseId: activeCourseId,
+        selectedCategory: nextSelectedCategory,
+        selectedMaterialId,
+      });
+    } catch (loadError) {
+      if (isMoodleNotConnected(loadError)) {
+        handleMoodleDisconnected(loadError);
+      } else {
+        setNeedsConnection(false);
+        setConnectionMessage(null);
+        setError(getErrorMessage(loadError));
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  // Bootstrap on sign-in, reset on sign-out.
   useEffect(() => {
     if (!isLoaded) {
       return;
     }
-
     if (!isSignedIn) {
       dashboardBootstrappedUserIdRef.current = null;
+      pendingMaterialsRef.current.clear();
       setUser(null);
       setCourses([]);
-      setMaterials([]);
       setMaterialsByCourseId({});
       resetRecordings();
-      setSelectedCourseId(null);
-      setSelectedMaterialId(null);
-      setStudyMode("materials");
-      setSelectedTaskId(null);
-      setSelectedScriptSectionId(null);
       setStudyOutline(EMPTY_STUDY_OUTLINE);
-      setNavigationMode("courses");
-      setHomeView("courses");
-      setMobileMaterialPreviewOpen(false);
+      setTaskView(null);
       setSelectedCategory("all");
       setError(null);
       setNeedsConnection(false);
       setConnectionMessage(null);
       return;
     }
-
-    if (!userId) {
-      return;
-    }
-
-    if (dashboardBootstrappedUserIdRef.current === userId) {
+    if (!userId || dashboardBootstrappedUserIdRef.current === userId) {
       return;
     }
     dashboardBootstrappedUserIdRef.current = userId;
 
-    const initialRoute =
-      typeof window === "undefined"
-        ? defaultDashboardRoute()
-        : parseDashboardRoute(window.location.pathname, window.location.search);
-    const hasDeepLink =
-      Boolean(initialRoute.courseId) ||
-      initialRoute.homeView === "calendar" ||
-      initialRoute.homeView === "chat";
-
     const cached = readDashboardCache(userId);
-    if (cached && !hasDeepLink) {
+    if (cached) {
       setUser(cached.user);
       setCourses(cached.courses);
       setMaterialsByCourseId(cached.materialsByCourseId);
@@ -178,35 +394,141 @@ export default function Home() {
       setConnectionMessage(null);
       setError(null);
     }
-
     void loadDashboard({ background: Boolean(cached) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn, userId]);
 
-  const selectedCourse = useMemo(
-    () => courses.find((course) => String(course.id) === selectedCourseId) ?? null,
-    [courses, selectedCourseId],
-  );
+  // Load materials whenever the navigator references a course.
+  useEffect(() => {
+    if (!isSignedIn || !userId || needsConnection || !activeCourseId) {
+      return;
+    }
+    void ensureCourseMaterials(activeCourseId);
+  }, [activeCourseId, ensureCourseMaterials, isSignedIn, needsConnection, userId]);
 
+  // Load recordings when browsing the recordings list or opening a recording.
+  const recordingsCourseId = studyMode === "recordings" ? activeCourseId : null;
+  useEffect(() => {
+    if (!isSignedIn || needsConnection || !recordingsCourseId) {
+      return;
+    }
+    void loadRecordings(recordingsCourseId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingsCourseId, isSignedIn, needsConnection]);
+
+  // Restore the selected recording for deep links.
+  const recordingDocKey =
+    activeDocument?.kind === "recording" ? `${activeDocument.courseId} ${activeDocument.recordingId}` : null;
+  useEffect(() => {
+    if (!recordingDocKey || !isSignedIn || needsConnection) {
+      return;
+    }
+    const [courseId, recordingId] = recordingDocKey.split(" ");
+    void loadRecordings(courseId).then((recordings) => {
+      const recording = recordings.find((item) => item.recordingUuid === recordingId);
+      if (recording) {
+        selectRecording(courseId, recording);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingDocKey, isSignedIn, needsConnection]);
+
+  // Deep links to unknown courses bounce back to the course list.
+  const guardCourseId = activeDocument?.kind === "chat-session" ? null : activeCourseId;
+  useEffect(() => {
+    if (courses.length === 0 || !guardCourseId) {
+      return;
+    }
+    if (!courses.some((course) => String(course.id) === guardCourseId)) {
+      navigator.navigate({ path: { kind: "courses" }, document: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses, guardCourseId]);
+
+  // Study data belongs to one course at a time.
+  useEffect(() => {
+    setStudyOutline(EMPTY_STUDY_OUTLINE);
+    setTaskView(null);
+  }, [activeCourseId]);
+
+  const { applyCodexActions } = useCodexMoodleActions({
+    courses,
+    materials,
+    materialsByCourseId,
+    selectedCategory,
+    selectedCourseId: activeCourseId,
+    user,
+    userId,
+    pdfState,
+    loadMaterials: ensureCourseMaterials,
+    onOpenMaterial: (courseId, materialId) => {
+      const targetCourseId = courseId ?? activeCourseId;
+      if (targetCourseId) {
+        navigator.open({ kind: "material", courseId: targetCourseId, materialId });
+      }
+    },
+    onSetTaskStatus: async (taskId, status) => {
+      const title = taskTitleForId(taskId, studyOutline, taskView) ?? taskId;
+      const question =
+        status === "done"
+          ? `Codex schlägt vor, "${title}" als erledigt zu markieren. Übernehmen?`
+          : `Codex schlägt vor, "${title}" wieder zu öffnen. Übernehmen?`;
+      if (window.confirm(question)) {
+        await updateTaskStatus(taskId, status);
+      }
+    },
+    setError,
+    setPDFScrollCommand,
+  });
+
+  async function updateTaskStatus(taskId: string, status: "done" | "open") {
+    if (!activeCourseId) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/study-pipeline/courses/${encodeURIComponent(activeCourseId)}/study-pipeline/tasks/${encodeURIComponent(taskId)}/status`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status }),
+        },
+      );
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Task status failed with ${response.status}.`);
+      }
+      setStudyOutline((current) => ({
+        ...current,
+        tasks: current.tasks.map((task) => (task.id === taskId ? { ...task, status } : task)),
+      }));
+      setTaskView((current) => {
+        if (!current) {
+          return current;
+        }
+        const sheets = current.sheets.map((sheet) => ({
+          ...sheet,
+          tasks: sheet.tasks.map((task) => (task.taskId === taskId ? { ...task, status } : task)),
+        }));
+        return { ...current, sheets, progress: summarizeTaskViewProgress(sheets) };
+      });
+      setError(null);
+    } catch (statusError) {
+      setError(getErrorMessage(statusError));
+    }
+  }
+
+  // Derived lists for panels.
   const categoryOptionGroups = useMemo(() => buildCategoryOptionGroups(courses), [courses]);
-
-  const selectedMaterial = useMemo(
-    () => studyMode === "materials" ? materials.find((material) => material.id === selectedMaterialId) ?? null : null,
-    [materials, selectedMaterialId, studyMode],
-  );
-
-  const selectedRecording = selectedRecordingForCourse(selectedCourseId);
-
   const filteredCourses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const categoryFiltered =
       selectedCategory === "all"
         ? courses
         : courses.filter((course) => courseCategoryKey(course) === selectedCategory);
-
     if (!normalizedQuery) {
       return categoryFiltered;
     }
-
     return categoryFiltered.filter((course) =>
       [courseTitle(course), courseSubtitle(course), course.category, course.categoryName]
         .filter(Boolean)
@@ -224,7 +546,6 @@ export default function Home() {
         courses: group.courses,
       }));
     }
-
     return [{ key: "filtered-courses", label: "", courses: filteredCourses }];
   }, [filteredCourses, query, selectedCategory]);
 
@@ -237,486 +558,284 @@ export default function Home() {
     return [...groups.entries()];
   }, [materials]);
 
-  const mobileTab: MobileMoodleTab = studyMode === "tasks"
+  const taskLinksByResourceId = useMemo(
+    () => buildTaskLinksByResourceId(studyOutline.tasks, taskView),
+    [studyOutline.tasks, taskView],
+  );
+
+  const studyChatContext = useMemo<StudyChatContext>(() => {
+    const context: NonNullable<StudyChatContext> = {
+      mode: studyMode,
+      selectedTask: null,
+      selectedScriptSection: null,
+      test: studyMode === "tasks" ? testActivity : null,
+    };
+    if (studyMode === "tasks" && selectedTaskId) {
+      const sheet = taskView?.sheets.find((candidate) => candidate.tasks.some((task) => task.taskId === selectedTaskId));
+      const task = sheet?.tasks.find((candidate) => candidate.taskId === selectedTaskId) ?? null;
+      const source = task
+        ? materials.find((material) => material.id === task.sourceResourceId || material.id === sheet?.resourceId)
+        : null;
+      context.selectedTask = {
+        taskId: selectedTaskId,
+        title: task?.title ?? studyOutline.tasks.find((item) => item.id === selectedTaskId)?.title ?? selectedTaskId,
+        sheetTitle: sheet?.title ?? studyOutline.tasks.find((item) => item.id === selectedTaskId)?.sheetTitle,
+        sourceResourceId: task?.sourceResourceId ?? sheet?.resourceId,
+        sourceTitle: source?.name ?? sheet?.title,
+        status: task?.status ?? studyOutline.tasks.find((item) => item.id === selectedTaskId)?.status,
+        promptMarkdown: task
+          ? [
+              task.promptMarkdown,
+              ...task.parts.map((part) => [`### ${part.label ?? "Teilaufgabe"}`, part.promptMarkdown].join("\n\n")),
+            ].filter(Boolean).join("\n\n")
+          : undefined,
+      };
+    }
+    if (studyMode === "script" && selectedScriptSectionId) {
+      const section = studyOutline.scriptSections.find((item) => item.id === selectedScriptSectionId);
+      context.selectedScriptSection = {
+        sectionId: selectedScriptSectionId,
+        title: section?.title ?? selectedScriptSectionId,
+      };
+    }
+    return context;
+  }, [materials, selectedScriptSectionId, selectedTaskId, studyMode, studyOutline, taskView, testActivity]);
+
+  const labelResolvers = useMemo<NavigatorLabelResolvers>(
+    () => ({
+      courseTitle: (courseId) => {
+        const course = courses.find((candidate) => String(candidate.id) === courseId);
+        return course ? courseTitle(course) : null;
+      },
+      materialName: (courseId, materialId) =>
+        materialsByCourseId[courseId]?.find((material) => material.id === materialId)?.name,
+      taskTitle: (_courseId, taskId) => taskTitleForId(taskId, studyOutline, taskView),
+      scriptSectionTitle: (_courseId, sectionId) =>
+        studyOutline.scriptSections.find((section) => section.id === sectionId)?.title,
+      recordingTitle: (courseId, recordingId) =>
+        recordingsByCourseId[courseId]?.recordings.find((recording) => recording.recordingUuid === recordingId)
+          ?.sessionTitle,
+      calendarEventTitle: (eventUid) => calendar.events.find((event) => event.uid === eventUid)?.summary,
+      chatSessionTitle: (sessionId) => readRecentChats().find((chat) => chat.id === sessionId)?.title,
+    }),
+    [calendar.events, courses, materialsByCourseId, recordingsByCourseId, studyOutline, taskView],
+  );
+
+  const breadcrumbs = useMemo(
+    () => navigatorBreadcrumbs(navigator.state, labelResolvers),
+    [labelResolvers, navigator.state],
+  );
+
+  function openCourseMode(courseId: string, mode: CourseMode) {
+    if (mode === "formula") {
+      navigator.open({ kind: "formula", courseId });
+    } else {
+      navigator.drill({ kind: "course-mode", courseId, mode });
+    }
+  }
+
+  function openMaterialTask(material: Material) {
+    if (!activeCourseId) {
+      return;
+    }
+    const taskId = taskIdForMaterial(material, taskLinksByResourceId);
+    if (taskId) {
+      navigator.open({ kind: "task", courseId: activeCourseId, taskId });
+    }
+  }
+
+  const upcomingEventCount = useMemo(
+    () => calendar.events.filter((event) => Date.parse(event.end ?? event.start) >= Date.now()).length,
+    [calendar.events],
+  );
+
+  if (!isLoaded) {
+    return <FullPageLoading />;
+  }
+
+  const showSplitSidebar = Boolean(activeDocument) && !sidebarHidden;
+  const mobileTab: MobileMoodleTab =
+    studyMode === "tasks"
       ? "tasks"
       : studyMode === "script"
         ? "script"
         : studyMode === "formula"
           ? "formula"
-        : studyMode === "recordings"
-          ? "recordings"
-          : "materials";
-  const dashboardRouteInput = useMemo(
-    () => ({
-      courseHubOpen,
-      homeView,
-      navigationMode,
-      recordingId: selectedRecording?.recordingUuid ?? null,
-      selectedCourseId,
-      selectedMaterialId,
-      selectedScriptSectionId,
-      selectedTaskId,
-      studyMode,
-    }),
-    [
-      courseHubOpen,
-      homeView,
-      navigationMode,
-      selectedRecording?.recordingUuid,
-      selectedCourseId,
-      selectedMaterialId,
-      selectedScriptSectionId,
-      selectedTaskId,
-      studyMode,
-    ],
-  );
+          : studyMode === "recordings"
+            ? "recordings"
+            : "materials";
+  const showHomeMobileNav =
+    !needsConnection && !activeDocument && (path.kind === "home" || path.kind === "courses" || path.kind === "calendar" || path.kind === "chat");
+  const showCourseMobileNav =
+    !needsConnection && Boolean(activeCourseId) && activeDocument?.kind !== "chat-session" &&
+    (path.kind === "course" || path.kind === "course-mode" || Boolean(activeDocument));
 
-  const dashboardRouteInputRef = useRef(dashboardRouteInput);
-  dashboardRouteInputRef.current = dashboardRouteInput;
-
-  const navigateDashboard = useCallback((patch: Partial<DashboardRouteURLInput>) => {
-    replaceDashboardLocation(
-      { ...dashboardRouteInputRef.current, ...patch },
-      (route) => applyDashboardRouteRef.current(route),
-    );
-  }, []);
-
-  const navigateHomeView = useCallback(
-    (value: HomeView) => {
-      navigateDashboard({
-        courseHubOpen: true,
-        homeView: value,
-        navigationMode: "courses",
-        recordingId: null,
-        selectedCourseId: null,
-        selectedMaterialId: null,
-        selectedScriptSectionId: null,
-        selectedTaskId: null,
-        studyMode: "materials",
-      });
-    },
-    [navigateDashboard],
-  );
-
-  function backToCourses() {
-    setSidebarCollapsed(false);
-    navigateDashboard({
-      courseHubOpen: true,
-      homeView: "courses",
-      navigationMode: "courses",
-      recordingId: null,
-      selectedCourseId: null,
-      selectedMaterialId: null,
-      selectedScriptSectionId: null,
-      selectedTaskId: null,
-      studyMode: "materials",
-    });
-  }
-
-  function openCourseRoot() {
-    navigateDashboard({
-      courseHubOpen: false,
-      selectedMaterialId: null,
-      selectedScriptSectionId: null,
-      selectedTaskId: null,
-      studyMode: "materials",
-      recordingId: null,
-    });
-  }
-
-  function openStudyModeRoot() {
-    navigateDashboard({
-      selectedMaterialId: null,
-      selectedScriptSectionId: null,
-      selectedTaskId: null,
-      recordingId: null,
-    });
-  }
-
-  function enterStudyMode(mode: StudyMode) {
-    navigateDashboard({
-      courseHubOpen: false,
-      navigationMode: "materials",
-      studyMode: mode,
-      selectedMaterialId: null,
-      selectedScriptSectionId: null,
-      selectedTaskId: null,
-      recordingId: null,
-    });
-  }
-
-  const showHomeSidebar = navigationMode === "courses";
-  const showCourseSidebar = navigationMode === "materials";
-  const showSidebar = showHomeSidebar || showCourseSidebar;
-
-  const navBreadcrumbProps = {
-    courseHubOpen,
-    homeView,
-    navigationMode,
-    selectedCourse,
-    selectedMaterial,
-    selectedScriptSectionId,
-    selectedTaskId,
-    studyMode,
-    studyOutline,
-    onBackToCourses: backToCourses,
-    onOpenCourseRoot: openCourseRoot,
-    onOpenStudyModeRoot: openStudyModeRoot,
-  };
-
-  async function loadDashboard(options: { background?: boolean } = {}) {
-    if (!userId) {
-      return;
-    }
-
-    materialsRequestId.current += 1;
-    setLoading(!options.background && courses.length === 0);
-    setRefreshing(options.background || courses.length > 0);
-    setMaterialsLoading(false);
-    setError(null);
-    setConnectionMessage(null);
-
-    try {
-      const [userResponse, coursesResponse] = await Promise.all([
-        apiRequest<User>("/me"),
-        apiRequest<{ courses?: Course[] } | Course[]>("/courses"),
-      ]);
-      const courseList = normalizeCourses(coursesResponse);
-      const nextMaterialsByCourseId = pruneMaterialCache(materialsByCourseId, courseList);
-      const nextSelectedCategory =
-        selectedCategory === "all" || courseList.some((course) => courseCategoryKey(course) === selectedCategory)
-          ? selectedCategory
-          : "all";
-      const activeRoute =
-        typeof window === "undefined"
-          ? defaultDashboardRoute()
-          : parseDashboardRoute(window.location.pathname, window.location.search);
-      const preserveNavigation =
-        activeRoute.homeView === "chat" ||
-        activeRoute.homeView === "calendar" ||
-        Boolean(activeRoute.courseId);
-
-      setUser(userResponse);
-      setCourses(courseList);
-      setMaterialsByCourseId(nextMaterialsByCourseId);
-      setNeedsConnection(false);
-      setConnectionMessage(null);
-      setSelectedCategory(nextSelectedCategory);
-
-      if (!preserveNavigation) {
-        const nextSelectedCourseId =
-          selectedCourseId && courseList.some((course) => String(course.id) === selectedCourseId)
-            ? selectedCourseId
-            : null;
-        const nextMaterials = nextSelectedCourseId ? nextMaterialsByCourseId[nextSelectedCourseId] ?? [] : [];
-        const nextSelectedMaterialId =
-          selectedMaterialId && nextMaterials.some((material) => material.id === selectedMaterialId)
-            ? selectedMaterialId
-            : nextMaterials[0]?.id ?? null;
-
-        setMaterials(nextMaterials);
-        setSelectedCourseId(nextSelectedCourseId);
-        setSelectedMaterialId(nextSelectedMaterialId);
-        setStudyMode("materials");
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        setNavigationMode((current) => (nextSelectedCourseId && current === "materials" ? "materials" : "courses"));
-        setHomeView("courses");
-        setMobileMaterialPreviewOpen(Boolean(nextSelectedMaterialId));
-        writeDashboardCache(userId, {
-          user: userResponse,
-          courses: courseList,
-          materialsByCourseId: nextMaterialsByCourseId,
-          selectedCourseId: nextSelectedCourseId,
-          selectedCategory: nextSelectedCategory,
-          selectedMaterialId: nextSelectedMaterialId,
-        });
-      } else {
-        writeDashboardCache(userId, {
-          user: userResponse,
-          courses: courseList,
-          materialsByCourseId: nextMaterialsByCourseId,
-          selectedCourseId: selectedCourseId,
-          selectedCategory: nextSelectedCategory,
-          selectedMaterialId: selectedMaterialId,
-        });
+  const courseMainPanel = (
+    <CourseMainPanel
+      course={selectedCourse}
+      courseHubOpen={false}
+      courseId={activeCourseId}
+      materials={materials}
+      materialsBySection={materialsBySection}
+      materialsLoading={materialsLoading}
+      material={selectedMaterial}
+      recordingsState={activeCourseId ? recordingsByCourseId[activeCourseId] : undefined}
+      selectedScriptSectionId={selectedScriptSectionId}
+      selectedRecording={selectedRecording}
+      selectedTaskId={selectedTaskId}
+      studyMode={studyMode}
+      studyOutline={studyOutline}
+      onEnterStudyMode={(mode) => activeCourseId && openCourseMode(activeCourseId, mode)}
+      onSelectMaterial={(material) =>
+        activeCourseId && navigator.open({ kind: "material", courseId: activeCourseId, materialId: material.id })
       }
-    } catch (loadError) {
-      if (isMoodleNotConnected(loadError)) {
-        handleMoodleDisconnected(loadError);
-      } else {
-        setNeedsConnection(false);
-        setConnectionMessage(null);
-        setError(getErrorMessage(loadError));
+      onSelectScriptSection={(sectionId) =>
+        activeCourseId && navigator.open({ kind: "script-section", courseId: activeCourseId, sectionId })
       }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }
-
-  async function loadMaterials(courseId: string, options: { resetNavigation?: boolean } = {}): Promise<Material[]> {
-    const resetNavigation = options.resetNavigation !== false;
-    const cachedMaterials = materialsByCourseId[courseId];
-    if (cachedMaterials) {
-      materialsRequestId.current += 1;
-      setMaterialsLoading(false);
-      setSelectedCourseId(courseId);
-      setMaterials(cachedMaterials);
-      if (resetNavigation) {
-        setSelectedMaterialId(null);
-        setStudyMode("materials");
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        setCourseHubOpen(true);
-        setMobileMaterialPreviewOpen(false);
-      }
-      setNavigationMode("materials");
-      setHomeView("courses");
-      if (userId) {
-        writeDashboardCache(userId, {
-          user,
-          courses,
-          materialsByCourseId,
-          selectedCourseId: courseId,
-          selectedCategory,
-          selectedMaterialId: null,
-        });
-      }
-      return cachedMaterials;
-    }
-
-    setMaterialsLoading(true);
-    setError(null);
-    setSelectedCourseId(courseId);
-    if (resetNavigation) {
-      setStudyMode("materials");
-      setSelectedTaskId(null);
-      setSelectedScriptSectionId(null);
-      setCourseHubOpen(true);
-      setMobileMaterialPreviewOpen(false);
-    }
-    setNavigationMode("materials");
-    setHomeView("courses");
-    const requestId = materialsRequestId.current + 1;
-    materialsRequestId.current = requestId;
-
-    try {
-      const response = await apiRequest<{ materials?: Material[] } | Material[]>(
-        `/courses/${encodeURIComponent(courseId)}/materials`,
-      );
-      const nextMaterials = normalizeMaterials(response);
-      if (materialsRequestId.current !== requestId) {
-        return [];
-      }
-      setMaterials(nextMaterials);
-      if (resetNavigation) {
-        setSelectedMaterialId(null);
-      }
-      setMaterialsByCourseId((current) => ({
-        ...current,
-        [courseId]: nextMaterials,
-      }));
-      if (userId) {
-        writeDashboardCache(userId, {
-          user,
-          courses,
-          materialsByCourseId: {
-            ...materialsByCourseId,
-            [courseId]: nextMaterials,
-          },
-          selectedCourseId: courseId,
-          selectedCategory,
-          selectedMaterialId: null,
-        });
-      }
-      return nextMaterials;
-    } catch (loadError) {
-      if (materialsRequestId.current !== requestId) {
-        return [];
-      }
-      if (isMoodleNotConnected(loadError)) {
-        handleMoodleDisconnected(loadError);
-        return [];
-      }
-      setMaterials([]);
-      setSelectedMaterialId(null);
-      setError(getErrorMessage(loadError));
-      return [];
-    } finally {
-      if (materialsRequestId.current === requestId) {
-        setMaterialsLoading(false);
-      }
-    }
-  }
-
-  async function openRecordings(courseId: string, options: { refresh?: boolean } = {}) {
-    setStudyMode("recordings");
-    setSelectedMaterialId(null);
-    setSelectedTaskId(null);
-    setSelectedScriptSectionId(null);
-    await loadRecordings(courseId, options);
-  }
-
-  async function updateTaskStatus(taskId: string, status: "done" | "open") {
-    if (!selectedCourseId) {
-      return;
-    }
-    try {
-      const response = await fetch(
-        `/api/study-pipeline/courses/${encodeURIComponent(selectedCourseId)}/study-pipeline/tasks/${encodeURIComponent(taskId)}/status`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status }),
-        },
-      );
-      const payload = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Task status failed with ${response.status}.`);
-      }
-      setStudyOutline((current) => ({
-        ...current,
-        tasks: current.tasks.map((task) => task.id === taskId ? { ...task, status } : task),
-      }));
-      setError(null);
-    } catch (statusError) {
-      setError(getErrorMessage(statusError));
-    }
-  }
-
-  const applyDashboardRoute = useCallback(
-    async (route: DashboardRoute) => {
-      if (dashboardRoutesEqual(route, dashboardRouteFromInput(dashboardRouteInputRef.current))) {
-        return;
-      }
-      if (route.homeView === "calendar" && !route.courseId) {
-        setNavigationMode("courses");
-        setHomeView("calendar");
-        setCourseHubOpen(true);
-        setSelectedCourseId(null);
-        setSelectedMaterialId(null);
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        setStudyOutline(EMPTY_STUDY_OUTLINE);
-        setMobileMaterialPreviewOpen(false);
-        return;
-      }
-
-      if (route.homeView === "chat") {
-        setNavigationMode("courses");
-        setHomeView("chat");
-        setCourseHubOpen(true);
-        setSelectedCourseId(route.courseId);
-        setSelectedMaterialId(null);
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        setStudyOutline(EMPTY_STUDY_OUTLINE);
-        setMobileMaterialPreviewOpen(false);
-        return;
-      }
-
-      if (!route.courseId) {
-        setNavigationMode("courses");
-        setHomeView(route.homeView);
-        setCourseHubOpen(true);
-        setSelectedCourseId(null);
-        setSelectedMaterialId(null);
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        setStudyOutline(EMPTY_STUDY_OUTLINE);
-        setMobileMaterialPreviewOpen(false);
-        return;
-      }
-
-      if (courses.length > 0 && !courses.some((course) => String(course.id) === route.courseId)) {
-        window.history.replaceState(
-          { ...window.history.state, as: "/courses", url: "/courses" },
-          "",
-          "/courses",
-        );
-        void applyDashboardRouteRef.current(defaultDashboardRoute());
-        return;
-      }
-
-      setSelectedCourseId(route.courseId);
-      setNavigationMode("materials");
-      setHomeView("courses");
-      setCourseHubOpen(route.courseHubOpen);
-      setStudyMode(route.mode);
-      setSelectedTaskId(route.taskId);
-      setSelectedScriptSectionId(route.sectionId);
-      setSelectedMaterialId(route.materialId);
-      setMobileMaterialPreviewOpen(Boolean(route.materialId));
-
-      if (selectedCourseId !== route.courseId || !materialsByCourseId[route.courseId]) {
-        await loadMaterials(route.courseId, { resetNavigation: false });
-      } else {
-        setSelectedCourseId(route.courseId);
-        setMaterials(materialsByCourseId[route.courseId] ?? []);
-      }
-
-      if (route.mode === "recordings") {
-        setStudyMode("recordings");
-        setSelectedMaterialId(null);
-        setSelectedTaskId(null);
-        setSelectedScriptSectionId(null);
-        const recordings = await loadRecordings(route.courseId);
-        if (route.recordingId) {
-          const recording =
-            recordings.find((item) => item.recordingUuid === route.recordingId) ?? null;
-          if (recording) {
-            selectRecording(route.courseId, recording);
-          }
+      onSelectTask={(taskId) => activeCourseId && navigator.open({ kind: "task", courseId: activeCourseId, taskId })}
+      onTaskStatusChange={(taskId, status) => void updateTaskStatus(taskId, status)}
+      onOpenResource={(resourceId) => {
+        const material = materials.find((item) => item.id === resourceId);
+        if (!material || !activeCourseId) {
+          setError(`Could not find Moodle resource ${resourceId} in the loaded course materials.`);
+          return;
         }
-      }
-    },
-    [courses, loadRecordings, materialsByCourseId, selectRecording, selectedCourseId],
+        setError(null);
+        navigator.open({ kind: "material", courseId: activeCourseId, materialId: material.id });
+      }}
+      onPDFStateChange={setPDFState}
+      onLoadRecordings={() => activeCourseId && void loadRecordings(activeCourseId, { refresh: true })}
+      onPlayRecording={(recording) => {
+        if (!activeCourseId) {
+          return;
+        }
+        selectRecording(activeCourseId, recording);
+        navigator.open({ kind: "recording", courseId: activeCourseId, recordingId: recording.recordingUuid });
+      }}
+      onSelectedScriptSectionIdChange={(sectionId) => {
+        if (sectionId && activeCourseId) {
+          navigator.open({ kind: "script-section", courseId: activeCourseId, sectionId });
+        }
+      }}
+      onSelectedTaskIdChange={(taskId) => {
+        if (taskId && activeCourseId) {
+          navigator.open({ kind: "task", courseId: activeCourseId, taskId });
+        }
+      }}
+      onSignInWebexBrowser={(credentials) => {
+        if (!activeCourseId) {
+          return Promise.reject(new Error("Choose a course before signing in to Webex."));
+        }
+        return signInWebexBrowser(activeCourseId, credentials);
+      }}
+      onStudyOutlineChange={setStudyOutline}
+      onTaskViewChange={setTaskView}
+      onTestActivityChange={setTestActivity}
+      pdfScrollCommand={pdfScrollCommand}
+    />
   );
 
-  applyDashboardRouteRef.current = (route) => {
-    void applyDashboardRoute(route);
-  };
-
-  useDashboardRouteHydration({
-    enabled: Boolean(isSignedIn && userId && !needsConnection),
-    applyRoute: applyDashboardRoute,
-  });
-
-  function clearMoodleWorkspace() {
-    setUser(null);
-    setCourses([]);
-    setMaterials([]);
-    setMaterialsByCourseId({});
-    resetRecordings();
-    setSelectedCourseId(null);
-    setSelectedMaterialId(null);
-    setStudyMode("materials");
-    setSelectedTaskId(null);
-    setSelectedScriptSectionId(null);
-    setStudyOutline(EMPTY_STUDY_OUTLINE);
-    setNavigationMode("courses");
-    setHomeView("courses");
-    setCourseHubOpen(true);
-    setMobileMaterialPreviewOpen(false);
-    setSelectedCategory("all");
-    setMaterialsLoading(false);
-  }
-
-  function handleMoodleDisconnected(disconnectError: unknown) {
-    materialsRequestId.current += 1;
-    if (userId) {
-      clearDashboardCache(userId);
-    }
-    clearMoodleWorkspace();
-    setNeedsConnection(true);
-    setConnectionMessage(getMoodleConnectionMessage(disconnectError));
-    setError(null);
-  }
-
-  if (!isLoaded) {
-    return <FullPageLoading />;
-  }
+  const mainContent: ReactNode = activeDocument
+    ? activeDocument.kind === "calendar-grid"
+      ? (
+        <section className="flex min-h-0 flex-1 flex-col overflow-auto md:h-full">
+          <div className="mx-auto w-full max-w-5xl px-4 py-4 md:px-6 md:py-5">
+            <CalendarPanel compact scope="all" />
+          </div>
+        </section>
+      )
+      : activeDocument.kind === "calendar-event"
+        ? (
+          <CalendarEventDetailPanel
+            error={calendar.error}
+            event={calendar.events.find((event) => event.uid === activeDocument.eventUid) ?? null}
+            loading={calendar.loading}
+            onOpenCourse={(courseName) => {
+              const course = courses.find((candidate) => courseTitle(candidate) === courseName);
+              if (course) {
+                navigator.navigate({ path: { kind: "course", courseId: String(course.id) }, document: null });
+              }
+            }}
+          />
+        )
+        : activeDocument.kind === "chat-session"
+          ? (
+            <ChatPage
+              courses={courses}
+              loadMaterials={ensureCourseMaterials}
+              materials={materials}
+              pdfState={pdfState}
+              selectedCourseId={activeDocument.courseId}
+              selectedMaterial={selectedMaterial}
+              studyContext={studyChatContext}
+              user={user}
+              onApplyActions={applyCodexActions}
+              onCourseChange={(courseId) =>
+                navigator.navigate({
+                  path: { kind: "chat" },
+                  document: { ...activeDocument, courseId },
+                })
+              }
+            />
+          )
+          : courseMainPanel
+    : path.kind === "home"
+      ? (
+        <LandingPanel
+          courseCount={courses.length > 0 ? courses.length : null}
+          eventCount={calendar.events.length > 0 ? upcomingEventCount : null}
+          onOpenSection={(section) => navigator.drill(sectionToPath(section))}
+        />
+      )
+      : path.kind === "courses"
+        ? (
+          <CoursesHomePanel
+            categoryOptionGroups={categoryOptionGroups}
+            courseListGroups={courseListGroups}
+            filteredCoursesCount={filteredCourses.length}
+            homeView="courses"
+            loading={loading}
+            query={query}
+            selectedCategory={selectedCategory}
+            selectedCourseId={activeCourseId}
+            onCategoryChange={setSelectedCategory}
+            onQueryChange={setQuery}
+            onSelectCourse={(courseId) => navigator.drill({ kind: "course", courseId })}
+          />
+        )
+        : path.kind === "course"
+          ? (
+            <CourseModesPanel
+              course={selectedCourse}
+              courseId={path.courseId}
+              materialsCount={materialsByCourseId[path.courseId] ? materialsByCourseId[path.courseId].length : null}
+              onSelectMode={(mode) => openCourseMode(path.courseId, mode)}
+            />
+          )
+          : path.kind === "course-mode"
+            ? courseMainPanel
+            : path.kind === "calendar"
+              ? (
+                <CalendarEventsPanel
+                  activeEventUid={null}
+                  error={calendar.error}
+                  events={calendar.events}
+                  loading={calendar.loading}
+                  onOpenEvent={(eventUid) => navigator.open({ kind: "calendar-event", eventUid })}
+                  onOpenGrid={() => navigator.open({ kind: "calendar-grid" })}
+                  variant="full"
+                />
+              )
+              : (
+                <ChatSessionsPanel
+                  activeSessionId={null}
+                  onNewChat={() => navigator.open({ kind: "chat-session", sessionId: null, courseId: null })}
+                  onOpenSession={(session) =>
+                    navigator.open({ kind: "chat-session", sessionId: session.id, courseId: session.courseId ?? null })
+                  }
+                  variant="full"
+                />
+              );
 
   return (
     <>
@@ -725,379 +844,221 @@ export default function Home() {
       </Show>
 
       <Show when="signed-in">
-        <main className="min-h-dvh overflow-x-hidden px-3 py-2 sm:px-4 sm:py-3 md:h-dvh md:max-h-dvh md:overflow-hidden md:p-0">
-          <div
-            className={cn(
-              "mx-auto grid min-h-full w-full min-w-0 max-w-[1680px] gap-2 md:mx-0 md:h-full md:max-w-none md:gap-0",
-              error ? "md:grid-rows-[auto_minmax(0,1fr)]" : "md:grid-rows-[minmax(0,1fr)]",
-            )}
-          >
-            <DashboardHeader
-              className="md:hidden"
-              loading={loading}
-              navBreadcrumb={navBreadcrumbProps}
-              refreshing={refreshing}
-              user={user}
-              onRefresh={() => void loadDashboard()}
-            />
-
-            {error ? <DashboardNotice message={error} /> : null}
-
-            {needsConnection ? (
-              <section className="min-h-0 overflow-auto py-4">
-                <MoodleConnectCard
-                  reason={connectionMessage}
-                  onConnected={() => {
-                    setNeedsConnection(false);
-                    setConnectionMessage(null);
-                    void loadDashboard();
-                  }}
-                />
-              </section>
-            ) : (
-              <section className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 pb-24 md:h-full md:min-h-0 md:gap-0 md:overflow-hidden md:bg-background md:pb-0">
-                <DashboardHeader
-                  className="hidden shrink-0 border-b border-border px-4 py-2.5 md:flex md:pl-4 md:pr-4"
-                  chatSidebarOpen={chatSidebarOpen}
+        <main className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-background">
+          <TopBar
+            actions={
+              <div className="ml-1 flex items-center gap-1">
+                {activeDocument?.kind !== "chat-session" ? (
+                  <Button
+                    aria-label={chatSidebarOpen ? "Chat schließen" : "Chat öffnen"}
+                    className={cn("shrink-0", chatSidebarOpen ? "bg-secondary text-foreground" : "")}
+                    onClick={() => setChatSidebarOpen((current) => !current)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <MessageSquare aria-hidden />
+                  </Button>
+                ) : null}
+                <HeaderActionsMenu
                   loading={loading}
-                  navBreadcrumb={navBreadcrumbProps}
                   refreshing={refreshing}
-                  sidebarCollapsed={sidebarCollapsed}
                   user={user}
                   onRefresh={() => void loadDashboard()}
-                  onToggleChat={homeView === "chat" ? undefined : () => setChatSidebarOpen((current) => !current)}
-                  onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
                 />
-                <div
-                  className={cn(
-                    "grid min-h-0 w-full min-w-0 flex-1 gap-3 md:items-stretch md:gap-0 md:overflow-hidden",
-                    showSidebar
-                      ? sidebarCollapsed
-                          ? "md:grid-cols-[88px_minmax(0,1fr)]"
-                          : "md:grid-cols-[220px_minmax(0,1fr)]"
-                      : "md:grid-cols-[minmax(0,1fr)]",
-                  )}
-                >
-                {showHomeSidebar ? (
-                  <HomeSidebar
-                    homeView={homeView}
-                    sidebarCollapsed={sidebarCollapsed}
-                    onHomeViewChange={navigateHomeView}
-                  />
-                ) : null}
-                {showCourseSidebar ? (
-                  <CourseSidebar
-                    courseHubOpen={courseHubOpen}
-                    sidebarCollapsed={sidebarCollapsed}
-                    studyMode={studyMode}
-                    onFormula={() => enterStudyMode("formula")}
-                    onMaterials={() => enterStudyMode("materials")}
-                    onRecordings={() => enterStudyMode("recordings")}
-                    onScript={() => enterStudyMode("script")}
-                    onTasks={() => enterStudyMode("tasks")}
-                  />
-                ) : null}
+              </div>
+            }
+            breadcrumbs={breadcrumbs}
+            canGoBack={navigator.canGoBack}
+            canGoForward={navigator.canGoForward}
+            onBack={navigator.back}
+            onForward={navigator.forward}
+            onNavigate={navigator.navigate}
+            onToggleSidebar={() => setSidebarHidden((current) => !current)}
+            showSidebarToggle={Boolean(activeDocument)}
+          />
 
-                <div className="flex min-h-0 min-w-0 md:h-full md:min-h-0 md:overflow-hidden">
-                  <div className="min-h-0 min-w-0 flex-1 md:h-full md:min-h-0 md:overflow-hidden">
-                  {homeView === "chat" ? (
-                    <ChatPage
-                      courses={courses}
-                      loadMaterials={loadMaterials}
-                      materials={materials}
-                      pdfState={pdfState}
-                      selectedCourseId={selectedCourseId}
-                      selectedMaterial={selectedMaterial}
-                      user={user}
-                      onApplyActions={applyCodexActions}
-                      onCourseChange={(courseId) => navigateDashboard({ selectedCourseId: courseId })}
-                    />
-                  ) : navigationMode === "courses" ? (
-                    <CoursesHomePanel
-                      categoryOptionGroups={categoryOptionGroups}
-                      courseListGroups={courseListGroups}
-                      filteredCoursesCount={filteredCourses.length}
-                      homeView={homeView === "calendar" ? "calendar" : "courses"}
-                      loading={loading}
-                      query={query}
-                      selectedCategory={selectedCategory}
-                      selectedCourseId={selectedCourseId}
-                      onCategoryChange={(value) => {
-                        materialsRequestId.current += 1;
-                        setMaterialsLoading(false);
-                        setSelectedCategory(value);
-                        setMaterials([]);
-                        navigateDashboard({
-                          courseHubOpen: true,
-                          homeView: "courses",
-                          navigationMode: "courses",
-                          recordingId: null,
-                          selectedCourseId: null,
-                          selectedMaterialId: null,
-                          selectedScriptSectionId: null,
-                          selectedTaskId: null,
-                          studyMode: "materials",
-                        });
-                      }}
-                      onQueryChange={setQuery}
-                      onSelectCourse={(courseId) => {
-                        navigateDashboard({
-                          courseHubOpen: false,
-                          homeView: "courses",
-                          navigationMode: "materials",
-                          recordingId: null,
-                          selectedCourseId: courseId,
-                          selectedMaterialId: null,
-                          selectedScriptSectionId: null,
-                          selectedTaskId: null,
-                          studyMode: "materials",
-                        });
-                      }}
-                    />
-                  ) : (
-                  <CourseMainPanel
-                    course={selectedCourse}
-                    courseHubOpen={courseHubOpen}
-                    courseId={selectedCourseId}
-                    materials={materials}
+          {error ? <DashboardNotice message={error} /> : null}
+
+          {needsConnection ? (
+            <section className="min-h-0 flex-1 overflow-auto px-4 py-4">
+              <MoodleConnectCard
+                reason={connectionMessage}
+                onConnected={() => {
+                  setNeedsConnection(false);
+                  setConnectionMessage(null);
+                  void loadDashboard();
+                }}
+              />
+            </section>
+          ) : (
+            <div className="flex min-h-0 w-full flex-1">
+              {showSplitSidebar ? (
+                <div className="hidden shrink-0 md:block md:h-full" style={{ width: sidebarWidth }}>
+                  <NavigatorSidebar
+                    activeDocument={activeDocument}
+                    calendarError={calendar.error}
+                    calendarEvents={calendar.events}
+                    calendarLoading={calendar.loading}
+                    courseListGroups={courseListGroups}
+                    coursesLoading={loading}
+                    labelResolvers={labelResolvers}
                     materialsBySection={materialsBySection}
                     materialsLoading={materialsLoading}
-                    material={selectedMaterial}
-                    recordingsState={selectedCourseId ? recordingsByCourseId[selectedCourseId] : undefined}
-                    selectedScriptSectionId={selectedScriptSectionId}
-                    selectedRecording={selectedRecording}
-                    selectedTaskId={selectedTaskId}
-                    studyMode={studyMode}
+                    onDrill={navigator.drill}
+                    onOpenDocument={navigator.open}
+                    onOpenMaterialTask={openMaterialTask}
+                    onResizeBy={resizeSidebarBy}
+                    onResizeStart={handleSidebarResizeStart}
+                    onTaskStatusChange={(taskId, status) => void updateTaskStatus(taskId, status)}
+                    path={path}
+                    recordingsState={activeCourseId ? recordingsByCourseId[activeCourseId] : undefined}
                     studyOutline={studyOutline}
-                    onEnterStudyMode={enterStudyMode}
-                    onSelectMaterial={(material) => {
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        studyMode: "materials",
-                        selectedMaterialId: material.id,
-                        selectedScriptSectionId: null,
-                        selectedTaskId: null,
-                      });
-                      if (userId) {
-                        writeDashboardCache(userId, {
-                          user,
-                          courses,
-                          materialsByCourseId,
-                          selectedCourseId,
-                          selectedCategory,
-                          selectedMaterialId: material.id,
-                        });
-                      }
-                    }}
-                    onSelectScriptSection={(sectionId) => {
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        selectedScriptSectionId: sectionId,
-                        selectedMaterialId: null,
-                        selectedTaskId: null,
-                        studyMode: "script",
-                      });
-                    }}
-                    onSelectTask={(taskId) => {
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        selectedTaskId: taskId,
-                        selectedMaterialId: null,
-                        selectedScriptSectionId: null,
-                        studyMode: "tasks",
-                      });
-                    }}
-                    onTaskStatusChange={(taskId, status) => {
-                      void updateTaskStatus(taskId, status);
-                    }}
-                    onOpenResource={(resourceId) => {
-                      const material = materials.find((item) => item.id === resourceId);
-                      if (!material) {
-                        setError(`Could not find Moodle resource ${resourceId} in the loaded course materials.`);
-                        return;
-                      }
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        navigationMode: "materials",
-                        selectedMaterialId: material.id,
-                        selectedScriptSectionId: null,
-                        selectedTaskId: null,
-                        studyMode: "materials",
-                      });
-                      setError(null);
-                      if (userId) {
-                        writeDashboardCache(userId, {
-                          user,
-                          courses,
-                          materialsByCourseId,
-                          selectedCourseId,
-                          selectedCategory,
-                          selectedMaterialId: material.id,
-                        });
-                      }
-                    }}
-                    onPDFStateChange={setPDFState}
-                    onLoadRecordings={() => selectedCourseId && void openRecordings(selectedCourseId, { refresh: true })}
-                    onPlayRecording={(recording) => {
-                      if (!selectedCourseId) {
-                        return;
-                      }
-                      selectRecording(selectedCourseId, recording);
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        recordingId: recording.recordingUuid,
-                        selectedMaterialId: null,
-                        selectedScriptSectionId: null,
-                        selectedTaskId: null,
-                        studyMode: "recordings",
-                      });
-                    }}
-                    onSelectedScriptSectionIdChange={(sectionId) => {
-                      if (sectionId === selectedScriptSectionId) {
-                        return;
-                      }
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        selectedScriptSectionId: sectionId,
-                        selectedMaterialId: null,
-                        selectedTaskId: null,
-                        studyMode: "script",
-                      });
-                    }}
-                    onSelectedTaskIdChange={(taskId) => {
-                      if (taskId === selectedTaskId) {
-                        return;
-                      }
-                      navigateDashboard({
-                        courseHubOpen: false,
-                        selectedTaskId: taskId,
-                        selectedMaterialId: null,
-                        selectedScriptSectionId: null,
-                        studyMode: "tasks",
-                      });
-                    }}
-                    onSignInWebexBrowser={(credentials) => {
-                      if (!selectedCourseId) {
-                        return Promise.reject(new Error("Choose a course before signing in to Webex."));
-                      }
-                      return signInWebexBrowser(selectedCourseId, credentials);
-                    }}
-                    onStudyOutlineChange={setStudyOutline}
-                    pdfScrollCommand={pdfScrollCommand}
                   />
-                  )}
+                </div>
+              ) : null}
+
+              <div className="flex min-h-0 min-w-0 flex-1">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-24 md:overflow-hidden md:pb-0">
+                  {mainContent}
+                </div>
+                {chatSidebarOpen && activeDocument?.kind !== "chat-session" ? (
+                  <div
+                    className="relative hidden shrink-0 border-l border-border md:block md:h-full"
+                    style={{ width: chatSidebarWidth }}
+                  >
+                    <button
+                      aria-label="Chat-Breite anpassen"
+                      className="group absolute left-0 top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize touch-none"
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft") {
+                          event.preventDefault();
+                          setChatSidebarWidth((current) => clampChatSidebarWidth(current + 16));
+                        }
+                        if (event.key === "ArrowRight") {
+                          event.preventDefault();
+                          setChatSidebarWidth((current) => clampChatSidebarWidth(current - 16));
+                        }
+                      }}
+                      onMouseDown={handleChatSidebarResizeStart}
+                      onPointerDown={handleChatSidebarResizeStart}
+                      type="button"
+                    >
+                      <span className="mx-auto block h-full w-px bg-transparent transition-colors group-hover:bg-border" />
+                    </button>
+                    <ChatPage
+                      courses={courses}
+                      loadMaterials={ensureCourseMaterials}
+                      materials={materials}
+                      pdfState={pdfState}
+                      selectedCourseId={activeCourseId}
+                      selectedMaterial={selectedMaterial}
+                      studyContext={studyChatContext}
+                      user={user}
+                      variant="sidebar"
+                      onApplyActions={applyCodexActions}
+                      onClose={() => setChatSidebarOpen(false)}
+                      onCourseChange={(courseId) => navigator.drill({ kind: "course", courseId })}
+                    />
                   </div>
-                  {chatSidebarOpen && homeView !== "chat" ? (
-                    <div className="hidden w-[400px] shrink-0 md:h-full lg:block">
-                      <ChatPage
-                        courses={courses}
-                        loadMaterials={loadMaterials}
-                        materials={materials}
-                        pdfState={pdfState}
-                        selectedCourseId={selectedCourseId}
-                        selectedMaterial={selectedMaterial}
-                        user={user}
-                        variant="sidebar"
-                        onApplyActions={applyCodexActions}
-                        onClose={() => setChatSidebarOpen(false)}
-                        onCourseChange={(courseId) => navigateDashboard({ selectedCourseId: courseId })}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-                </div>
-              </section>
-            )}
-            {!needsConnection && navigationMode === "courses" ? (
-              <HomeMobileNav activeView={homeView} onViewChange={navigateHomeView} />
-            ) : null}
-            {!needsConnection && selectedCourseId && navigationMode === "materials" ? (
-              <MobileBottomNav
-                activeTab={mobileTab}
-                onMaterials={() => enterStudyMode("materials")}
-                onTasks={() => enterStudyMode("tasks")}
-                onScript={() => enterStudyMode("script")}
-                onFormula={() => enterStudyMode("formula")}
-                onRecordings={() => enterStudyMode("recordings")}
-              />
-            ) : null}
-          </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {showHomeMobileNav ? (
+            <HomeMobileNav
+              activeView={path.kind === "calendar" ? "calendar" : path.kind === "chat" ? "chat" : "courses"}
+              onViewChange={(view) => navigator.drill(sectionToPath(view))}
+            />
+          ) : null}
+          {showCourseMobileNav && activeCourseId ? (
+            <MobileBottomNav
+              activeTab={mobileTab}
+              onMaterials={() => openCourseMode(activeCourseId, "materials")}
+              onTasks={() => openCourseMode(activeCourseId, "tasks")}
+              onScript={() => openCourseMode(activeCourseId, "script")}
+              onFormula={() => openCourseMode(activeCourseId, "formula")}
+              onRecordings={() => openCourseMode(activeCourseId, "recordings")}
+            />
+          ) : null}
         </main>
       </Show>
     </>
   );
 }
 
-type NavBreadcrumbProps = ComponentProps<typeof DashboardNavBreadcrumb>;
+function sectionToPath(section: HomeView): NavigatorPath {
+  if (section === "calendar") {
+    return { kind: "calendar" };
+  }
+  if (section === "chat") {
+    return { kind: "chat" };
+  }
+  return { kind: "courses" };
+}
 
-function DashboardHeader({
-  className,
-  loading,
-  navBreadcrumb,
-  refreshing,
-  sidebarCollapsed,
-  chatSidebarOpen,
-  user,
-  onRefresh,
-  onToggleSidebar,
-  onToggleChat,
-}: {
-  className?: string;
-  loading: boolean;
-  navBreadcrumb: NavBreadcrumbProps;
-  refreshing: boolean;
-  sidebarCollapsed?: boolean;
-  chatSidebarOpen?: boolean;
-  user: User | null;
-  onRefresh: () => void;
-  onToggleSidebar?: () => void;
-  onToggleChat?: () => void;
-}) {
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function clampChatSidebarWidth(width: number): number {
+  return Math.min(CHAT_SIDEBAR_MAX_WIDTH, Math.max(CHAT_SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function summarizeTaskViewProgress(sheets: TaskViewResponse["sheets"]): TaskViewResponse["progress"] {
+  const progress: TaskViewResponse["progress"] = {
+    checked: 0,
+    correct: 0,
+    done: 0,
+    needsReview: 0,
+    open: 0,
+    wrong: 0,
+  };
+  for (const task of sheets.flatMap((sheet) => sheet.tasks)) {
+    switch (task.status) {
+      case "done":
+        progress.done++;
+        progress.checked++;
+        break;
+      case "checked":
+        progress.checked++;
+        break;
+      case "correct":
+        progress.correct++;
+        progress.checked++;
+        break;
+      case "wrong":
+        progress.wrong++;
+        progress.checked++;
+        break;
+      case "needs_review":
+        progress.needsReview++;
+        progress.checked++;
+        break;
+      default:
+        progress.open++;
+    }
+  }
+  return progress;
+}
+
+function taskTitleForId(taskId: string, studyOutline: StudyOutline, taskView: TaskViewResponse | null): string | null {
+  const sheet = taskView?.sheets.find((candidate) =>
+    candidate.tasks.some((task) => task.taskId === taskId || taskId.startsWith(`${task.taskId}-`)),
+  );
+  const task = sheet?.tasks.find((candidate) => candidate.taskId === taskId || taskId.startsWith(`${candidate.taskId}-`));
+  if (task && sheet) {
+    return task.title === sheet.title ? sheet.title : `${task.title}: ${sheet.title}`;
+  }
   return (
-    <header className={cn("flex min-h-0 w-full min-w-0 items-center gap-2", className)}>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        {onToggleSidebar ? (
-          <Button
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="shrink-0"
-            onClick={onToggleSidebar}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Menu aria-hidden />
-          </Button>
-        ) : null}
-        <DashboardNavBreadcrumb {...navBreadcrumb} />
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        {onToggleChat ? (
-          <Button
-            aria-label={chatSidebarOpen ? "Chat schließen" : "Chat öffnen"}
-            className={cn("shrink-0", chatSidebarOpen ? "text-foreground" : "")}
-            onClick={onToggleChat}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <MessageSquare aria-hidden />
-          </Button>
-        ) : null}
-        <HeaderActionsMenu
-          loading={loading}
-          refreshing={refreshing}
-          user={user}
-          onRefresh={onRefresh}
-        />
-      </div>
-    </header>
+    studyOutline.tasks.find((candidate) => candidate.id === taskId || taskId.startsWith(`${candidate.id}-`))?.title ?? null
   );
 }
 
 function DashboardNotice({ message }: { message: string }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 px-3 py-2">
       <Alert className="inline-flex max-w-3xl items-start rounded-2xl px-4 py-3 text-sm font-medium leading-6">
         {message}
       </Alert>

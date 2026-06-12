@@ -47,6 +47,13 @@ const mockRecordingState = {
   recordings: mockRecordings,
 };
 
+const mockRecordingCredentialsState = {
+  loading: false,
+  loaded: false,
+  error: "Moodle web credentials are required for Webex recordings",
+  recordings: [],
+};
+
 const mockTaskView: TaskViewResponse = {
   courseId: "mock-hpc",
   generatedAt: "2026-06-07T00:00:00.000Z",
@@ -189,6 +196,7 @@ export function MockDashboardPage() {
     [selectedCourseId],
   );
   const materials = mockMaterialsByCourseId[selectedCourseId] ?? [];
+  const recordingsState = mockState === "webex-credentials" ? mockRecordingCredentialsState : mockRecordingState;
   const materialsBySection = useMemo(() => {
     const groups = new Map<string, Material[]>();
     for (const material of materials) {
@@ -200,7 +208,13 @@ export function MockDashboardPage() {
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
 
   useEffect(() => {
-    setMockState(new URLSearchParams(window.location.search).get("state"));
+    const state = new URLSearchParams(window.location.search).get("state");
+    setMockState(state);
+    if (state === "webex-credentials") {
+      setCourseHubOpen(false);
+      setSelectedRecording(null);
+      setStudyMode("recordings");
+    }
   }, []);
 
   function selectCourse(courseId: string) {
@@ -327,7 +341,7 @@ export function MockDashboardPage() {
             materialsBySection={materialsBySection}
             materialsLoading={false}
             material={selectedMaterial}
-            recordingsState={mockRecordingState}
+            recordingsState={recordingsState}
             selectedRecording={selectedRecording}
             selectedScriptSectionId={selectedScriptSectionId}
             selectedTaskId={selectedTaskId}

@@ -1,7 +1,8 @@
 "use client";
 
 import { ArrowUpRight, Check, Link2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,6 @@ import {
   saveCalendarSubscription,
 } from "@/lib/calendar-subscription";
 import { getErrorMessage } from "@/lib/moodle-api";
-import { cn } from "@/lib/utils";
 
 const FHGR_HELP_URL = resolveFhgrCalendarHelpUrl();
 
@@ -30,12 +30,25 @@ export function CalendarSubscriptionSettings({
 }: {
   onSaved: () => Promise<void> | void;
 }) {
+  const { userId } = useAuth();
   const [open, setOpen] = useState(false);
   const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
-    setConfigured(Boolean(readStoredCalendarUrl()));
-  }, [open]);
+    let active = true;
+    void loadCalendarSubscription(userId).then((state) => {
+      if (active) {
+        setConfigured(state.configured);
+      }
+    }).catch(() => {
+      if (active) {
+        setConfigured(Boolean(readStoredCalendarUrl(userId)));
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [open, userId]);
 
   return (
     <>
@@ -58,7 +71,7 @@ export function CalendarSubscriptionSettings({
           <DialogHeader className="gap-3 pr-8">
             <DialogTitle>Schulkalender verbinden</DialogTitle>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              iCal-URL aus dem FHGR-Portal einfügen. Wird nur lokal gespeichert und zum Laden der Termine verwendet.
+              iCal-URL aus dem FHGR-Portal einfügen. Wird in deinem Konto gespeichert und nur zum Laden deiner Termine verwendet.
             </p>
           </DialogHeader>
 
@@ -92,34 +105,33 @@ export function CalendarSubscriptionForm({
   onSaved: () => Promise<void> | void;
   onConfiguredChange?: (configured: boolean) => void;
 }) {
+  const { userId } = useAuth();
   const [calendarUrl, setCalendarUrl] = useState("");
   const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void loadSubscription();
-  }, []);
-
-  async function loadSubscription() {
+  const loadSubscription = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const storedUrl = readStoredCalendarUrl();
-      if (storedUrl) {
-        setCalendarUrl(storedUrl);
+      const state = await loadCalendarSubscription(userId);
+      if (state.url) {
+        setCalendarUrl(state.url);
       }
-      const state = await loadCalendarSubscription();
-      const isConfigured = state.configured || Boolean(storedUrl);
-      setConfigured(isConfigured);
-      onConfiguredChange?.(isConfigured);
+      setConfigured(state.configured);
+      onConfiguredChange?.(state.configured);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }
+  }, [onConfiguredChange, userId]);
+
+  useEffect(() => {
+    void loadSubscription();
+  }, [loadSubscription]);
 
   async function handleSave() {
     const nextUrl = calendarUrl.trim();
@@ -131,7 +143,7 @@ export function CalendarSubscriptionForm({
     setSaving(true);
     setError(null);
     try {
-      const state = await saveCalendarSubscription(nextUrl);
+      const state = await saveCalendarSubscription(nextUrl, userId);
       setConfigured(state.configured);
       onConfiguredChange?.(state.configured);
       await onSaved();

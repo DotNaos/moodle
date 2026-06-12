@@ -39,14 +39,13 @@ export const runtime = "nodejs";
 
 const bundleRoot = process.env.STUDY_BUNDLES_ROOT?.trim()
   ? path.resolve(process.env.STUDY_BUNDLES_ROOT.trim())
-  : null;
+  : path.resolve(process.cwd(), "study-bundles");
 
 export async function GET(request: Request, context: RouteContext) {
   const params = await context.params;
   const parts = params.path ?? [];
   if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "task-view") {
-    const requestUrl = new URL(request.url);
-    return redirectTo(`/api/moodle/courses/${encodeURIComponent(parts[1])}/study-pipeline/task-view${requestUrl.search}`);
+    return taskViewResponse(request, parts[1]);
   }
   if (parts.length >= 3 && parts[0] === "courses" && parts[2] === "asset") {
     return assetResponse(request, parts[1]);
@@ -81,7 +80,7 @@ async function taskViewResponse(request: Request, courseId: string) {
       solutionMarkdown: solutionMarkdown ? extractMainContent(solutionMarkdown) : undefined,
       tasks: [
         {
-          taskId: task.id,
+          taskId: bundleTaskId(task),
           sourceResourceId: task.sourceResourceId,
           title: task.title,
           promptMarkdown: taskBody,
@@ -141,7 +140,6 @@ async function assetResponse(request: Request, courseId: string) {
 }
 
 async function loadBundle(courseId: string): Promise<{ dir: string; manifest: StudyBundleManifest } | null> {
-  if (!bundleRoot) return null;
   const entries = await readdir(bundleRoot, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -154,6 +152,20 @@ async function loadBundle(courseId: string): Promise<{ dir: string; manifest: St
     }
   }
   return null;
+}
+
+function bundleTaskId(task: StudyBundleManifest["tasks"][number]): string {
+  const sheetSlug = slugifyTaskId(task.title) || slugifyTaskId(task.id) || "task";
+  return `task-${task.sourceResourceId}-${sheetSlug}`;
+}
+
+function slugifyTaskId(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 async function traceBundleRuntimeFiles(dir: string) {
@@ -221,14 +233,4 @@ function contentTypeFor(filePath: string): string {
     default:
       return "application/octet-stream";
   }
-}
-
-function redirectTo(location: string): Response {
-  return new Response(null, {
-    status: 307,
-    headers: {
-      "cache-control": "no-store",
-      location,
-    },
-  });
 }

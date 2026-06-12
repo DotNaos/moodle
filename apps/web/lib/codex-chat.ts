@@ -63,6 +63,39 @@ export function buildAttachmentPrompt(text: string, attachments: CodexAttachment
 
 export type LoadedResourceContext = CodexActionResult["loadedResources"];
 
+// Live "over the shoulder" context while the student works on a task in test
+// mode: the focused subtask, the answer draft, and the stored solution. Lets
+// Codex act like a personal teacher with the same information as the student.
+export type StudyTestContext = {
+  active: boolean;
+  taskId: string;
+  taskTitle: string;
+  sheetTitle?: string | null;
+  stepLabel?: string | null;
+  stepPrompt?: string | null;
+  answerDraft?: string | null;
+  solutionMarkdown?: string | null;
+  lastFeedbackMarkdown?: string | null;
+};
+
+export type StudyChatContext = {
+  mode: "materials" | "tasks" | "script" | "formula" | "recordings";
+  selectedTask?: {
+    taskId: string;
+    title: string;
+    sheetTitle?: string;
+    sourceResourceId?: string;
+    sourceTitle?: string;
+    status?: string;
+    promptMarkdown?: string;
+  } | null;
+  selectedScriptSection?: {
+    sectionId: string;
+    title: string;
+  } | null;
+  test?: StudyTestContext | null;
+} | null;
+
 const ACTION_LABELS: Record<MoodleUIAction["type"], string> = {
   open_course: "Kurs geöffnet",
   open_material: "Material geöffnet",
@@ -71,6 +104,7 @@ const ACTION_LABELS: Record<MoodleUIAction["type"], string> = {
   open_moodle_course_page: "Moodle-Kursseite geöffnet",
   open_latest_pdf: "Neuestes PDF geöffnet",
   scroll_pdf_to_page: "Zu Seite gesprungen",
+  set_task_status: "Aufgabenstatus vorgeschlagen",
 };
 
 export function describeAppliedActions(
@@ -114,6 +148,7 @@ export function buildMoodleContext({
   materials,
   selectedMaterial,
   pdfState,
+  studyContext,
   loadedResources = [],
 }: {
   user: User | null;
@@ -122,6 +157,7 @@ export function buildMoodleContext({
   materials: Material[];
   selectedMaterial: Material | null;
   pdfState: PDFViewState | null;
+  studyContext?: StudyChatContext;
   loadedResources?: LoadedResourceContext;
 }) {
   return {
@@ -135,6 +171,7 @@ export function buildMoodleContext({
       : null,
     selectedCourse: selectedCourse ? courseContext(selectedCourse) : null,
     selectedMaterial: selectedMaterial ? materialContext(selectedMaterial) : null,
+    study: studyContext ?? null,
     pdf: buildPDFPromptContext(pdfState),
     courses: courses.slice(0, 80).map(courseContext),
     materials: materials.map(materialContext),

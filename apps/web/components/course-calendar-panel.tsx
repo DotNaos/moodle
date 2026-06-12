@@ -1,7 +1,8 @@
 "use client";
 
 import { CalendarDays, ChevronLeft, ChevronRight, Columns3, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CalendarEventDetail, MonthCalendarGrid } from "@/components/calendar-views";
 import { WeekTimeGrid } from "@/components/calendar-week-grid";
@@ -26,7 +27,7 @@ import {
   startOfWeek,
   type CalendarGridEventPreview,
 } from "@/lib/calendar-grid";
-import { readStoredCalendarUrl } from "@/lib/calendar-storage";
+import { loadCalendarSubscription } from "@/lib/calendar-subscription";
 import { apiRequest, getErrorMessage } from "@/lib/moodle-api";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,7 @@ export function CalendarPanel({
   course?: Course | null;
   scope?: "all" | "course";
 }) {
+  const { userId } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,46 +63,16 @@ export function CalendarPanel({
   const [focusDate, setFocusDate] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState(() => localDayKey(new Date()));
 
-  useEffect(() => {
-    if (scope === "course" && !course) {
-      setEvents([]);
-      return;
-    }
-    void loadCalendar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course?.id, scope]);
-
-  const visibleEvents = useMemo(
-    () => (scope === "course" ? matchCourseEvents(course, events) : sortEvents(events)),
-    [course, events, scope],
-  );
-
-  const eventsByDay = useMemo(() => buildEventsByDay(visibleEvents), [visibleEvents]);
-
-  const gridDays = useMemo(() => {
-    if (viewMode === "week") {
-      return buildCalendarWeek(focusDate, eventsByDay, selectedDayKey);
-    }
-    return buildCalendarMonth(startOfMonth(focusDate), eventsByDay, selectedDayKey);
-  }, [eventsByDay, focusDate, selectedDayKey, viewMode]);
-
-  const selectedDayEvents = useMemo(
-    () => visibleEvents.filter((event) => eventDayKey(event) === selectedDayKey),
-    [selectedDayKey, visibleEvents],
-  );
-
-  const periodTitle = viewMode === "week" ? formatWeekTitle(focusDate) : formatMonthTitle(focusDate);
-
-  async function loadCalendar() {
+  const loadCalendar = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const storedUrl = readStoredCalendarUrl();
-      if (storedUrl) {
+      const subscription = await loadCalendarSubscription(userId);
+      if (subscription.configured) {
         const response = await fetch("/api/calendar/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: storedUrl, days: 120 }),
+          body: JSON.stringify({ url: subscription.source === "local" ? subscription.url : undefined, days: 120 }),
         });
         const payload = (await response.json().catch(() => null)) as CalendarResponse & { error?: string };
         if (!response.ok) {
@@ -123,7 +95,36 @@ export function CalendarPanel({
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId]);
+
+  useEffect(() => {
+    if (scope === "course" && !course) {
+      setEvents([]);
+      return;
+    }
+    void loadCalendar();
+  }, [course?.id, loadCalendar, scope]);
+
+  const visibleEvents = useMemo(
+    () => (scope === "course" ? matchCourseEvents(course, events) : sortEvents(events)),
+    [course, events, scope],
+  );
+
+  const eventsByDay = useMemo(() => buildEventsByDay(visibleEvents), [visibleEvents]);
+
+  const gridDays = useMemo(() => {
+    if (viewMode === "week") {
+      return buildCalendarWeek(focusDate, eventsByDay, selectedDayKey);
+    }
+    return buildCalendarMonth(startOfMonth(focusDate), eventsByDay, selectedDayKey);
+  }, [eventsByDay, focusDate, selectedDayKey, viewMode]);
+
+  const selectedDayEvents = useMemo(
+    () => visibleEvents.filter((event) => eventDayKey(event) === selectedDayKey),
+    [selectedDayKey, visibleEvents],
+  );
+
+  const periodTitle = viewMode === "week" ? formatWeekTitle(focusDate) : formatMonthTitle(focusDate);
 
   function goToToday() {
     const today = new Date();

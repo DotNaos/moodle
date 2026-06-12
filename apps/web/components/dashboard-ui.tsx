@@ -1,7 +1,7 @@
 "use client";
 
 import { FileIcon } from "@dotnaos/react-ui/web";
-import { ExternalLink, FileArchive, FileText, Globe, ImageIcon } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileArchive, FileText, Globe, ImageIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import type { Course, Material } from "@/lib/dashboard-data";
@@ -210,10 +210,12 @@ export function CourseGridCard({
 export function MaterialGridCard({
   active = false,
   material,
+  onOpenTask,
   onSelect,
 }: {
   active?: boolean;
   material: Material;
+  onOpenTask?: () => void;
   onSelect: () => void;
 }) {
   const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
@@ -238,6 +240,20 @@ export function MaterialGridCard({
         )}
         <span className="line-clamp-2 text-sm font-medium leading-snug break-words">{material.name}</span>
       </button>
+      {onOpenTask ? (
+        <button
+          aria-label={`${material.name} als Aufgabe öffnen`}
+          className={cn(
+            "mt-auto inline-flex h-8 max-w-full items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors",
+            active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background/80 text-foreground hover:bg-background",
+          )}
+          onClick={onOpenTask}
+          type="button"
+        >
+          <CheckCircle2 aria-hidden className="size-3.5 shrink-0" />
+          <span className="truncate">Aufgabe</span>
+        </button>
+      ) : null}
       {material.url ? (
         <a
           aria-label={`Open ${material.name} in Moodle`}
@@ -259,10 +275,12 @@ export function MaterialGridCard({
 export function MaterialRow({
   active = false,
   material,
+  onOpenTask,
   onSelect,
 }: {
   active?: boolean;
   material: Material;
+  onOpenTask?: () => void;
   onSelect: () => void;
 }) {
 
@@ -297,6 +315,20 @@ export function MaterialRow({
           <span className="block truncate text-sm font-medium">{material.name}</span>
         </span>
       </button>
+      {onOpenTask ? (
+        <button
+          aria-label={`${material.name} als Aufgabe öffnen`}
+          className={cn(
+            "inline-flex h-9 max-w-[120px] shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors",
+            active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          )}
+          onClick={onOpenTask}
+          type="button"
+        >
+          <CheckCircle2 aria-hidden className="size-4 shrink-0" />
+          <span className="truncate">Aufgabe</span>
+        </button>
+      ) : null}
       {material.url ? (
         <a
           aria-label={`Open ${material.name} in Moodle`}

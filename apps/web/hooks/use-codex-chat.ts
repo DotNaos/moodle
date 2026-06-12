@@ -18,6 +18,7 @@ import {
   type CodexChatUIMessage,
   type CodexToolStatus,
   type LoadedResourceContext,
+  type StudyChatContext,
 } from "@/lib/codex-chat";
 import type { CodexAttachment } from "@/lib/codex-files";
 import { readCodexStream } from "@/lib/codex-stream-client";
@@ -37,6 +38,7 @@ type UseCodexChatInput = {
   materials: Material[];
   selectedMaterial: Material | null;
   pdfState: PDFViewState | null;
+  studyContext?: StudyChatContext;
   model?: string;
   reasoningEffort?: string;
   onApplyActions: (actions: MoodleUIAction[]) => Promise<CodexActionResult>;
@@ -49,6 +51,7 @@ export function useCodexChat({
   materials,
   selectedMaterial,
   pdfState,
+  studyContext,
   model,
   reasoningEffort,
   onApplyActions,
@@ -156,6 +159,7 @@ export function useCodexChat({
               materials,
               selectedMaterial,
               pdfState,
+              studyContext,
               loadedResources,
             }),
           }),

@@ -1,42 +1,64 @@
 import { readStoredCalendarUrl, writeStoredCalendarUrl } from "@/lib/calendar-storage";
-import { apiRequest } from "@/lib/moodle-api";
 
 export type CalendarSubscriptionState = {
   configured: boolean;
   urlHint?: string;
+  url?: string;
   saved?: boolean;
+  source?: "user-settings" | "local";
 };
 
-export async function loadCalendarSubscription(): Promise<CalendarSubscriptionState> {
-  const storedUrl = readStoredCalendarUrl();
-  if (storedUrl) {
-    return { configured: true, urlHint: calendarURLHint(storedUrl) };
-  }
-
+export async function loadCalendarSubscription(ownerId?: string | null): Promise<CalendarSubscriptionState> {
   try {
-    return await apiRequest<CalendarSubscriptionState>("/courses?route=calendar-subscription");
+    const settings = await readUserSettings();
+    const settingsUrl = extractCalendarUrlFromSettings(settings);
+    if (settingsUrl) {
+      writeStoredCalendarUrl(settingsUrl, ownerId);
+      return {
+        configured: true,
+        saved: true,
+        source: "user-settings",
+        url: settingsUrl,
+        urlHint: calendarURLHint(settingsUrl),
+      };
+    }
+    return { configured: false, saved: true, source: "user-settings" };
   } catch {
-    return { configured: false };
+    if (!ownerId) {
+      return { configured: false };
+    }
+    const storedUrl = readStoredCalendarUrl(ownerId);
+    return storedUrl
+      ? {
+          configured: true,
+          saved: false,
+          source: "local",
+          url: storedUrl,
+          urlHint: calendarURLHint(storedUrl),
+        }
+      : { configured: false };
   }
 }
 
-export async function saveCalendarSubscription(url: string): Promise<CalendarSubscriptionState> {
+export async function saveCalendarSubscription(
+  url: string,
+  ownerId?: string | null,
+): Promise<CalendarSubscriptionState> {
   const nextUrl = url.trim();
-  writeStoredCalendarUrl(nextUrl);
+  const settings = await readUserSettings();
+  await writeUserSettings({
+    ...settings,
+    calendarUrl: nextUrl,
+  });
+  writeStoredCalendarUrl(nextUrl, ownerId);
 
-  try {
-    const state = await apiRequest<CalendarSubscriptionState>("/courses?route=calendar-subscription", {
-      method: "POST",
-      body: JSON.stringify({ url: nextUrl }),
-    });
-    return { ...state, configured: true };
-  } catch {
-    return {
-      configured: true,
-      saved: true,
-      urlHint: calendarURLHint(nextUrl),
-    };
-  }
+  return {
+    configured: true,
+    saved: true,
+    source: "user-settings",
+    url: nextUrl,
+    urlHint: calendarURLHint(nextUrl),
+  };
 }
 
 const FHGR_STUDIUM_URL = "https://my.fhgr.ch/index.php?id=studium";
@@ -66,6 +88,47 @@ export function isLikelyCalendarUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function extractCalendarUrlFromSettings(settings: unknown): string | null {
+  if (!isRecord(settings) || typeof settings.calendarUrl !== "string") {
+    return null;
+  }
+  const value = settings.calendarUrl.trim();
+  return isLikelyCalendarUrl(value) ? value : null;
+}
+
+async function readUserSettings(): Promise<Record<string, unknown>> {
+  const response = await fetch("/api/user/settings", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  const payload = (await response.json().catch(() => ({}))) as { settings?: unknown; error?: unknown };
+
+  if (!response.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : `Settings request failed with ${response.status}.`);
+  }
+
+  return isRecord(payload.settings) ? payload.settings : {};
+}
+
+async function writeUserSettings(settings: Record<string, unknown>): Promise<void> {
+  const response = await fetch("/api/user/settings", {
+    method: "PUT",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
+
+  if (!response.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : `Settings request failed with ${response.status}.`);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function calendarURLHint(value: string): string {

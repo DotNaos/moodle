@@ -48,6 +48,8 @@ export function WebexRecordingsPanel({
     }
   }
 
+  const showSignInOnly = Boolean(course && needsBrowserSignIn);
+
   return (
     <section className="flex min-h-[560px] flex-col overflow-hidden rounded-[1.5rem] bg-card md:min-h-0 md:rounded-[2rem]">
       <div className="flex items-start justify-between gap-4 px-5 py-5 md:px-6">
@@ -57,13 +59,46 @@ export function WebexRecordingsPanel({
             {course ? courseTitle(course) : "No course selected"}
           </h2>
         </div>
-        <Button type="button" variant="secondary" onClick={onLoad} disabled={!course || state?.loading}>
-          {state?.loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-          Refresh
-        </Button>
+        {showSignInOnly ? null : (
+          <Button type="button" variant="secondary" onClick={onLoad} disabled={!course || state?.loading}>
+            {state?.loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+            Refresh
+          </Button>
+        )}
       </div>
 
-      {course ? (
+      {showSignInOnly ? (
+        <div className="grid min-h-0 flex-1 place-items-center overflow-auto px-5 pb-6 md:px-6">
+          <form className="flex w-full max-w-lg flex-col items-center gap-5" onSubmit={submitBrowserSignIn}>
+            <div className="flex flex-col items-center gap-3 text-center">
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-secondary text-foreground">
+                <KeyRound className="size-6" aria-hidden />
+              </span>
+              <h3 className="text-lg font-semibold tracking-tight">Webex-Aufzeichnungen laden</h3>
+            </div>
+            <div className="flex w-full flex-col gap-3">
+              <Input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="FHGR username"
+                autoComplete="username"
+              />
+              <Input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+                type="password"
+                autoComplete="current-password"
+              />
+              {signInError ? <p className="px-1 text-sm text-destructive">{signInError}</p> : null}
+              <Button className="h-11 rounded-full" type="submit" disabled={signingIn || !username.trim() || !password}>
+                {signingIn ? <Spinner aria-hidden /> : <KeyRound aria-hidden />}
+                Moodle-Sitzung erneuern
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : course ? (
         <div className="grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-4 2xl:grid-cols-[minmax(0,1fr)_290px]">
           <div className="flex min-h-0 flex-col gap-3">
             {state?.error ? (
@@ -100,31 +135,6 @@ export function WebexRecordingsPanel({
           </div>
 
           <aside className="flex min-h-0 flex-col overflow-hidden">
-            {needsBrowserSignIn ? (
-              <form className="mb-3 flex flex-col gap-2 rounded-[1.5rem] bg-muted p-3" onSubmit={submitBrowserSignIn}>
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <KeyRound size={16} aria-hidden />
-                  FHGR browser sign-in
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Webex needs a Moodle browser session. Your FHGR username and password are used for this sign-in request
-                  only. The server stores the resulting session, not your password.
-                </p>
-                <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="FHGR username" autoComplete="username" />
-                <Input
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Password"
-                  type="password"
-                  autoComplete="current-password"
-                />
-                {signInError ? <p className="text-xs text-destructive">{signInError}</p> : null}
-                <Button type="submit" disabled={signingIn || !username.trim() || !password}>
-                  {signingIn ? <Spinner aria-hidden /> : <KeyRound aria-hidden />}
-                  Sign in once
-                </Button>
-              </form>
-            ) : null}
             <RecordingList recordings={recordings} selected={activeRecording} loading={state?.loading} onPlay={onPlay} />
           </aside>
         </div>

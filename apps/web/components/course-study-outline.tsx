@@ -10,7 +10,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import { CheckCircle2, Circle, Filter, Layers, Globe } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronRight, Circle, Filter, Layers, Globe } from "lucide-react";
 import { FileIcon } from "@dotnaos/react-ui/web";
 import type { Material } from "@/lib/dashboard-data";
 import {
@@ -25,12 +25,16 @@ export function MaterialsOutline({
   materialsBySection,
   materialsLoading,
   selectedMaterialId,
+  taskIdForMaterial,
+  onOpenTask,
   onSelectMaterial,
 }: {
   materials: Material[];
   materialsBySection: [string, Material[]][];
   materialsLoading: boolean;
   selectedMaterialId: string | null;
+  taskIdForMaterial?: (material: Material) => string | null;
+  onOpenTask?: (taskId: string) => void;
   onSelectMaterial: (material: Material) => void;
 }) {
   const [layout, setLayout] = useState<GroupedItemsLayout>("list");
@@ -52,6 +56,11 @@ export function MaterialsOutline({
     return <EmptyState title="No materials loaded" description="Go back and choose another course, or refresh Moodle." />;
   }
 
+  const taskOpenerForMaterial = (material: Material) => {
+    const taskId = taskIdForMaterial?.(material);
+    return taskId && onOpenTask ? () => onOpenTask(taskId) : undefined;
+  };
+
   return (
     <GroupedItemsView
       header={
@@ -72,6 +81,7 @@ export function MaterialsOutline({
         <MaterialGridCard
           active={material.id === selectedMaterialId}
           material={material}
+          onOpenTask={taskOpenerForMaterial(material)}
           onSelect={() => onSelectMaterial(material)}
         />
       )}
@@ -79,6 +89,7 @@ export function MaterialsOutline({
         <MaterialRow
           active={material.id === selectedMaterialId}
           material={material}
+          onOpenTask={taskOpenerForMaterial(material)}
           onSelect={() => onSelectMaterial(material)}
         />
       )}
@@ -157,54 +168,156 @@ export function TaskOutline({
     return <LoadingRows label="Loading tasks" />;
   }
   const groups = groupStudyTasksBySection(tasks);
+  const orderedTasks = groups.flatMap((group) => group.sheets.flatMap((sheet) => sheet.tasks));
+  const doneCount = orderedTasks.filter((task) => isDoneTaskStatus(task.status)).length;
+  const progress = Math.round((doneCount / orderedTasks.length) * 100);
+  const nextTask = orderedTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
+
   return (
-    <div className="flex flex-col gap-4">
-      {groups.map((group, index) => (
-        <section className={cn("flex flex-col gap-2", index > 0 && "border-t border-border pt-4")} key={group.title}>
+    <div className="flex flex-col gap-6">
+      <header className="rounded-3xl bg-secondary/60 px-5 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Dein Fortschritt</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight">
+              {doneCount}
+              <span className="text-muted-foreground">/{orderedTasks.length} erledigt</span>
+            </p>
+          </div>
+          {nextTask ? (
+            <button
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              onClick={() => onSelectTask(nextTask.id)}
+              type="button"
+            >
+              {doneCount > 0 ? "Weiter üben" : "Jetzt starten"}
+              <ArrowRight aria-hidden className="size-4" />
+            </button>
+          ) : (
+            <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-emerald-500/15 px-5 py-2 text-sm font-semibold text-emerald-600">
+              <CheckCircle2 aria-hidden className="size-4" />
+              Alles erledigt
+            </span>
+          )}
+        </div>
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-background">
+          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="mt-2 truncate text-xs text-muted-foreground">
+          {nextTask
+            ? `${progress}% · Als Nächstes: ${nextTask.title} · ${nextTask.sheetTitle}`
+            : "Du hast alle Aufgaben abgeschlossen."}
+        </p>
+      </header>
+
+      {groups.map((group) => (
+        <section className="flex flex-col gap-2.5" key={group.title}>
           <GroupedSectionHeader label={group.title} />
           {group.sheets.map((sheet) => (
-            <div className="flex flex-col gap-1" key={sheet.title}>
-              <h3 className="px-3 pt-2 text-sm font-semibold text-foreground">{sheet.title}</h3>
-              {sheet.tasks.map((task) => {
-                const done = isDoneTaskStatus(task.status);
-                return (
-                  <div className="flex min-h-11 items-center gap-1" key={task.id}>
-                    <button
-                      className={cn(
-                        "min-h-11 flex-1 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                        selectedTaskId === task.id ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
-                      )}
-                      onClick={() => onSelectTask(task.id)}
-                      type="button"
-                    >
-                      <span className="line-clamp-2 font-medium">{task.title}</span>
-                      <span
-                        className={cn(
-                          "mt-1 block truncate text-xs",
-                          selectedTaskId === task.id ? "text-primary-foreground/70" : "text-muted-foreground",
-                        )}
-                      >
-                        {taskStatusLabel(task.status)}
-                      </span>
-                    </button>
-                    <button
-                      aria-label={done ? `${task.title} als offen markieren` : `${task.title} als erledigt markieren`}
-                      className={cn(
-                        "grid size-9 shrink-0 place-items-center rounded-full transition-colors",
-                        done ? "text-emerald-500 hover:bg-emerald-500/10" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                      )}
-                      onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
-                      type="button"
-                    >
-                      {done ? <CheckCircle2 className="size-5" aria-hidden /> : <Circle className="size-5" aria-hidden />}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+            <TaskSheetCard
+              key={sheet.title}
+              onSelectTask={onSelectTask}
+              onTaskStatusChange={onTaskStatusChange}
+              selectedTaskId={selectedTaskId}
+              sheet={sheet}
+            />
           ))}
         </section>
       ))}
+    </div>
+  );
+}
+
+function TaskSheetCard({
+  onSelectTask,
+  onTaskStatusChange,
+  selectedTaskId,
+  sheet,
+}: {
+  onSelectTask: (taskId: string) => void;
+  onTaskStatusChange: (taskId: string, status: "done" | "open") => void;
+  selectedTaskId: string | null;
+  sheet: { title: string; tasks: StudyOutline["tasks"] };
+}) {
+  const doneCount = sheet.tasks.filter((task) => isDoneTaskStatus(task.status)).length;
+  const complete = doneCount === sheet.tasks.length;
+
+  return (
+    <div className="rounded-3xl bg-secondary/40 p-2">
+      <div className="flex items-center justify-between gap-3 px-3 pb-1.5 pt-2">
+        <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{sheet.title}</h3>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums",
+            complete ? "bg-emerald-500/15 text-emerald-600" : "bg-background text-muted-foreground",
+          )}
+        >
+          {doneCount}/{sheet.tasks.length}
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {sheet.tasks.map((task) => {
+          const done = isDoneTaskStatus(task.status);
+          const active = selectedTaskId === task.id;
+          const statusPill = !done && task.status !== "open" ? taskStatusLabel(task.status) : null;
+          return (
+            <div
+              className={cn(
+                "group flex items-center gap-1 rounded-2xl pr-2 transition-colors",
+                active ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
+              )}
+              key={task.id}
+            >
+              <button
+                aria-label={done ? `${task.title} als offen markieren` : `${task.title} als erledigt markieren`}
+                className={cn(
+                  "grid size-10 shrink-0 place-items-center rounded-full transition-colors",
+                  done
+                    ? "text-emerald-500 hover:bg-emerald-500/10"
+                    : active
+                      ? "text-primary-foreground/80 hover:bg-primary-foreground/15"
+                      : "text-muted-foreground hover:bg-background hover:text-foreground",
+                )}
+                onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
+                type="button"
+              >
+                {done ? <CheckCircle2 className="size-5" aria-hidden /> : <Circle className="size-5" aria-hidden />}
+              </button>
+              <button
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 text-left"
+                onClick={() => onSelectTask(task.id)}
+                type="button"
+              >
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    done && !active && "text-muted-foreground line-through decoration-muted-foreground/40",
+                  )}
+                >
+                  {task.title}
+                </span>
+                {statusPill ? (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background text-muted-foreground",
+                    )}
+                  >
+                    {statusPill}
+                  </span>
+                ) : null}
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    "size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
+                    active ? "text-primary-foreground/80" : "text-muted-foreground",
+                  )}
+                />
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

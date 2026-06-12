@@ -24,11 +24,11 @@ type UseCodexMoodleActionsInput = {
   userId: string | null | undefined;
   pdfState: PDFViewState | null;
   loadMaterials: (courseId: string) => Promise<Material[]>;
+  onOpenMaterial: (courseId: string | null, materialId: string) => void;
+  // Asks the user for confirmation and applies the status change if approved.
+  onSetTaskStatus?: (taskId: string, status: "done" | "open") => Promise<void>;
   setError: Dispatch<SetStateAction<string | null>>;
-  setNavigationMode: Dispatch<SetStateAction<"courses" | "materials">>;
   setPDFScrollCommand: Dispatch<SetStateAction<PDFScrollCommand | null>>;
-  setSelectedCourseId: Dispatch<SetStateAction<string | null>>;
-  setSelectedMaterialId: Dispatch<SetStateAction<string | null>>;
 };
 
 export function useCodexMoodleActions({
@@ -41,11 +41,10 @@ export function useCodexMoodleActions({
   userId,
   pdfState,
   loadMaterials,
+  onOpenMaterial,
+  onSetTaskStatus,
   setError,
-  setNavigationMode,
   setPDFScrollCommand,
-  setSelectedCourseId,
-  setSelectedMaterialId,
 }: UseCodexMoodleActionsInput) {
   async function applyCodexActions(actions: MoodleUIAction[]): Promise<CodexActionResult> {
     const loadedResources = new Map<string, { course: Course; resources: Material[] }>();
@@ -67,6 +66,10 @@ export function useCodexMoodleActions({
         await openLatestPDF(action.courseId);
       } else if (action.type === "scroll_pdf_to_page") {
         scrollPDFToPage(action.page);
+      } else if (action.type === "set_task_status") {
+        if (onSetTaskStatus && action.taskId) {
+          await onSetTaskStatus(action.taskId, action.status === "open" ? "open" : "done");
+        }
       }
     }
 
@@ -124,11 +127,7 @@ export function useCodexMoodleActions({
     }
 
     const finalCourseId = targetCourseId ?? String(material.courseId ?? selectedCourseId ?? "");
-    if (finalCourseId) {
-      setSelectedCourseId(finalCourseId);
-      setNavigationMode("materials");
-    }
-    setSelectedMaterialId(material.id);
+    onOpenMaterial(finalCourseId || null, material.id);
 
     if (userId) {
       const nextMaterialsByCourseId = finalCourseId

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
 export type UserSettings = {
+  calendarUrl?: string | null;
   chatCourseId?: string | null;
   chatModel?: string;
   chatReasoningEffort?: string;

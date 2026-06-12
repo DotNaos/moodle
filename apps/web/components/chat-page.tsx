@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowDown,
   ArrowUp,
   Check,
   ChevronDown,
@@ -33,7 +34,7 @@ import { useCodexModels } from "@/hooks/use-codex-models";
 import { useUserSettings } from "@/hooks/use-user-settings";
 import type { CodexActionResult } from "@/hooks/use-codex-moodle-actions";
 import type { MoodleUIAction } from "@/lib/codex-actions";
-import type { CodexAppliedAction, CodexChatUIMessage, CodexToolEvent } from "@/lib/codex-chat";
+import type { CodexAppliedAction, CodexChatUIMessage, CodexToolEvent, StudyChatContext } from "@/lib/codex-chat";
 import {
   formatFileSize,
   resourceAttachment,
@@ -43,6 +44,7 @@ import {
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import type { PDFViewState } from "@/lib/pdf-context";
+import { upsertRecentChat } from "@/lib/recent-chat-storage";
 import { cn } from "@/lib/utils";
 
 type ChatPageProps = {
@@ -52,6 +54,7 @@ type ChatPageProps = {
   selectedMaterial: Material | null;
   selectedCourseId: string | null;
   pdfState: PDFViewState | null;
+  studyContext?: StudyChatContext;
   loadMaterials: (courseId: string) => Promise<Material[]>;
   onCourseChange: (courseId: string) => void;
   onApplyActions: (actions: MoodleUIAction[]) => Promise<CodexActionResult>;
@@ -71,6 +74,7 @@ export function ChatPage({
   selectedMaterial,
   selectedCourseId,
   pdfState,
+  studyContext,
   loadMaterials,
   onCourseChange,
   onApplyActions,
@@ -78,6 +82,7 @@ export function ChatPage({
   onClose,
 }: ChatPageProps) {
   const isSidebar = variant === "sidebar";
+  const chatIdRef = useRef<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const modelsHook = useCodexModels(selectedCourseId ?? undefined);
   const selectedCourse = courses.find((course) => String(course.id) === selectedCourseId) ?? null;
@@ -89,12 +94,36 @@ export function ChatPage({
     materials,
     selectedMaterial,
     pdfState,
+    studyContext,
     model: modelsHook.selectedModel,
     reasoningEffort: modelsHook.selectedReasoningEffort,
     onApplyActions,
   });
 
   const hasMessages = chat.messages.length > 0;
+
+  useEffect(() => {
+    const visibleMessages = chat.messages.filter(
+      (message) => message.text.trim().length > 0 && message.text !== "Thinking...",
+    );
+    if (visibleMessages.length === 0) {
+      return;
+    }
+    chatIdRef.current ??= crypto.randomUUID();
+    const firstUserMessage = visibleMessages.find((message) => message.role === "user");
+    const lastMessage = visibleMessages[visibleMessages.length - 1];
+    const fallbackTitle = selectedCourse ? courseTitle(selectedCourse) : "Chat";
+    const title = compactChatText(firstUserMessage?.text ?? fallbackTitle);
+    upsertRecentChat({
+      id: chatIdRef.current,
+      courseId: selectedCourseId,
+      courseTitle: selectedCourse ? courseTitle(selectedCourse) : null,
+      messageCount: visibleMessages.length,
+      preview: compactChatText(lastMessage.text),
+      title,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [chat.messages, selectedCourse, selectedCourseId]);
 
   // Refresh the workspace file panel whenever a Codex run finishes (files may
   // have changed).
@@ -209,11 +238,96 @@ export function ChatPage({
     });
   }
 
+  // Smooth auto-follow: while pinned to the bottom, ease the feed toward the
+  // newest content each animation frame (interpolated, not a hard jump). The
+  // user breaks the lock by scrolling up; reaching the bottom re-engages it.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [stickToBottom, setStickToBottom] = useState(true);
+  const stickRef = useRef(true);
+  const followRafRef = useRef<number | null>(null);
+  const autoScrollingRef = useRef(false);
+
+  const setStick = useCallback((value: boolean) => {
+    stickRef.current = value;
+    setStickToBottom(value);
+  }, []);
+
+  const followStep = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !stickRef.current) {
+      followRafRef.current = null;
+      autoScrollingRef.current = false;
+      return;
+    }
+    const target = el.scrollHeight - el.clientHeight;
+    const distance = target - el.scrollTop;
+    const reduceMotion =
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (distance < 1 || reduceMotion) {
+      autoScrollingRef.current = true;
+      el.scrollTop = target;
+      followRafRef.current = null;
+      requestAnimationFrame(() => {
+        autoScrollingRef.current = false;
+      });
+      return;
+    }
+    autoScrollingRef.current = true;
+    el.scrollTop = el.scrollTop + distance * 0.22;
+    followRafRef.current = requestAnimationFrame(followStep);
+  }, []);
+
+  const ensureFollow = useCallback(() => {
+    if (followRafRef.current == null) {
+      followRafRef.current = requestAnimationFrame(followStep);
+    }
+  }, [followStep]);
+
+  const stopFollow = useCallback(() => {
+    if (followRafRef.current != null) {
+      cancelAnimationFrame(followRafRef.current);
+      followRafRef.current = null;
+    }
+    autoScrollingRef.current = false;
+  }, []);
+
+  function handleFeedScroll() {
+    if (autoScrollingRef.current) {
+      return; // ignore our own programmatic easing
+    }
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  }
+
+  function handleFeedWheel(event: { deltaY: number }) {
+    if (event.deltaY < 0 && stickRef.current) {
+      setStick(false);
+      stopFollow();
+    }
+  }
+
+  function scrollToBottom() {
+    setStick(true);
+    ensureFollow();
+  }
+
+  useEffect(() => {
+    if (stickToBottom) {
+      ensureFollow();
+    }
+  }, [chat.messages, stickToBottom, ensureFollow]);
+
+  useEffect(() => () => stopFollow(), [stopFollow]);
+
   async function handleSend() {
     const text = prompt.trim();
     if ((!text && pending.length === 0) || chat.running || uploading) {
       return;
     }
+    setStickToBottom(true);
 
     const attachments: CodexAttachment[] = [];
     const files = pending.filter((item): item is PendingFile => item.kind === "file");
@@ -243,23 +357,26 @@ export function ChatPage({
   }
 
   const composer = (
-    <ChatComposer
-      courses={courses}
-      loadMaterials={loadMaterials}
-      modelsHook={modelsHook}
-      pending={pending}
-      prompt={prompt}
-      running={chat.running}
-      selectedCourse={selectedCourse}
-      selectedCourseId={selectedCourseId}
-      uploading={uploading}
-      onAddFiles={addFiles}
-      onAddResources={addResources}
-      onCourseChange={handleCourseChange}
-      onPromptChange={setPrompt}
-      onRemove={removePending}
-      onSend={handleSend}
-    />
+    <div className="flex flex-col">
+      {studyContext ? <StudyContextChip context={studyContext} /> : null}
+      <ChatComposer
+        courses={courses}
+        loadMaterials={loadMaterials}
+        modelsHook={modelsHook}
+        pending={pending}
+        prompt={prompt}
+        running={chat.running}
+        selectedCourse={selectedCourse}
+        selectedCourseId={selectedCourseId}
+        uploading={uploading}
+        onAddFiles={addFiles}
+        onAddResources={addResources}
+        onCourseChange={handleCourseChange}
+        onPromptChange={setPrompt}
+        onRemove={removePending}
+        onSend={handleSend}
+      />
+    </div>
   );
 
   const contentWidth = isSidebar ? "max-w-full" : "max-w-3xl";
@@ -279,16 +396,32 @@ export function ChatPage({
       </div>
     ) : (
       <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
-        <div className={cn("flex-1 overflow-auto", isSidebar ? "p-3" : "p-4 md:p-8")}>
-          <div className={cn("mx-auto flex w-full flex-col gap-4", contentWidth)}>
-            {chat.messages.length === 0 ? (
-              <p className="px-1 py-8 text-center text-sm text-muted-foreground">
-                Frag mich etwas zu diesem Kurs.
-              </p>
-            ) : (
-              chat.messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
-            )}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={scrollRef}
+            className={cn("h-full overflow-auto", isSidebar ? "p-3" : "p-4 md:p-8")}
+            onScroll={handleFeedScroll}
+          >
+            <div className={cn("mx-auto flex w-full flex-col gap-4", contentWidth)}>
+              {chat.messages.length === 0 ? (
+                <p className="px-1 py-8 text-center text-sm text-muted-foreground">
+                  Frag mich etwas zu diesem Kurs.
+                </p>
+              ) : (
+                chat.messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
+              )}
+            </div>
           </div>
+          {!stickToBottom && chat.messages.length > 0 ? (
+            <button
+              aria-label="Nach unten scrollen"
+              className="absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 bg-background text-foreground shadow-md transition-colors hover:bg-secondary"
+              type="button"
+              onClick={() => scrollToBottom()}
+            >
+              <ArrowDown className="size-4" />
+            </button>
+          ) : null}
         </div>
         <div className={cn("shrink-0", isSidebar ? "p-3" : "p-4 md:p-6")}>
           <div className={cn("mx-auto w-full", contentWidth)}>
@@ -327,6 +460,14 @@ export function ChatPage({
       <WorkspaceFilePanel className="hidden lg:flex" reloadKey={filesReloadKey} />
     </div>
   );
+}
+
+function compactChatText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 80) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 77).trim()}...`;
 }
 
 function ChatMessageBubble({ message }: { message: CodexChatUIMessage }) {
@@ -504,6 +645,39 @@ function AttachmentChip({
   );
 }
 
+// Shows what Codex currently "sees over the shoulder": the focused task or
+// script section, and in test mode the live tutor context.
+function StudyContextChip({ context }: { context: NonNullable<StudyChatContext> }) {
+  const test = context.test;
+  let badge: string | null = null;
+  let label: string | null = null;
+  if (test?.active) {
+    badge = "Testmodus";
+    label = [test.stepLabel, test.taskTitle, test.sheetTitle].filter(Boolean).join(" · ");
+  } else if (context.selectedTask) {
+    badge = "Aufgabe";
+    label = [context.selectedTask.title, context.selectedTask.sheetTitle].filter(Boolean).join(" · ");
+  } else if (context.selectedScriptSection) {
+    badge = "Script";
+    label = context.selectedScriptSection.title;
+  }
+  if (!label) {
+    return null;
+  }
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-2xl bg-secondary/60 px-3 py-2 text-xs">
+      <GraduationCap aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 rounded-full bg-background px-2 py-0.5 font-semibold text-foreground">{badge}</span>
+      <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+      {test?.active ? (
+        <span className="ml-auto hidden shrink-0 text-[11px] text-muted-foreground/70 sm:block">
+          Codex sieht Aufgabe{test.solutionMarkdown ? ", Lösung" : ""} &amp; deinen Entwurf
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function ChatComposer({
   courses,
   loadMaterials,
@@ -513,6 +687,7 @@ function ChatComposer({
   running,
   selectedCourse,
   selectedCourseId,
+  showCoursePicker = true,
   uploading,
   onAddFiles,
   onAddResources,
@@ -529,6 +704,7 @@ function ChatComposer({
   running: boolean;
   selectedCourse: Course | null;
   selectedCourseId: string | null;
+  showCoursePicker?: boolean;
   uploading: boolean;
   onAddFiles: (files: File[]) => void;
   onAddResources: (materials: Material[]) => void;
@@ -643,15 +819,18 @@ function ChatComposer({
       </div>
 
       {/* Podest: a narrower rounded surface tucked behind the card, peeking out below
-          so the course selector reads as a pedestal the composer rests on. */}
-      <div className="relative z-0 mx-4 -mt-6 rounded-3xl border border-border/50 bg-secondary px-4 pb-2.5 pt-9">
-        <CourseSelector
-          courses={courses}
-          selectedCourse={selectedCourse}
-          selectedCourseId={selectedCourseId}
-          onCourseChange={onCourseChange}
-        />
-      </div>
+          so the course selector reads as a pedestal the composer rests on. Hidden in
+          the sidebar once a course is given by context. */}
+      {showCoursePicker ? (
+        <div className="relative z-0 mx-4 -mt-6 rounded-3xl border border-border/50 bg-secondary px-4 pb-2.5 pt-9">
+          <CourseSelector
+            courses={courses}
+            selectedCourse={selectedCourse}
+            selectedCourseId={selectedCourseId}
+            onCourseChange={onCourseChange}
+          />
+        </div>
+      ) : null}
 
       <CourseResourcePickerModal
         course={selectedCourse}
@@ -789,4 +968,3 @@ function CourseSelector({
     </>
   );
 }
-

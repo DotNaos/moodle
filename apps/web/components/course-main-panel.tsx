@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CourseHero } from "@/components/course-hero";
 import { MaterialsOutline, ScriptOutline, TaskOutline } from "@/components/course-study-outline";
@@ -10,10 +10,12 @@ import { FormulaCollectionPanel } from "@/components/formula-collection-panel";
 import { StudyPipelineAction } from "@/components/study-pipeline-action";
 import { buildScriptPDFMapping, TaskStudyPanel, type TaskViewResponse } from "@/components/task-study-panel";
 import { WebexRecordingsPanel } from "@/components/webex-recordings-panel";
+import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material, WebexRecording, WebexRecordingState } from "@/lib/dashboard-data";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyOutline } from "@/lib/study-outline";
 import type { StudyMode } from "@/components/study-mode-actions";
+import { buildTaskLinksByResourceId, taskIdForMaterial } from "@/lib/task-material-links";
 
 export function CourseMainPanel({
   course,
@@ -40,6 +42,8 @@ export function CourseMainPanel({
   onSelectedTaskIdChange,
   onSignInWebexBrowser,
   onStudyOutlineChange,
+  onTaskViewChange,
+  onTestActivityChange,
   taskViewOverride,
   selectedScriptSectionId,
   selectedTaskId,
@@ -71,17 +75,28 @@ export function CourseMainPanel({
   onSelectedTaskIdChange: (taskId: string | null) => void;
   onSignInWebexBrowser: (credentials: { username: string; password: string }) => Promise<void>;
   onStudyOutlineChange: (outline: StudyOutline) => void;
+  onTaskViewChange?: (view: TaskViewResponse | null) => void;
+  onTestActivityChange?: (test: StudyTestContext | null) => void;
   taskViewOverride?: TaskViewResponse;
 }) {
   const [taskView, setTaskView] = useState<TaskViewResponse | null>(null);
+  const handleTaskViewChange = useCallback((view: TaskViewResponse | null) => {
+    setTaskView(view);
+    onTaskViewChange?.(view);
+  }, [onTaskViewChange]);
   const pdfMapping = useMemo(
     () => (taskView ? buildScriptPDFMapping(taskView.scriptMarkdown, taskView.resources) : []),
     [taskView],
   );
+  const taskLinksByResourceId = useMemo(
+    () => buildTaskLinksByResourceId(studyOutline.tasks, taskView),
+    [studyOutline.tasks, taskView],
+  );
 
   useEffect(() => {
     setTaskView(null);
-  }, [courseId]);
+    onTaskViewChange?.(null);
+  }, [courseId, onTaskViewChange]);
 
   if (!course) {
     return (
@@ -129,7 +144,7 @@ export function CourseMainPanel({
           <FormulaCollectionPanel
             course={course}
             courseId={courseId}
-            onTaskViewChange={setTaskView}
+            onTaskViewChange={handleTaskViewChange}
             pdfMapping={pdfMapping}
             view={taskView}
           />
@@ -161,6 +176,8 @@ export function CourseMainPanel({
           materialsBySection={materialsBySection}
           materialsLoading={materialsLoading}
           selectedMaterialId={null}
+          taskIdForMaterial={(candidate) => taskIdForMaterial(candidate, taskLinksByResourceId)}
+          onOpenTask={onSelectTask}
           onSelectMaterial={onSelectMaterial}
         />
       </CoursePanelShell>
@@ -203,7 +220,8 @@ export function CourseMainPanel({
           onSelectedScriptSectionIdChange={onSelectedScriptSectionIdChange}
           onSelectedTaskIdChange={onSelectedTaskIdChange}
           onStudyOutlineChange={onStudyOutlineChange}
-          onTaskViewChange={setTaskView}
+          onTaskViewChange={handleTaskViewChange}
+          onTestActivityChange={onTestActivityChange}
           taskViewOverride={taskViewOverride}
           selectedScriptSectionId={selectedScriptSectionId}
           selectedTaskId={selectedTaskId}

@@ -6,6 +6,7 @@ export function withMoodlePrompt(
   messages: CodexChatMessage[] = [],
 ): string {
   return `You are Codex inside the signed-in Moodle web dashboard.
+${tutorModeBlock(moodleContext)}
 
 Authentication invariant:
 - This integration must use the host's ChatGPT/Codex subscription authentication.
@@ -48,6 +49,21 @@ ${formatMoodleContext(moodleContext)}
 
 User question:
 ${prompt}`;
+}
+
+function tutorModeBlock(moodleContext: unknown): string {
+  const study = (moodleContext as { study?: { test?: { active?: boolean } | null } | null } | null)?.study;
+  if (!study?.test?.active) {
+    return "";
+  }
+  return `
+Tutor mode (the student is taking a task in test mode right now):
+- moodleContext.study.test shows exactly what the student sees: the focused subtask (stepLabel/stepPrompt), their current draft answer (answerDraft), the stored official solution (solutionMarkdown), and the last grading feedback.
+- Act like a personal teacher looking over the student's shoulder. Refer to the focused subtask directly; the student says "diese Aufgabe" and means it.
+- Give hints and guiding questions first. Do not reveal the full solution unless the student explicitly asks for it.
+- When asked to check or compare, compare the draft answer against the official solution and point out concrete gaps.
+- If the conversation convinces you the student has mastered this task, you may propose marking it done with a set_task_status action using study.test.taskId and status "done". The host asks the student for confirmation first, so propose it deliberately and mention it in your answer.
+`;
 }
 
 function formatMessages(messages: CodexChatMessage[]): string {
