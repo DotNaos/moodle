@@ -17,7 +17,7 @@ import {
   filterMaterialsBySection,
   type MaterialTypeFilter,
 } from "@/lib/material-filters";
-import type { ScriptSectionOutline, StudyOutline, StudyTaskOutline } from "@/lib/study-outline";
+import { taskDisplayTitle, type ScriptSectionOutline, type StudyOutline, type StudyTaskOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export function MaterialsOutline({
@@ -205,7 +205,7 @@ export function TaskOutline({
         </div>
         <p className="mt-2 truncate text-xs text-muted-foreground">
           {nextTask
-            ? `${progress}% · Als Nächstes: ${nextTask.title} · ${nextTask.sheetTitle}`
+            ? `${progress}% · Als Nächstes: ${taskDisplayTitle(nextTask.sheetTitle, nextTask.title)}`
             : "Du hast alle Aufgaben abgeschlossen."}
         </p>
       </header>
@@ -260,6 +260,7 @@ function TaskSheetCard({
           const done = isDoneTaskStatus(task.status);
           const active = selectedTaskId === task.id;
           const statusPill = !done && task.status !== "open" ? taskStatusLabel(task.status) : null;
+          const displayTitle = taskDisplayTitle(task.sheetTitle, task.title);
           return (
             <div
               className={cn(
@@ -269,7 +270,7 @@ function TaskSheetCard({
               key={task.id}
             >
               <button
-                aria-label={done ? `${task.title} als offen markieren` : `${task.title} als erledigt markieren`}
+                aria-label={done ? `${displayTitle} als offen markieren` : `${displayTitle} als erledigt markieren`}
                 className={cn(
                   "grid size-10 shrink-0 place-items-center rounded-full transition-colors",
                   done
@@ -294,7 +295,7 @@ function TaskSheetCard({
                     done && !active && "text-muted-foreground line-through decoration-muted-foreground/40",
                   )}
                 >
-                  {task.title}
+                  {displayTitle}
                 </span>
                 {statusPill ? (
                   <span

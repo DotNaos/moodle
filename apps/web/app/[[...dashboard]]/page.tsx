@@ -27,8 +27,6 @@ import { CalendarPanel } from "@/components/course-calendar-panel";
 import { ChatPage } from "@/components/chat-page";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
-import { HomeMobileNav } from "@/components/home-mobile-nav";
-import { MobileBottomNav, type MobileMoodleTab } from "@/components/mobile-bottom-nav";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import {
   CalendarEventDetailPanel,
@@ -73,7 +71,7 @@ import {
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyChatContext, StudyTestContext } from "@/lib/codex-chat";
 import { readRecentChats } from "@/lib/recent-chat-storage";
-import { EMPTY_STUDY_OUTLINE, type StudyOutline } from "@/lib/study-outline";
+import { EMPTY_STUDY_OUTLINE, taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { buildTaskLinksByResourceId, taskIdForMaterial } from "@/lib/task-material-links";
 import { cn } from "@/lib/utils";
 
@@ -660,21 +658,6 @@ export default function Home() {
   }
 
   const showSplitSidebar = Boolean(activeDocument) && !sidebarHidden;
-  const mobileTab: MobileMoodleTab =
-    studyMode === "tasks"
-      ? "tasks"
-      : studyMode === "script"
-        ? "script"
-        : studyMode === "formula"
-          ? "formula"
-          : studyMode === "recordings"
-            ? "recordings"
-            : "materials";
-  const showHomeMobileNav =
-    !needsConnection && !activeDocument && (path.kind === "home" || path.kind === "courses" || path.kind === "calendar" || path.kind === "chat");
-  const showCourseMobileNav =
-    !needsConnection && Boolean(activeCourseId) && activeDocument?.kind !== "chat-session" &&
-    (path.kind === "course" || path.kind === "course-mode" || Boolean(activeDocument));
 
   const courseMainPanel = (
     <CourseMainPanel
@@ -855,9 +838,10 @@ export default function Home() {
             actions={
               <div className="ml-1 flex items-center gap-1">
                 {activeDocument?.kind !== "chat-session" ? (
+                  // Mobile has the floating chat button instead.
                   <Button
                     aria-label={chatSidebarOpen ? "Chat schließen" : "Chat öffnen"}
-                    className={cn("shrink-0", chatSidebarOpen ? "bg-secondary text-foreground" : "")}
+                    className={cn("hidden shrink-0 md:inline-flex", chatSidebarOpen ? "bg-secondary text-foreground" : "")}
                     onClick={() => setChatSidebarOpen((current) => !current)}
                     size="icon"
                     type="button"
@@ -885,6 +869,18 @@ export default function Home() {
           />
 
           {error ? <DashboardToast message={error} onDismiss={() => setError(null)} /> : null}
+
+          {/* Global mobile chat button: always at the thumb, on every screen. */}
+          {!needsConnection && activeDocument?.kind !== "chat-session" ? (
+            <button
+              aria-label="Chat öffnen"
+              className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
+              onClick={() => navigator.open({ kind: "chat-session", sessionId: null, courseId: activeCourseId })}
+              type="button"
+            >
+              <MessageSquare aria-hidden className="size-5" />
+            </button>
+          ) : null}
 
           {needsConnection ? (
             <section className="min-h-0 flex-1 overflow-auto px-4 py-4">
@@ -925,7 +921,7 @@ export default function Home() {
               ) : null}
 
               <div className="flex min-h-0 min-w-0 flex-1">
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-24 md:overflow-hidden md:pb-0">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)] md:overflow-hidden md:pb-0">
                   {mainContent}
                 </div>
                 {chatSidebarOpen && activeDocument?.kind !== "chat-session" ? (
@@ -972,22 +968,6 @@ export default function Home() {
             </div>
           )}
 
-          {showHomeMobileNav ? (
-            <HomeMobileNav
-              activeView={path.kind === "calendar" ? "calendar" : path.kind === "chat" ? "chat" : "courses"}
-              onViewChange={(view) => navigator.drill(sectionToPath(view))}
-            />
-          ) : null}
-          {showCourseMobileNav && activeCourseId ? (
-            <MobileBottomNav
-              activeTab={mobileTab}
-              onMaterials={() => openCourseMode(activeCourseId, "materials")}
-              onTasks={() => openCourseMode(activeCourseId, "tasks")}
-              onScript={() => openCourseMode(activeCourseId, "script")}
-              onFormula={() => openCourseMode(activeCourseId, "formula")}
-              onRecordings={() => openCourseMode(activeCourseId, "recordings")}
-            />
-          ) : null}
         </main>
       </Show>
     </>
@@ -1055,11 +1035,12 @@ function taskTitleForId(taskId: string, studyOutline: StudyOutline, taskView: Ta
   );
   const task = sheet?.tasks.find((candidate) => candidate.taskId === taskId || taskId.startsWith(`${candidate.taskId}-`));
   if (task && sheet) {
-    return task.title === sheet.title ? sheet.title : `${task.title}: ${sheet.title}`;
+    return task.title === sheet.title ? sheet.title : taskDisplayTitle(sheet.title, task.title);
   }
-  return (
-    studyOutline.tasks.find((candidate) => candidate.id === taskId || taskId.startsWith(`${candidate.id}-`))?.title ?? null
+  const outlineTask = studyOutline.tasks.find(
+    (candidate) => candidate.id === taskId || taskId.startsWith(`${candidate.id}-`),
   );
+  return outlineTask ? taskDisplayTitle(outlineTask.sheetTitle, outlineTask.title) : null;
 }
 
 function DashboardToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
