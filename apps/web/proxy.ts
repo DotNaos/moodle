@@ -47,7 +47,7 @@ async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextRe
   return null;
 }
 
-export default async function proxy(request: NextRequest, event: NextFetchEvent): Promise<Response> {
+export default async function proxy(request: NextRequest, event: NextFetchEvent) {
   const staleHandshakeRedirect = await maybeRedirectStaleHandshake(request);
   if (staleHandshakeRedirect) {
     return staleHandshakeRedirect;
