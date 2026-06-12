@@ -16,14 +16,27 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { CodexActionResult } from "@/hooks/use-codex-moodle-actions";
-import type {
-  CodexChatMessage,
-  MoodleUIAction,
-} from "@/lib/codex-actions";
+import type { MoodleUIAction } from "@/lib/codex-actions";
+import {
+  deleteCodexAuth,
+  getCodexAuthStatus,
+  runCodexConnectFlow,
+  type CodexDeviceCode,
+} from "@/lib/codex-auth-client";
+import {
+  buildActionFollowUpMessage,
+  buildMoodleContext,
+  completeCodexActions,
+  displayCodexText,
+  mergeLoadedResources,
+  shouldContinueAfterActions,
+  toChatHistory,
+  type LoadedResourceContext,
+} from "@/lib/codex-chat";
 import { readCodexStream } from "@/lib/codex-stream-client";
 import type { Course, Material, User } from "@/lib/dashboard-data";
-import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
-import { buildPDFImageInputs, buildPDFPromptContext, type PDFViewState } from "@/lib/pdf-context";
+import { courseTitle } from "@/lib/dashboard-data";
+import { buildPDFImageInputs, type PDFViewState } from "@/lib/pdf-context";
 import { cn } from "@/lib/utils";
 
 type CodexPanelProps = {
@@ -51,31 +64,7 @@ type CodexResponse = {
 
 type CodexAuthStatus = "checking" | "missing" | "connecting" | "connected";
 
-type LoadedResourceContext = CodexActionResult["loadedResources"];
-
 const MAX_CODEX_ACTION_TURNS = 8;
-
-type CodexAuthEvent =
-  | {
-      type: "device_code";
-      verificationUri: string;
-      userCode: string;
-      expiresInSeconds?: number;
-    }
-  | {
-      type: "browser_auth";
-      authUrl: string;
-      callbackHost?: string;
-    }
-  | { type: "completed" }
-  | { authenticated: boolean }
-  | { type: "error"; error: string };
-
-type CodexDeviceCode = {
-  verificationUri: string;
-  userCode: string;
-  expiresInSeconds?: number;
-};
 
 export function CodexPanel({
   user,
@@ -113,20 +102,14 @@ export function CodexPanel({
 
     async function checkAuth() {
       try {
-        const response = await fetch("/api/codex/auth", {
-          cache: "no-store",
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          authenticated?: boolean;
-          error?: string;
-        };
+        const payload = await getCodexAuthStatus();
 
         if (cancelled) {
           return;
         }
 
         setAuthStatus(payload.authenticated ? "connected" : "missing");
-        if (!response.ok) {
+        if (!payload.ok) {
           setError(payload.error ?? "Could not check Codex authentication.");
         }
       } catch (authError) {
@@ -179,41 +162,12 @@ export function CodexPanel({
     setError(null);
 
     try {
-      const response = await fetch("/api/codex/auth", {
-        method: "POST",
+      const connected = await runCodexConnectFlow({
+        onDeviceCode: (code) => {
+          setDeviceCode(code);
+          setCopiedCode(false);
+        },
       });
-      const payload = (await response.json().catch(() => ({}))) as CodexAuthEvent;
-
-      if (!response.ok) {
-        throw new Error("error" in payload ? payload.error : "Could not start ChatGPT sign-in.");
-      }
-
-      if ("authenticated" in payload && payload.authenticated) {
-        setDeviceCode(null);
-        setCopiedCode(false);
-        setAuthStatus("connected");
-        return;
-      }
-
-      if ("type" in payload && payload.type === "device_code") {
-        setDeviceCode({
-          verificationUri: payload.verificationUri,
-          userCode: payload.userCode,
-          expiresInSeconds: payload.expiresInSeconds,
-        });
-        setCopiedCode(false);
-      } else if ("type" in payload && payload.type === "browser_auth") {
-        window.open(payload.authUrl, "_blank", "noopener,noreferrer");
-      } else if ("type" in payload && payload.type === "completed") {
-        setDeviceCode(null);
-        setCopiedCode(false);
-        setAuthStatus("connected");
-        return;
-      } else if ("type" in payload && payload.type === "error") {
-        throw new Error(payload.error);
-      }
-
-      const connected = await waitForCodexAuth();
       if (connected) {
         setDeviceCode(null);
         setCopiedCode(false);
@@ -239,11 +193,8 @@ export function CodexPanel({
     setError(null);
 
     try {
-      const response = await fetch("/api/codex/auth", {
-        method: "DELETE",
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
+      const payload = await deleteCodexAuth();
+      if (!payload.ok) {
         throw new Error(payload.error ?? "Could not sign out of ChatGPT.");
       }
       setMessages([]);
@@ -413,8 +364,8 @@ export function CodexPanel({
   }
 
   return (
-    <aside className="flex min-h-[60dvh] flex-col overflow-visible rounded-[1.5rem] bg-card lg:min-h-0 lg:rounded-[2rem]">
-      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between lg:px-5 lg:py-5">
+    <aside className="flex min-h-[60dvh] flex-col overflow-visible rounded-2xl bg-card md:h-full md:min-h-0 md:overflow-hidden md:rounded-none md:border-l md:border-border md:bg-background">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between md:px-4 md:py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Bot aria-hidden className="size-4 text-muted-foreground" />
@@ -464,7 +415,7 @@ export function CodexPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-visible px-4 pb-4 lg:overflow-auto">
+      <div className="min-h-0 flex-1 overflow-visible px-4 pb-4 md:overflow-auto md:px-4 md:pb-4">
         {deviceCode ? (
           <div className="mb-3 rounded-[1.5rem] bg-secondary px-4 py-4 text-sm">
             <p className="font-medium text-foreground">Finish ChatGPT sign-in</p>
@@ -553,183 +504,4 @@ export function CodexPanel({
       </form>
     </aside>
   );
-}
-
-async function waitForCodexAuth(): Promise<boolean> {
-  const deadline = Date.now() + 15 * 60 * 1000;
-
-  while (Date.now() < deadline) {
-    await sleep(2_000);
-
-    const response = await fetch("/api/codex/auth", {
-      cache: "no-store",
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      authenticated?: boolean;
-      error?: string;
-    };
-
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Could not check Codex authentication.");
-    }
-    if (payload.authenticated) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function buildMoodleContext({
-  user,
-  courses,
-  selectedCourse,
-  materials,
-  selectedMaterial,
-  pdfState,
-  loadedResources = [],
-}: {
-  user: User | null;
-  courses: Course[];
-  selectedCourse: Course | null;
-  materials: Material[];
-  selectedMaterial: Material | null;
-  pdfState: PDFViewState | null;
-  loadedResources?: LoadedResourceContext;
-}) {
-  return {
-    source: "moodle-web",
-    user: user
-      ? {
-          displayName: user.displayName,
-          moodleSiteUrl: user.moodleSiteUrl,
-          moodleUserId: user.moodleUserId,
-        }
-      : null,
-    selectedCourse: selectedCourse ? courseContext(selectedCourse) : null,
-    selectedMaterial: selectedMaterial ? materialContext(selectedMaterial) : null,
-    pdf: buildPDFPromptContext(pdfState),
-    courses: courses.slice(0, 80).map(courseContext),
-    materials: materials.map(materialContext),
-    loadedCourseResources: loadedResources.map(({ course, resources }) => ({
-      course: courseContext(course),
-      resources: resources.map(materialContext),
-    })),
-  };
-}
-
-function completeCodexActions(actions: MoodleUIAction[], prompt: string): MoodleUIAction[] {
-  if (!asksToOpenPDF(prompt)) {
-    return actions;
-  }
-
-  const alreadyHandlesPDF = actions.some(
-    (action) =>
-      action.type === "open_material" ||
-      action.type === "open_resource" ||
-      action.type === "open_latest_pdf" ||
-      action.type === "load_course_resources",
-  );
-  if (alreadyHandlesPDF) {
-    return actions;
-  }
-
-  const courseAction = actions.find((action): action is Extract<MoodleUIAction, { type: "open_course" }> =>
-    action.type === "open_course"
-  );
-  if (!courseAction) {
-    return actions;
-  }
-
-  return [
-    ...actions,
-    {
-      type: "load_course_resources",
-      courseId: courseAction.courseId,
-      reason: "User asked to open a PDF in this course, so resources must be loaded first.",
-    },
-  ];
-}
-
-function shouldContinueAfterActions(actions: MoodleUIAction[], result: CodexActionResult): boolean {
-  if (result.loadedResources.length === 0) {
-    return false;
-  }
-
-  const opensConcreteResource = actions.some(
-    (action) => action.type === "open_material" || action.type === "open_resource" || action.type === "open_latest_pdf",
-  );
-  if (opensConcreteResource) {
-    return false;
-  }
-
-  return actions.some((action) => action.type === "load_course_resources" || action.type === "open_course");
-}
-
-function mergeLoadedResources(
-  current: LoadedResourceContext,
-  incoming: LoadedResourceContext,
-): LoadedResourceContext {
-  const merged = new Map<string, LoadedResourceContext[number]>();
-  for (const entry of [...current, ...incoming]) {
-    merged.set(String(entry.course.id), entry);
-  }
-  return [...merged.values()];
-}
-
-function buildActionFollowUpMessage(actions: MoodleUIAction[], loadedResources: LoadedResourceContext): string {
-  const loaded = loadedResources
-    .map(({ course, resources }) => `${courseTitle(course)}: ${resources.length} resources loaded`)
-    .join("; ");
-  const actionTypes = actions.map((action) => action.type).join(", ");
-  return `Host applied Moodle UI actions: ${actionTypes}. ${loaded || "No resources were loaded."} Continue the original user request using the updated Moodle context.`;
-}
-
-function asksToOpenPDF(prompt: string): boolean {
-  const normalized = prompt.toLowerCase();
-  return /\bpdf\b/.test(normalized) && /(open|show|display|öffne|oeffne|zeige|lad|lade)/i.test(normalized);
-}
-
-function courseContext(course: Course) {
-  return {
-    id: String(course.id),
-    title: courseTitle(course),
-    subtitle: courseSubtitle(course),
-    category: course.categoryName ?? course.category ?? null,
-  };
-}
-
-function materialContext(material: Material) {
-  return {
-    id: material.id,
-    name: material.name,
-    type: material.type ?? null,
-    fileType: material.fileType ?? null,
-    sectionName: material.sectionName ?? null,
-    courseId: material.courseId ?? null,
-    uploadedAt: material.uploadedAt ?? null,
-  };
-}
-
-function toChatHistory(messages: CodexMessage[]): CodexChatMessage[] {
-  return messages
-    .filter((message) => message.text.trim() && message.text !== "Thinking...")
-    .map((message) => ({
-      role: message.role,
-      text: message.text,
-    }))
-    .slice(-12);
-}
-
-function displayCodexText(text: string): string {
-  try {
-    const parsed = JSON.parse(text) as { answer?: unknown };
-    return typeof parsed.answer === "string" ? parsed.answer : text;
-  } catch {
-    return text;
-  }
 }

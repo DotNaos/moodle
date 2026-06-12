@@ -39,7 +39,7 @@ export function APIKeyMenu() {
   );
 }
 
-export function APIKeyPanel() {
+export function APIKeyPanel({ showHeader = true }: { showHeader?: boolean }) {
   const [creating, setCreating] = useState(false);
   const [apiKey, setAPIKey] = useState("");
   const [prefix, setPrefix] = useState("");
@@ -91,12 +91,14 @@ export function APIKeyPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold tracking-tight">API key</h2>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Create a fresh key for tools outside this website. Creating one invalidates older active API keys.
-        </p>
-      </div>
+      {showHeader ? (
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-semibold tracking-tight">API key</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Create a fresh key for tools outside this website. Creating one invalidates older active API keys.
+          </p>
+        </div>
+      ) : null}
 
       {error ? <Alert>{error}</Alert> : null}
 

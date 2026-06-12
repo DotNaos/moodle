@@ -51,6 +51,9 @@ export function getErrorMessage(error: unknown): string {
 
 export function getMoodleConnectionMessage(error: unknown): string {
   const message = getErrorMessage(error);
+  if (message === "Unauthorized") {
+    return "Connect your Moodle account first.";
+  }
   if (isMoodleTokenError(message)) {
     return "Your Moodle connection expired. Connect Moodle again to load fresh courses and materials.";
   }
@@ -93,6 +96,10 @@ function getAPIErrorMessage(payload: unknown, text: string, status: number): str
   if (trimmed.includes("The page could not be found") || trimmed.includes("NOT_FOUND")) {
     return "The Webex recordings service is not deployed yet. Deploy the updated Moodle Services backend, then refresh.";
   }
+  if (trimmed === "{}") {
+    return `Request failed with ${status}. The calendar service may not be deployed yet.`;
+  }
+
   if (trimmed) {
     return trimmed.length > 180 ? `${trimmed.slice(0, 177)}...` : trimmed;
   }

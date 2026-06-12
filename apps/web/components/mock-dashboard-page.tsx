@@ -47,6 +47,13 @@ const mockRecordingState = {
   recordings: mockRecordings,
 };
 
+const mockRecordingCredentialsState = {
+  loading: false,
+  loaded: false,
+  error: "Moodle web credentials are required for Webex recordings",
+  recordings: [],
+};
+
 const mockTaskView: TaskViewResponse = {
   courseId: "mock-hpc",
   generatedAt: "2026-06-07T00:00:00.000Z",
@@ -160,6 +167,7 @@ const mockTaskView: TaskViewResponse = {
   ],
   progress: {
     open: 2,
+    done: 0,
     checked: 0,
     correct: 0,
     wrong: 0,
@@ -178,7 +186,8 @@ export function MockDashboardPage() {
   const [selectedRecording, setSelectedRecording] = useState<WebexRecording | null>(mockRecordings[0] ?? null);
   const [selectedScriptSectionId, setSelectedScriptSectionId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
+  const [studyOutline, setStudyOutline] = useState<StudyOutline>(EMPTY_STUDY_OUTLINE);
+  const [courseHubOpen, setCourseHubOpen] = useState(false);
   const [pdfState, setPDFState] = useState<PDFViewState | null>(null);
   const [pdfScrollCommand, setPDFScrollCommand] = useState<PDFScrollCommand | null>(null);
 
@@ -187,10 +196,25 @@ export function MockDashboardPage() {
     [selectedCourseId],
   );
   const materials = mockMaterialsByCourseId[selectedCourseId] ?? [];
+  const recordingsState = mockState === "webex-credentials" ? mockRecordingCredentialsState : mockRecordingState;
+  const materialsBySection = useMemo(() => {
+    const groups = new Map<string, Material[]>();
+    for (const material of materials) {
+      const section = material.sectionName?.trim() || "Materialien";
+      groups.set(section, [...(groups.get(section) ?? []), material]);
+    }
+    return [...groups.entries()];
+  }, [materials]);
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
 
   useEffect(() => {
-    setMockState(new URLSearchParams(window.location.search).get("state"));
+    const state = new URLSearchParams(window.location.search).get("state");
+    setMockState(state);
+    if (state === "webex-credentials") {
+      setCourseHubOpen(false);
+      setSelectedRecording(null);
+      setStudyMode("recordings");
+    }
   }, []);
 
   function selectCourse(courseId: string) {
@@ -311,14 +335,26 @@ export function MockDashboardPage() {
 
           <CourseMainPanel
             course={selectedCourse}
+            courseHubOpen={courseHubOpen}
             courseId={selectedCourseId}
             materials={materials}
+            materialsBySection={materialsBySection}
+            materialsLoading={false}
             material={selectedMaterial}
-            recordingsState={mockRecordingState}
+            recordingsState={recordingsState}
             selectedRecording={selectedRecording}
             selectedScriptSectionId={selectedScriptSectionId}
             selectedTaskId={selectedTaskId}
             studyMode={studyMode}
+            studyOutline={studyOutline}
+            onEnterStudyMode={(mode) => {
+              setCourseHubOpen(false);
+              setStudyMode(mode);
+            }}
+            onSelectMaterial={openMaterial}
+            onSelectScriptSection={setSelectedScriptSectionId}
+            onSelectTask={setSelectedTaskId}
+            onTaskStatusChange={() => undefined}
             onOpenResource={(resourceId) => {
               const material = materials.find((item) => item.id === resourceId);
               if (material) {

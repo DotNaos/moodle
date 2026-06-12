@@ -151,8 +151,13 @@ export type CodexStreamEvent =
     }
   | {
       readonly type: "tool";
+      readonly id?: string;
       readonly title: string;
       readonly status: "running" | "completed" | "failed";
+    }
+  | {
+      readonly type: "status";
+      readonly title: string;
     }
   | {
       readonly type: "done";

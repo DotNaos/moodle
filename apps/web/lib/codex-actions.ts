@@ -40,6 +40,12 @@ export type MoodleUIAction =
       type: "scroll_pdf_to_page";
       page: number;
       reason?: string;
+    }
+  | {
+      type: "set_task_status";
+      taskId: string;
+      status: "done" | "open";
+      reason?: string;
     };
 
 export type CodexRunResult = {
@@ -59,8 +65,13 @@ export type CodexStreamEvent =
     }
   | {
       type: "tool";
+      id?: string;
       title: string;
       status: "running" | "completed" | "failed";
+    }
+  | {
+      type: "status";
+      title: string;
     }
   | {
       type: "done";
@@ -88,7 +99,7 @@ export const codexOutputSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "courseId", "materialId", "resourceId", "page", "reason"],
+        required: ["type", "courseId", "materialId", "resourceId", "page", "taskId", "status", "reason"],
         properties: {
           type: {
             type: "string",
@@ -100,6 +111,7 @@ export const codexOutputSchema = {
               "open_moodle_course_page",
               "open_latest_pdf",
               "scroll_pdf_to_page",
+              "set_task_status",
             ],
           },
           courseId: {
@@ -117,6 +129,14 @@ export const codexOutputSchema = {
           page: {
             type: ["number", "null"],
             description: "Required only when type is scroll_pdf_to_page.",
+          },
+          taskId: {
+            type: ["string", "null"],
+            description: "Required only when type is set_task_status; the study task id from context.",
+          },
+          status: {
+            type: ["string", "null"],
+            description: "Required only when type is set_task_status; either done or open.",
           },
           reason: {
             type: ["string", "null"],

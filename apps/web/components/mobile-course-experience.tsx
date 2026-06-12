@@ -49,7 +49,7 @@ export function MobileCourseExperience({
   }, [course.id]);
 
   return (
-    <div className="min-h-dvh w-[100svw] max-w-[100svw] overflow-x-clip bg-background pb-24 lg:hidden">
+    <div className="min-h-dvh w-[100svw] max-w-[100svw] overflow-x-clip bg-background pb-24 md:hidden">
       <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex items-center justify-between gap-3 px-3 pt-[max(env(safe-area-inset-top),0.75rem)]">
         <button
           className="pointer-events-auto inline-flex h-10 max-w-[48vw] items-center gap-2 rounded-full bg-black/45 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur"

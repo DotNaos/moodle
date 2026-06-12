@@ -9,6 +9,7 @@ export type StudyMode = "materials" | "tasks" | "script" | "formula" | "recordin
 
 export function StudyModeActions({
   studyMode,
+  layout = "grid",
   onMaterials,
   onTasks,
   onScript,
@@ -16,6 +17,7 @@ export function StudyModeActions({
   onRecordings,
 }: {
   studyMode: StudyMode;
+  layout?: "grid" | "main";
   onMaterials: () => void;
   onTasks: () => void;
   onScript: () => void;
@@ -23,12 +25,18 @@ export function StudyModeActions({
   onRecordings: () => void;
 }) {
   return (
-    <div className="grid w-full min-w-0 grid-cols-2 gap-2 lg:flex lg:flex-col lg:gap-1">
+    <div
+      className={cn(
+        "w-full min-w-0",
+        layout === "main" ? "flex flex-col gap-1" : "grid grid-cols-2 gap-2 md:flex md:flex-col md:gap-1",
+      )}
+    >
       <StudyModeButton
         active={studyMode === "materials"}
         icon={<Files aria-hidden />}
         label="Materialien"
         description="PDFs und Ressourcen"
+        layout={layout}
         onClick={onMaterials}
       />
       <StudyModeButton
@@ -36,6 +44,7 @@ export function StudyModeActions({
         icon={<CheckCircle2 aria-hidden />}
         label="Alle Aufgaben"
         description="Aufgaben aus Blättern und Folien"
+        layout={layout}
         onClick={onTasks}
       />
       <StudyModeButton
@@ -43,6 +52,7 @@ export function StudyModeActions({
         icon={<BookOpenText aria-hidden />}
         label="Script"
         description="KaTeX-fähiger Kurstext"
+        layout={layout}
         onClick={onScript}
       />
       {onFormula ? (
@@ -51,6 +61,7 @@ export function StudyModeActions({
           icon={<Sigma aria-hidden />}
           label="Formeln"
           description="Formelsammlung erstellen"
+          layout={layout}
           onClick={onFormula}
         />
       ) : null}
@@ -59,6 +70,7 @@ export function StudyModeActions({
         icon={<Video aria-hidden />}
         label="Aufzeichnungen"
         description="Webex-Videos streamen"
+        layout={layout}
         onClick={onRecordings}
       />
     </div>
@@ -70,18 +82,21 @@ function StudyModeButton({
   icon,
   label,
   description,
+  layout,
   onClick,
 }: {
   active: boolean;
   icon: ReactNode;
   label: string;
   description: string;
+  layout: "grid" | "main";
   onClick: () => void;
 }) {
   return (
     <button
       className={cn(
-        "flex min-h-14 min-w-0 items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors",
+        "flex min-w-0 items-center gap-3 rounded-lg px-3 text-left transition-colors",
+        layout === "main" ? "min-h-14 py-3" : "min-h-14 rounded-2xl py-2",
         active ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
       )}
       onClick={onClick}

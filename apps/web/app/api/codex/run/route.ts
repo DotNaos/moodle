@@ -14,6 +14,7 @@ export const maxDuration = 300;
 type CodexRunBody = {
   prompt?: unknown;
   images?: unknown;
+  attachmentImages?: unknown;
   messages?: unknown;
   model?: unknown;
   reasoningEffort?: unknown;
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         prompt: withMoodlePrompt(prompt, body.moodleContext, parseMessages(body.messages)),
         images: parseImages(body.images),
+        attachmentImages: parseAttachmentImages(body.attachmentImages),
         model: parseOptionalString(body.model),
         reasoningEffort: parseOptionalString(body.reasoningEffort),
         outputSchema: codexOutputSchema,
@@ -91,6 +93,19 @@ function parseImages(value: unknown): Array<{ name: string; dataUrl: string }> {
       dataUrl,
     }];
   }).slice(0, 40);
+}
+
+function parseAttachmentImages(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .flatMap((name): string[] =>
+      typeof name === "string" && name.trim()
+        ? [name.trim().replace(/[^a-zA-Z0-9_. -]/g, "_").slice(0, 120)]
+        : [],
+    )
+    .slice(0, 8);
 }
 
 function parseMessages(value: unknown): CodexChatMessage[] {

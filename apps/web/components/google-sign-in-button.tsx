@@ -1,6 +1,6 @@
 "use client";
 
-import { useSignIn } from "@clerk/nextjs";
+import { useClerk } from "@clerk/nextjs";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 
@@ -15,23 +15,36 @@ type GoogleSignInButtonProps = {
 const RETURN_TO_KEY = "moodle:auth:returnTo";
 
 export function GoogleSignInButton({ className, redirectUrl }: GoogleSignInButtonProps) {
-  const { signIn, fetchStatus } = useSignIn();
+  const clerk = useClerk();
   const [error, setError] = useState<string | null>(null);
-  const isLoading = fetchStatus === "fetching";
+  const [isLoading, setIsLoading] = useState(false);
 
   async function startGoogleSignIn() {
+    if (!clerk.loaded) {
+      setError("Authentication is still loading. Please try again.");
+      return;
+    }
+
+    const signIn = clerk.client?.signIn;
+    if (!signIn) {
+      setError("Google sign-in is unavailable right now.");
+      return;
+    }
+
     const returnTo = redirectUrl ?? currentPath();
     setError(null);
+    setIsLoading(true);
     window.sessionStorage.setItem(RETURN_TO_KEY, returnTo);
 
-    const result = await signIn.sso({
-      strategy: "oauth_google",
-      redirectUrl: returnTo,
-      redirectCallbackUrl: "/sso-callback",
-    });
-
-    if (result.error) {
-      setError(result.error.longMessage ?? result.error.message ?? "Google sign-in failed.");
+    try {
+      await signIn.authenticateWithRedirect({
+        strategy: "oauth_google",
+        redirectUrl: `${window.location.origin}/sso-callback`,
+        redirectUrlComplete: returnTo,
+      });
+    } catch {
+      setIsLoading(false);
+      setError("Google sign-in could not start.");
     }
   }
 
@@ -39,7 +52,7 @@ export function GoogleSignInButton({ className, redirectUrl }: GoogleSignInButto
     <div className={cn("space-y-2", className)}>
       <Button
         className="h-14 w-full rounded-full border border-[#dadce0] bg-white px-5 text-base font-medium text-[#202124] shadow-none transition-colors hover:bg-[#f8fafd] hover:text-[#202124] focus-visible:ring-[#1a73e8] dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-accent"
-        disabled={isLoading}
+        disabled={!clerk.loaded || isLoading}
         size="lg"
         type="button"
         variant="secondary"
@@ -54,6 +67,10 @@ export function GoogleSignInButton({ className, redirectUrl }: GoogleSignInButto
 }
 
 export function readAuthReturnTo() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
   const value = window.sessionStorage.getItem(RETURN_TO_KEY);
   window.sessionStorage.removeItem(RETURN_TO_KEY);
   return value && value.startsWith("/") ? value : "/";

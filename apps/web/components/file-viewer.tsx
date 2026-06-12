@@ -92,24 +92,28 @@ export function FileViewer({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col border-t border-border/60">
-      <div className="flex min-h-16 items-center justify-between gap-3 px-5 py-4">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Preview</p>
-          <h3 className="truncate text-base font-semibold tracking-tight">{material.name}</h3>
+      {materialKind !== "pdf" ? (
+        <div className="flex min-h-16 items-center justify-between gap-3 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Preview</p>
+            <h3 className="truncate text-base font-semibold tracking-tight">{material.name}</h3>
+          </div>
+          {material.url ? (
+            <Button asChild variant="secondary">
+              <a href={material.url} target="_blank" rel="noreferrer">
+                Open <ExternalLink aria-hidden />
+              </a>
+            </Button>
+          ) : null}
         </div>
-        {material.url ? (
-          <Button asChild variant="secondary">
-            <a href={material.url} target="_blank" rel="noreferrer">
-              Open <ExternalLink aria-hidden />
-            </a>
-          </Button>
-        ) : null}
-      </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-hidden bg-muted">
         {materialKind === "pdf" ? (
           <PDFDocumentViewer
+            allowFloat
             courseId={courseId}
+            externalUrl={material.url}
             materialId={material.id}
             onStateChange={onPDFStateChange}
             scrollCommand={pdfScrollCommand}

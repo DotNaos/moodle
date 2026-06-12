@@ -1,12 +1,32 @@
 "use client";
 
 import katex from "katex";
-import { BookOpenText, Check, CheckCircle2, ChevronDown, FileText, Gauge, MessageCircle, RefreshCw, SendHorizontal, Sparkles, WandSparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, MessageCircle, MoreHorizontal, PanelRightClose, PanelRightOpen, Play, RefreshCw, Rows3, Settings2, Sparkles, WandSparkles, X } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  StudyPipelinePreview,
+  type StudyPipelineStage,
+  type StudyPipelineStatusResponse,
+} from "@/components/study-pipeline-preview";
+import { PDFDocumentViewer } from "@/components/pdf-document-viewer";
+import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import type { StudyOutline } from "@/lib/study-outline";
@@ -35,6 +55,7 @@ export type TaskViewResponse = {
   }>;
   progress: {
     open: number;
+    done: number;
     checked: number;
     correct: number;
     wrong: number;
@@ -58,7 +79,7 @@ type TaskViewTask = {
       suggestedNextStep?: string;
     };
   };
-  status: "open" | "started" | "checked" | "correct" | "wrong" | "needs_review";
+  status: "open" | "started" | "done" | "checked" | "correct" | "wrong" | "needs_review";
 };
 
 export type StudyContentState = {
@@ -77,13 +98,6 @@ export type ScriptPDFMappingItem = {
   order: number;
   resourceId: string;
   title: string;
-};
-
-type TaskChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  createdAt: string;
 };
 
 type CodexModelOption = {
@@ -121,6 +135,7 @@ export function TaskStudyPanel({
   onSelectedScriptSectionIdChange,
   onStudyOutlineChange,
   onTaskViewChange,
+  onTestActivityChange,
   selectedScriptSectionId,
   selectedTaskId,
   taskViewOverride,
@@ -133,18 +148,19 @@ export function TaskStudyPanel({
   onSelectedScriptSectionIdChange: (sectionId: string | null) => void;
   onStudyOutlineChange: (outline: StudyOutline) => void;
   onTaskViewChange?: (view: TaskViewResponse | null) => void;
+  onTestActivityChange?: (test: StudyTestContext | null) => void;
   selectedScriptSectionId: string | null;
   selectedTaskId: string | null;
   taskViewOverride?: TaskViewResponse;
 }) {
   const [view, setView] = useState<TaskViewResponse | null>(null);
-  const [answer, setAnswer] = useState("");
-  const [chatPrompt, setChatPrompt] = useState("");
-  const [chatMessages, setChatMessages] = useState<TaskChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [chatting, setChatting] = useState(false);
+  const [updatingTaskStatus, setUpdatingTaskStatus] = useState(false);
   const [scriptIncluded, setScriptIncluded] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<StudyPipelineStatusResponse | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [runningStage, setRunningStage] = useState<StudyPipelineStage | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refiningTarget, setRefiningTarget] = useState<string | null>(null);
@@ -157,37 +173,92 @@ export function TaskStudyPanel({
   const [codexConnected, setCodexConnected] = useState(false);
   const [codexAuthChecking, setCodexAuthChecking] = useState(false);
   const [refineStream, setRefineStream] = useState<string[]>([]);
+  const [codexSettingsOpen, setCodexSettingsOpen] = useState(false);
+  const [taskMode, setTaskMode] = useState<"view" | "test">("view");
+  const [testLayout, setTestLayout] = useState<TaskTestLayout>(() => {
+    if (typeof window === "undefined") {
+      return "split";
+    }
+    return window.localStorage.getItem(TASK_TEST_LAYOUT_STORAGE_KEY) === "stacked" ? "stacked" : "split";
+  });
+  const [testComposerOpen, setTestComposerOpen] = useState(true);
+
+  useEffect(() => {
+    window.localStorage.setItem(TASK_TEST_LAYOUT_STORAGE_KEY, testLayout);
+  }, [testLayout]);
+  const [previewResourceId, setPreviewResourceId] = useState<string | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const loadRequestId = useRef(0);
 
   const courseId = course ? String(course.id) : null;
   const tasks = useMemo(() => view?.sheets.flatMap((sheet) => sheet.tasks) ?? [], [view]);
   const selectedTask = useMemo(
-    () => tasks.find((task) => task.taskId === selectedTaskId) ?? tasks[0] ?? null,
+    () => selectedTaskId
+      ? tasks.find((task) => task.taskId === selectedTaskId)
+        ?? tasks.find((task) => selectedTaskId.startsWith(`${task.taskId}-`) || task.taskId.startsWith(`${selectedTaskId}-`))
+        ?? null
+      : null,
     [selectedTaskId, tasks],
   );
   const selectedSheet = useMemo(
     () => view?.sheets.find((sheet) => sheet.tasks.some((task) => task.taskId === selectedTask?.taskId)) ?? null,
     [selectedTask, view],
   );
-  const selectedResource = useMemo(
-    () => selectedTask ? resourceTitle(view, materials, selectedTask.sourceResourceId) : null,
-    [materials, selectedTask, view],
+  const flatTasks = useMemo(() => view?.sheets.flatMap((sheet) => sheet.tasks) ?? [], [view]);
+  const selectedTaskIndex = selectedTask
+    ? flatTasks.findIndex((task) => task.taskId === selectedTask.taskId)
+    : -1;
+  const previousTask = selectedTaskIndex > 0 ? flatTasks[selectedTaskIndex - 1] : null;
+  const nextTask = selectedTaskIndex >= 0 ? flatTasks[selectedTaskIndex + 1] ?? null : null;
+
+  // Live tutor context for the Codex chat: while the test mode is active, the
+  // chat sees the focused subtask, the answer draft, and the stored solution.
+  const testContextSourceRef = useRef({ onTestActivityChange, selectedSheet, selectedTask });
+  testContextSourceRef.current = { onTestActivityChange, selectedSheet, selectedTask };
+  const handleTestActivityChange = useCallback(
+    (activity: { answerDraft: string; stepLabel: string | null; stepPrompt: string | null } | null) => {
+      const { onTestActivityChange: notify, selectedSheet: sheet, selectedTask: task } = testContextSourceRef.current;
+      if (!notify) {
+        return;
+      }
+      if (!activity || !task) {
+        notify(null);
+        return;
+      }
+      notify({
+        active: true,
+        taskId: task.taskId,
+        taskTitle: task.title,
+        sheetTitle: sheet?.title ?? null,
+        stepLabel: activity.stepLabel,
+        stepPrompt: activity.stepPrompt,
+        answerDraft: activity.answerDraft.trim() ? activity.answerDraft : null,
+        solutionMarkdown: sheet?.solutionMarkdown ? sheet.solutionMarkdown.slice(0, 20000) : null,
+        lastFeedbackMarkdown: task.latestAttempt?.verdict.feedbackMarkdown ?? null,
+      });
+    },
+    [],
   );
   const selectedModel = useMemo(
     () => refineModels.find((model) => model.id === selectedRefineModel) ?? null,
     [refineModels, selectedRefineModel],
   );
+  const materialById = useMemo(() => new Map(materials.map((material) => [material.id, material])), [materials]);
+  const previewMaterial = previewResourceId ? materialById.get(previewResourceId) ?? null : null;
+  const previewResource = previewResourceId
+    ? view?.resources.find((resource) => resource.resourceId === previewResourceId) ?? null
+    : null;
+  const previewTitle = previewMaterial?.name ?? previewResource?.title ?? "Original-PDF";
+  const previewPDFUrl = courseId && previewResourceId
+    ? `/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(previewResourceId)}/pdf`
+    : "";
 
   useEffect(() => {
     const controller = new AbortController();
     const requestId = loadRequestId.current + 1;
     loadRequestId.current = requestId;
     setView(null);
-    onSelectedTaskIdChange(null);
-    onSelectedScriptSectionIdChange(null);
     onStudyOutlineChange(EMPTY_STUDY_OUTLINE);
-    setAnswer("");
-    setChatMessages([]);
     setScriptIncluded(false);
     onTaskViewChange?.(null);
     setMessage(null);
@@ -200,7 +271,7 @@ export function TaskStudyPanel({
       };
     }
     if (courseId) {
-      void loadView(courseId, false, mode === "script", {
+      void loadPipelineStatus(courseId, mode === "script", {
         requestId,
         signal: controller.signal,
       });
@@ -209,12 +280,6 @@ export function TaskStudyPanel({
       controller.abort();
     };
   }, [courseId, mode, taskViewOverride]);
-
-  useEffect(() => {
-    if (courseId && mode === "script" && view && !scriptIncluded && !loading) {
-      void loadView(courseId, false, true);
-    }
-  }, [courseId, loading, mode, scriptIncluded, view]);
 
   useEffect(() => {
     if (!courseId) {
@@ -232,12 +297,13 @@ export function TaskStudyPanel({
 
   useEffect(() => {
     if (!selectedTask) {
-      setAnswer("");
-      setChatMessages([]);
+      setPreviewResourceId(null);
+      setPreviewExpanded(false);
       return;
     }
-    setAnswer(selectedTask.latestAttempt?.userAnswer ?? "");
-    void loadChat(selectedTask.taskId);
+    setTaskMode("view");
+    setPreviewResourceId(null);
+    setPreviewExpanded(false);
   }, [selectedTask?.taskId]);
 
   useEffect(() => {
@@ -246,17 +312,10 @@ export function TaskStudyPanel({
       return;
     }
     onStudyOutlineChange({
-      tasks: view.sheets.flatMap((sheet) =>
-        sheet.tasks.map((task) => ({
-          id: task.taskId,
-          sheetTitle: sheet.title,
-          status: task.status,
-          title: task.title,
-        })),
-      ),
+      tasks: buildTaskOutline(view, pipelineStatus),
       scriptSections: extractScriptSections(view.scriptMarkdown),
     });
-  }, [onStudyOutlineChange, view]);
+  }, [onStudyOutlineChange, pipelineStatus, view]);
 
   if (!course || !courseId) {
     return (
@@ -270,38 +329,85 @@ export function TaskStudyPanel({
     );
   }
 
-  async function loadView(
+  async function loadPipelineStatus(
     id: string,
-    compile: boolean,
-    includeScript = mode === "script",
+    includeScript: boolean,
     request?: { requestId: number; signal: AbortSignal },
   ) {
-    setLoading(true);
+    setStatusLoading(true);
+    setLoading(false);
     setError(null);
-    setMessage(compile ? (includeScript ? "Building script from Moodle..." : "Building tasks from Moodle...") : null);
+    setMessage(null);
     try {
-      if (compile) {
-        await studyPipelineRequest(`/courses/${encodeURIComponent(id)}/study-pipeline/${includeScript ? "curated" : "extracted"}`, {
-          method: "POST",
-          body: JSON.stringify({ includeScript }),
-          signal: request?.signal,
-        });
-      }
-      const nextView = await studyPipelineRequest<TaskViewResponse>(
-        `/courses/${encodeURIComponent(id)}/study-pipeline/task-view?includeScript=${includeScript ? "1" : "0"}`,
+      const status = await studyPipelineRequest<StudyPipelineStatusResponse>(
+        `/courses/${encodeURIComponent(id)}/study-pipeline`,
         request?.signal ? { signal: request.signal } : undefined,
       );
       if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
         return;
       }
-      applyView(nextView, includeScript);
-      setMessage(compile ? (includeScript ? "Built script." : `Built ${nextView.sheets.flatMap((sheet) => sheet.tasks).length} tasks.`) : null);
-    } catch (loadError) {
-      if (isAbortError(loadError)) {
+      setPipelineStatus(status);
+      if (status.stage === "curated") {
+        await loadView(id, includeScript, request);
+      }
+    } catch (statusError) {
+      if (!isAbortError(statusError)) {
+        setError(formatStudyPipelineError(statusError));
+      }
+    } finally {
+      if (!request || (!request.signal.aborted && request.requestId === loadRequestId.current)) {
+        setStatusLoading(false);
+      }
+    }
+  }
+
+  async function runPipelineStage(stage: StudyPipelineStage) {
+    if (!courseId || runningStage) {
+      return;
+    }
+    setRunningStage(stage);
+    setError(null);
+    setMessage(stageMessage(stage, mode));
+    if (stage !== "curated") {
+      setView(null);
+      onTaskViewChange?.(null);
+      onStudyOutlineChange(EMPTY_STUDY_OUTLINE);
+      setScriptIncluded(false);
+    }
+    try {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/${stage}`, {
+        method: "POST",
+        body: JSON.stringify({ includeScript: mode === "script" }),
+      });
+      await loadPipelineStatus(courseId, mode === "script");
+      if (stage === "curated") {
+        await loadView(courseId, mode === "script");
+      }
+      setMessage(stageDoneMessage(stage, mode));
+    } catch (stageError) {
+      setError(formatStudyPipelineError(stageError));
+    } finally {
+      setRunningStage(null);
+    }
+  }
+
+  async function loadView(
+    id: string,
+    includeScript = mode === "script",
+    request?: { requestId: number; signal: AbortSignal },
+  ) {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const nextView = await loadTaskViewResponse(id, includeScript, request?.signal);
+      if (request && (request.signal.aborted || request.requestId !== loadRequestId.current)) {
         return;
       }
-      if (!compile && shouldBuildStudyPipeline(getErrorMessage(loadError))) {
-        await loadView(id, true, includeScript, request);
+      applyView(nextView, includeScript);
+      setMessage(null);
+    } catch (loadError) {
+      if (isAbortError(loadError)) {
         return;
       }
       setError(formatStudyPipelineError(loadError));
@@ -317,41 +423,37 @@ export function TaskStudyPanel({
     setView(displayView);
     onTaskViewChange?.(displayView);
     setScriptIncluded(includeScript);
-    onSelectedTaskIdChange(
-      selectedTaskId && displayView.sheets.some((sheet) => sheet.tasks.some((task) => task.taskId === selectedTaskId))
-        ? selectedTaskId
-        : displayView.sheets[0]?.tasks[0]?.taskId ?? null,
-    );
-  }
-
-  async function loadChat(taskId: string) {
-    try {
-      const payload = await studyPipelineRequest<{ messages: TaskChatMessage[] }>(
-        `/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(taskId)}/chat`,
-      );
-      setChatMessages(asArray(payload.messages));
-    } catch {
-      setChatMessages([]);
+    if (mode === "tasks" && selectedTaskId) {
+      const exactTask = displayView.sheets.flatMap((sheet) => sheet.tasks).find((task) => task.taskId === selectedTaskId);
+      if (!exactTask) {
+        const compatibleTask = displayView.sheets
+          .flatMap((sheet) => sheet.tasks)
+          .find((task) => selectedTaskId.startsWith(`${task.taskId}-`) || task.taskId.startsWith(`${selectedTaskId}-`));
+        if (compatibleTask) {
+          onSelectedTaskIdChange(compatibleTask.taskId);
+        }
+      }
     }
   }
 
-  async function checkAnswer() {
+  async function checkAnswer(input: { answer: string; stepLabel?: string | null; stepPrompt?: string }) {
     if (!selectedTask || !course || !courseId || checking) {
       return;
     }
-    const trimmed = answer.trim();
+    const trimmed = input.answer.trim();
     if (!trimmed) {
-      setError("Write an answer before asking Codex to check it.");
+      setError("Schreibe zuerst eine Antwort, bevor Codex bewertet.");
       return;
     }
 
     setChecking(true);
     setError(null);
-    setMessage("Codex is checking your answer...");
+    setMessage("Codex bewertet deine Antwort…");
     try {
       const feedback = await runCodex([
         "Check this student answer against the Moodle task.",
         "Return clear feedback: what is correct, what is wrong or missing, and what to do next.",
+        "Answer in the language of the task.",
         "",
         `Course: ${courseTitle(course)}`,
         `Sheet: ${selectedSheet?.title ?? "Unknown"}`,
@@ -359,8 +461,15 @@ export function TaskStudyPanel({
         "",
         "Task prompt:",
         taskPromptText(selectedTask),
+        ...(input.stepPrompt
+          ? [
+              "",
+              `The student is answering only this subtask (${input.stepLabel ?? "Teilaufgabe"}):`,
+              input.stepPrompt,
+            ]
+          : []),
         "",
-        "Student answer:",
+        `Student answer${input.stepLabel ? ` for ${input.stepLabel}` : ""}:`,
         trimmed,
       ].join("\n"));
       await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/attempts`, {
@@ -385,50 +494,33 @@ export function TaskStudyPanel({
     }
   }
 
-  async function sendChat() {
-    if (!selectedTask || !course || chatting) {
+  async function updateSelectedTaskStatus(status: "done" | "open") {
+    if (!selectedTask || !courseId || updatingTaskStatus) {
       return;
     }
-    const text = chatPrompt.trim();
-    if (!text) {
-      return;
-    }
-    setChatting(true);
+    setUpdatingTaskStatus(true);
     setError(null);
-    setChatPrompt("");
     try {
-      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
-        method: "POST",
-        body: JSON.stringify({ role: "user", text }),
+      await studyPipelineRequest(
+        `/courses/${encodeURIComponent(courseId)}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/status`,
+        {
+          method: "POST",
+          body: JSON.stringify({ status }),
+        },
+      );
+      setView((current) => {
+        if (!current) {
+          return current;
+        }
+        const nextView = updateTaskStatusInView(current, selectedTask.taskId, status);
+        onTaskViewChange?.(nextView);
+        return nextView;
       });
-      const response = await runCodex([
-        "You are helping with this Moodle task. Use the task prompt, latest answer, and chat history.",
-        "",
-        `Course: ${courseTitle(course)}`,
-        `Sheet: ${selectedSheet?.title ?? "Unknown"}`,
-        `Task: ${selectedTask.title}`,
-        "",
-        "Task prompt:",
-        taskPromptText(selectedTask),
-        "",
-        "Latest answer:",
-        answer.trim() || "No answer yet.",
-        "",
-        "Chat history:",
-        asArray(chatMessages).map((message) => `${message.role}: ${message.text}`).join("\n") || "No previous chat.",
-        "",
-        "User message:",
-        text,
-      ].join("\n"));
-      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId ?? "")}/study-pipeline/tasks/${encodeURIComponent(selectedTask.taskId)}/chat`, {
-        method: "POST",
-        body: JSON.stringify({ role: "assistant", text: response.finalResponse }),
-      });
-      await loadChat(selectedTask.taskId);
-    } catch (chatError) {
-      setError(getErrorMessage(chatError));
+      setMessage(status === "done" ? "Aufgabe als erledigt markiert." : "Aufgabe wieder geöffnet.");
+    } catch (statusError) {
+      setError(getErrorMessage(statusError));
     } finally {
-      setChatting(false);
+      setUpdatingTaskStatus(false);
     }
   }
 
@@ -537,7 +629,7 @@ export function TaskStudyPanel({
           setRefineStream((current) => [...current.slice(-5), line]);
         }
       });
-      await loadView(courseId, false, mode === "script" || scriptIncluded);
+      await loadView(courseId, mode === "script" || scriptIncluded);
       setMessage("Codex-improved version saved separately from the extracted source.");
     } catch (refineError) {
       const message = getErrorMessage(refineError);
@@ -555,34 +647,198 @@ export function TaskStudyPanel({
     }
   }
 
+  const pageTitle = mode === "script"
+    ? "Script"
+    : selectedTask
+      ? selectedSheet?.title ?? "Aufgabenblatt"
+      : "Aufgaben";
+  const pageSubtitle = mode === "tasks" && selectedTask
+    ? selectedTask.title
+    : courseTitle(course);
+  const pageIcon = mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />;
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-visible">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between lg:px-5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />}
-            <h2 className="truncate text-lg font-semibold tracking-tight">
-              {mode === "script" ? "Script" : "Aufgaben"}
-            </h2>
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between md:px-6">
+        {selectedTask ? (
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              {selectedSheet?.title ?? "Aufgabenblatt"}
+              {selectedTaskIndex >= 0 ? ` · ${selectedTaskIndex + 1} von ${flatTasks.length}` : ""}
+            </p>
+            <div className="mt-0.5 flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-lg font-semibold tracking-tight">{selectedTask.title}</h2>
+              {taskMode === "test" ? (
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-primary-foreground">
+                  <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary-foreground" />
+                  Test
+                </span>
+              ) : !isDoneTaskStatus(selectedTask.status) && selectedTask.status !== "open" ? (
+                <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  {selectedTask.status.replace("_", " ")}
+                </span>
+              ) : null}
+            </div>
           </div>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{courseTitle(course)}</p>
-        </div>
-        <Button
-          className="w-fit"
-          disabled={loading}
-          onClick={() => void loadView(courseId, true, mode === "script")}
-          type="button"
-          variant="secondary"
-        >
-          {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-          Aktualisieren
-        </Button>
+        ) : (
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {pageIcon}
+              <h2 className="truncate text-lg font-semibold tracking-tight">
+                {pageTitle}
+              </h2>
+            </div>
+            <p className="mt-1 truncate text-sm text-muted-foreground">{pageSubtitle}</p>
+          </div>
+        )}
+        {view ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {selectedTask ? (
+              <>
+                {taskMode === "test" ? (
+                  <>
+                    <div className="mr-1 hidden shrink-0 items-center rounded-full bg-secondary p-0.5 lg:inline-flex">
+                      <TaskTestLayoutButton
+                        active={testLayout === "stacked"}
+                        icon={Rows3}
+                        label="Frage über dem Eingabefeld"
+                        onClick={() => setTestLayout("stacked")}
+                      />
+                      <TaskTestLayoutButton
+                        active={testLayout === "split"}
+                        icon={Columns2}
+                        label="Eingabefeld rechts"
+                        onClick={() => setTestLayout("split")}
+                      />
+                    </div>
+                    {testLayout === "split" ? (
+                      <Button
+                        aria-label={testComposerOpen ? "Antwortbereich einklappen" : "Antwortbereich ausklappen"}
+                        className="hidden lg:inline-flex"
+                        onClick={() => setTestComposerOpen((current) => !current)}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        {testComposerOpen ? <PanelRightClose aria-hidden /> : <PanelRightOpen aria-hidden />}
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
+                <Button
+                  className={cn(
+                    isDoneTaskStatus(selectedTask.status) &&
+                      "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 hover:text-emerald-600",
+                  )}
+                  disabled={updatingTaskStatus}
+                  onClick={() => void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")}
+                  type="button"
+                  variant="secondary"
+                >
+                  {updatingTaskStatus ? (
+                    <Spinner aria-hidden />
+                  ) : isDoneTaskStatus(selectedTask.status) ? (
+                    <CheckCircle2 aria-hidden />
+                  ) : (
+                    <Circle aria-hidden />
+                  )}
+                  {isDoneTaskStatus(selectedTask.status) ? "Erledigt" : "Erledigt markieren"}
+                </Button>
+                {taskMode === "test" ? (
+                  <Button onClick={() => setTaskMode("view")} type="button" variant="secondary">
+                    <X aria-hidden />
+                    Test beenden
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setTaskMode("test");
+                      setTestComposerOpen(true);
+                    }}
+                    type="button"
+                  >
+                    <Play aria-hidden />
+                    Test starten
+                  </Button>
+                )}
+              </>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label="Aktionen" size="icon" type="button" variant="ghost">
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-56 rounded-2xl border-0 bg-popover p-1.5 shadow-lg">
+                {selectedTask?.sourceResourceId || selectedSheet?.resourceId ? (
+                  <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedTask?.sourceResourceId ?? selectedSheet?.resourceId ?? null)}>
+                    <FileText aria-hidden />
+                    Original-PDF öffnen
+                  </DropdownMenuItem>
+                ) : null}
+                {selectedSheet?.solutionResourceId ? (
+                  <DropdownMenuItem onSelect={() => setPreviewResourceId(selectedSheet.solutionResourceId!)}>
+                    <FileText aria-hidden />
+                    Lösungs-PDF öffnen
+                  </DropdownMenuItem>
+                ) : null}
+                {selectedTask?.contentState?.id ? (
+                  <DropdownMenuItem
+                    disabled={!codexConnected || !selectedRefineModel || refiningTarget === `task:${selectedTask.contentState.id}`}
+                    onSelect={() => void refineStudyContent("task", selectedTask.contentState?.id ?? selectedTask.sourceResourceId)}
+                  >
+                    {refiningTarget === `task:${selectedTask.contentState.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
+                    Extraktion verbessern
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onSelect={() => setCodexSettingsOpen((open) => !open)}>
+                  <Settings2 aria-hidden />
+                  Codex-Einstellungen
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={loading || Boolean(runningStage)}
+                  onSelect={() => void runPipelineStage("raw")}
+                >
+                  {runningStage === "raw" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
+                  Rohdaten laden
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={loading || Boolean(runningStage)}
+                  onSelect={() => void runPipelineStage("extracted")}
+                >
+                  {runningStage === "extracted" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
+                  Texte extrahieren
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={loading || Boolean(runningStage)}
+                  onSelect={() => void runPipelineStage("curated")}
+                >
+                  {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+                  Neu erstellen
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {!selectedTask ? (
+              <Button
+                className="w-fit"
+                disabled={loading || Boolean(runningStage)}
+                onClick={() => void runPipelineStage("curated")}
+                type="button"
+                variant="secondary"
+              >
+                {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+                Neu erstellen
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive lg:mx-5">{error}</div> : null}
-      {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground lg:mx-5">{message}</div> : null}
+      {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
+      {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">{message}</div> : null}
       {refineStream.length > 0 ? (
-        <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground lg:mx-5">
+        <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">
           <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
             <Spinner aria-hidden />
             Codex arbeitet
@@ -594,29 +850,38 @@ export function TaskStudyPanel({
           </div>
         </div>
       ) : null}
-      <CodexModelPicker
-        authChecking={codexAuthChecking}
-        connected={codexConnected}
-        error={modelError}
-        loading={modelLoading}
-        models={refineModels}
-        onModelChange={(modelId) => {
-          const nextModel = refineModels.find((model) => model.id === modelId) ?? null;
-          setSelectedRefineModel(modelId);
-          setSelectedReasoningEffort((current) => nextReasoningEffort(nextModel, current));
-        }}
-        onReasoningChange={setSelectedReasoningEffort}
-        onInstructionsChange={setRefineInstructions}
-        instructions={refineInstructions}
-        reasoningValue={selectedReasoningEffort}
-        selectedModel={selectedModel}
-        value={selectedRefineModel}
-      />
+      {view && codexSettingsOpen ? (
+        <CodexModelPicker
+          authChecking={codexAuthChecking}
+          connected={codexConnected}
+          error={modelError}
+          loading={modelLoading}
+          models={refineModels}
+          onModelChange={(modelId) => {
+            const nextModel = refineModels.find((model) => model.id === modelId) ?? null;
+            setSelectedRefineModel(modelId);
+            setSelectedReasoningEffort((current) => nextReasoningEffort(nextModel, current));
+          }}
+          onReasoningChange={setSelectedReasoningEffort}
+          onInstructionsChange={setRefineInstructions}
+          instructions={refineInstructions}
+          reasoningValue={selectedReasoningEffort}
+          selectedModel={selectedModel}
+          value={selectedRefineModel}
+        />
+      ) : null}
 
-      {loading && !view ? (
-        <div className="grid min-h-0 flex-1 place-items-center text-sm text-muted-foreground">
-          <span className="flex items-center gap-2"><Spinner aria-hidden /> Loading study material</span>
-        </div>
+      {!view && !loading ? (
+        <StudyPipelinePreview
+          course={course}
+          loading={statusLoading}
+          mode={mode}
+          onRunStage={(stage) => void runPipelineStage(stage)}
+          runningStage={runningStage}
+          status={pipelineStatus}
+        />
+      ) : loading && !view ? (
+        <StudyLoadingSkeleton mode={mode} />
       ) : mode === "script" ? (
         <ScriptReader
           courseTitleText={courseTitle(course)}
@@ -630,13 +895,10 @@ export function TaskStudyPanel({
         />
       ) : (
         <div
-          className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-visible lg:overflow-auto",
-            selectedTask ? "2xl:grid-cols-[minmax(0,1fr)_340px]" : "",
-          )}
+          className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden"
         >
-          {selectedTask ? (
-            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 lg:hidden">
+          {selectedTask && taskMode !== "test" ? (
+            <aside className="max-h-72 min-h-0 overflow-auto border-b border-border px-3 py-3 md:hidden">
               {view?.sheets.map((sheet) => (
                 <section className="mb-5" key={sheet.resourceId}>
                   <h3 className="mb-2 line-clamp-2 px-2 text-xs font-medium uppercase text-muted-foreground">
@@ -665,133 +927,522 @@ export function TaskStudyPanel({
             </aside>
           ) : null}
 
-          <main className="min-h-0 overflow-visible bg-background px-4 py-5 lg:px-10 lg:py-8">
-            {selectedTask ? (
-              <article className="mx-auto max-w-[82ch]">
-                <header className="mb-6 border-b border-border pb-5">
-                  <p className="text-sm font-medium text-muted-foreground">{selectedSheet?.title ?? "Aufgabenblatt"}</p>
-                  <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-foreground">
-                    {selectedTask.title}
-                  </h3>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <ContentStateBadge state={selectedTask.contentState} />
-                    {selectedTask.contentState?.id ? (
-                      <Button
-                        disabled={!codexConnected || !selectedRefineModel || refiningTarget === `task:${selectedTask.contentState.id}`}
-                        onClick={() => void refineStudyContent("task", selectedTask.contentState?.id ?? selectedTask.sourceResourceId)}
-                        type="button"
-                        variant="secondary"
-                      >
-                        {refiningTarget === `task:${selectedTask.contentState.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
-                        Mit Codex verbessern
-                      </Button>
-                    ) : null}
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">{selectedResource ?? courseTitle(course)}</p>
-                </header>
+          <main
+            className={cn(
+              "min-h-0 bg-background",
+              selectedTask && taskMode === "test"
+                ? "flex flex-col overflow-hidden md:h-full"
+                : "overflow-auto px-4 py-5 md:px-10 md:py-8",
+            )}
+          >
+            {selectedTask && taskMode === "test" ? (
+              <TaskTestMode
+                checking={checking}
+                composerOpen={testComposerOpen}
+                courseId={courseId}
+                feedbackMarkdown={selectedTask.latestAttempt?.verdict.feedbackMarkdown ?? null}
+                initialAnswer={selectedTask.latestAttempt?.userAnswer ?? ""}
+                key={selectedTask.taskId}
+                layout={testLayout}
+                onActivityChange={handleTestActivityChange}
+                onCitationClick={(resourceId) => setPreviewResourceId(resourceId)}
+                onComposerOpenChange={setTestComposerOpen}
+                onGrade={(gradeInput) => void checkAnswer(gradeInput)}
+                onOpenSolutionResource={
+                  selectedSheet?.solutionResourceId
+                    ? () => setPreviewResourceId(selectedSheet.solutionResourceId ?? null)
+                    : null
+                }
+                solutionMarkdown={selectedSheet?.solutionMarkdown ?? null}
+                solutionResourceId={selectedSheet?.solutionResourceId ?? null}
+                task={selectedTask}
+              />
+            ) : selectedTask ? (
+              <article className="mx-auto max-w-[86ch]">
                 <div className="py-2">
-                  <MarkdownBlock onCitationClick={onOpenResource} text={taskPromptText(selectedTask)} />
-                </div>
-                <label className="mt-5 block text-sm font-medium text-muted-foreground">
-                  Deine Lösung
-                  <textarea
-                    className="mt-2 min-h-36 w-full resize-y rounded-[1.5rem] bg-secondary px-4 py-3 text-sm leading-6 outline-none transition-colors focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-                    onChange={(event) => setAnswer(event.target.value)}
-                    value={answer}
+                  <MarkdownBlock
+                    onCitationClick={(resourceId) => setPreviewResourceId(resourceId)}
+                    text={taskPromptText(selectedTask)}
                   />
-                </label>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button disabled={checking} onClick={() => void checkAnswer()} type="button">
-                    {checking ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
-                    Mit Codex prüfen
-                  </Button>
                 </div>
-                {selectedTask.latestAttempt?.verdict.feedbackMarkdown ? (
-                  <section className="mt-6 rounded-[1.5rem] bg-secondary px-5 py-4">
-                    <h4 className="mb-3 flex items-center gap-2 font-semibold">
-                      <MessageCircle aria-hidden className="size-4" />
-                      Feedback
-                    </h4>
-                    <MarkdownBlock onCitationClick={onOpenResource} text={selectedTask.latestAttempt.verdict.feedbackMarkdown} />
-                  </section>
-                ) : null}
-
-                <section className="mt-6 border-t border-border pt-5">
-                  <h4 className="font-semibold">Chat zu dieser Aufgabe</h4>
-                  <div className="mt-3 flex flex-col gap-2">
-                      {asArray(chatMessages).map((chat) => (
-                      <div
-                        className={cn(
-                          "rounded-[1.25rem] px-4 py-3 text-sm leading-6",
-                          chat.role === "user" ? "self-end bg-primary text-primary-foreground" : "bg-secondary",
-                        )}
-                        key={chat.id}
-                      >
-                        <MarkdownBlock onCitationClick={onOpenResource} text={chat.text} />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <textarea
-                      className="min-h-20 flex-1 resize-y rounded-[1.5rem] bg-secondary px-4 py-3 text-sm outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-                      onChange={(event) => setChatPrompt(event.target.value)}
-                      placeholder="Nachfrage stellen..."
-                      value={chatPrompt}
-                    />
-                    <Button className="sm:self-start" disabled={chatting || !chatPrompt.trim()} onClick={() => void sendChat()} type="button">
-                      {chatting ? <Spinner aria-hidden /> : <SendHorizontal aria-hidden />}
-                      Senden
+                <footer className="sticky bottom-0 z-10 mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background/95 pb-3 pt-4 backdrop-blur">
+                  <Button
+                    disabled={!previousTask}
+                    onClick={() => previousTask && onSelectedTaskIdChange(previousTask.taskId)}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ArrowLeft aria-hidden />
+                    Vorherige
+                  </Button>
+                  {!isDoneTaskStatus(selectedTask.status) ? (
+                    <Button
+                      disabled={updatingTaskStatus}
+                      onClick={() =>
+                        void (async () => {
+                          await updateSelectedTaskStatus("done");
+                          if (nextTask) {
+                            onSelectedTaskIdChange(nextTask.taskId);
+                          }
+                        })()
+                      }
+                      type="button"
+                    >
+                      {updatingTaskStatus ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
+                      {nextTask ? "Erledigt & weiter" : "Erledigt"}
                     </Button>
-                  </div>
-                </section>
+                  ) : nextTask ? (
+                    <Button onClick={() => onSelectedTaskIdChange(nextTask.taskId)} type="button">
+                      Nächste Aufgabe
+                      <ArrowRight aria-hidden />
+                    </Button>
+                  ) : (
+                    <span className="inline-flex min-h-10 items-center gap-2 rounded-full bg-emerald-500/15 px-4 text-sm font-medium text-emerald-600">
+                      <CheckCircle2 aria-hidden className="size-4" />
+                      Alle Aufgaben erledigt
+                    </span>
+                  )}
+                </footer>
               </article>
             ) : (
-              <div className="grid min-h-80 place-items-center text-center text-sm text-muted-foreground">
-                <div>
-                  <FileText className="mx-auto mb-3" aria-hidden />
-                  Keine Aufgaben gefunden.
+              <div className="grid min-h-80 place-items-center py-10 text-center">
+                <div className="flex max-w-sm flex-col items-center">
+                  <span className="grid size-14 place-items-center rounded-full bg-secondary text-muted-foreground">
+                    <FileText aria-hidden className="size-6" />
+                  </span>
+                  <p className="mt-4 font-medium">Keine Aufgaben gefunden</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    In den extrahierten Materialien wurden keine Aufgaben erkannt. Erstelle den Study-Stand neu, um es
+                    erneut zu versuchen.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    disabled={loading || Boolean(runningStage)}
+                    onClick={() => void runPipelineStage("curated")}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+                    Neu erstellen
+                  </Button>
                 </div>
               </div>
             )}
           </main>
-          {selectedTask ? (
-            <aside className="mx-auto min-h-0 max-w-[82ch] overflow-visible border-t border-border bg-background px-5 py-6 sm:px-9 2xl:mx-0 2xl:h-full 2xl:max-w-none 2xl:overflow-auto 2xl:border-l 2xl:border-t-0">
-              <div className="space-y-5">
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Quelle</p>
-                  <h4 className="mt-1 text-sm font-semibold">{selectedResource ?? selectedSheet?.title ?? "Moodle resource"}</h4>
-                  {selectedTask ? (
-                    <Button className="mt-3" onClick={() => onOpenResource(selectedTask.sourceResourceId)} type="button" variant="secondary">
-                      Aufgabenblatt öffnen
-                    </Button>
-                  ) : null}
-                </div>
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Lösung</p>
-                  {selectedSheet?.solutionResourceId ? (
-                    <>
-                      <h4 className="mt-1 text-sm font-semibold">{selectedSheet.solutionTitle ?? "Lösung"}</h4>
-                      <Button className="mt-3" onClick={() => onOpenResource(selectedSheet.solutionResourceId!)} type="button" variant="secondary">
-                        Lösungs-PDF öffnen
-                      </Button>
-                      {selectedSheet.solutionMarkdown ? (
-                        <div className="mt-4 border-t border-border pt-4 lg:max-h-[36rem] lg:overflow-auto">
-                          <MarkdownBlock onCitationClick={onOpenResource} text={selectedSheet.solutionMarkdown} />
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      Keine Moodle-Lösung gefunden. Codex prüft deine Antwort direkt gegen Aufgabe und Kurskontext.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </aside>
-          ) : null}
         </div>
       )}
+      <Dialog
+        open={Boolean(previewResourceId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewResourceId(null);
+            setPreviewExpanded(false);
+          }
+        }}
+      >
+        <DialogContent
+          className={cn(
+            "flex flex-col gap-0 overflow-hidden p-0 ring-0 [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:top-4",
+            previewExpanded
+              ? "!left-3 !top-3 !h-[calc(100dvh-1.5rem)] !w-[calc(100vw-1.5rem)] !max-w-none !translate-x-0 !translate-y-0 rounded-[1.25rem] sm:!max-w-none"
+              : "h-[min(84dvh,860px)] max-w-[min(1120px,94vw)] rounded-[1.75rem] sm:max-w-[min(1120px,94vw)]",
+          )}
+        >
+          <DialogTitle className="sr-only">{previewTitle}</DialogTitle>
+          <div className="min-h-0 flex-1 overflow-hidden bg-muted">
+            {courseId && previewResourceId && previewPDFUrl ? (
+              <PDFDocumentViewer
+                courseId={courseId}
+                expanded={previewExpanded}
+                externalUrl={previewMaterial?.url}
+                materialId={previewResourceId}
+                onExpandedChange={setPreviewExpanded}
+                onStateChange={() => {}}
+                scrollCommand={null}
+                title={previewTitle}
+                url={previewPDFUrl}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
+  );
+}
+
+type TaskTestStep = {
+  id: string;
+  label: string | null;
+  prompt: string;
+};
+
+type TaskTestLayout = "stacked" | "split";
+
+const TASK_TEST_LAYOUT_STORAGE_KEY = "moodle.taskTest.layout";
+
+// Focused exam mode (learn-arena style): one subtask at a time, answers in a
+// composer that sits below (stacked) or right of (split) the question. Layout
+// and collapse controls live in the panel's main toolbar.
+function TaskTestMode({
+  checking,
+  composerOpen,
+  courseId,
+  feedbackMarkdown,
+  initialAnswer,
+  layout,
+  onActivityChange,
+  onCitationClick,
+  onComposerOpenChange,
+  onGrade,
+  onOpenSolutionResource,
+  solutionMarkdown,
+  solutionResourceId,
+  task,
+}: {
+  checking: boolean;
+  composerOpen: boolean;
+  courseId: string | null;
+  feedbackMarkdown: string | null;
+  initialAnswer: string;
+  layout: TaskTestLayout;
+  onActivityChange?: (activity: { answerDraft: string; stepLabel: string | null; stepPrompt: string | null } | null) => void;
+  onCitationClick: (resourceId: string) => void;
+  onComposerOpenChange: (open: boolean) => void;
+  onGrade: (input: { answer: string; stepLabel?: string | null; stepPrompt?: string }) => void;
+  onOpenSolutionResource: (() => void) | null;
+  solutionMarkdown: string | null;
+  solutionResourceId: string | null;
+  task: TaskViewTask;
+}) {
+  const steps = useMemo<TaskTestStep[]>(() => {
+    const parts = asArray(task.parts);
+    if (parts.length === 0) {
+      return [{ id: "task", label: null, prompt: task.promptMarkdown }];
+    }
+    return parts.map((part, index) => ({
+      id: part.id || String(index),
+      label: part.label ?? `Teilaufgabe ${String.fromCharCode(97 + index)})`,
+      prompt: part.promptMarkdown,
+    }));
+  }, [task]);
+  const contextMarkdown = asArray(task.parts).length > 0 ? task.promptMarkdown : null;
+
+  const [stepIndex, setStepIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>(() =>
+    initialAnswer && steps[0] ? { [steps[0].id]: initialAnswer } : {},
+  );
+  const [solutionOpen, setSolutionOpen] = useState(false);
+  const solutionPDFAvailable = Boolean(courseId && solutionResourceId);
+  const [solutionTab, setSolutionTab] = useState<"pdf" | "text">(solutionPDFAvailable ? "pdf" : "text");
+  const hasSolution = Boolean(solutionMarkdown) || solutionPDFAvailable;
+
+  const step = steps[Math.min(stepIndex, steps.length - 1)];
+  const answer = answers[step.id] ?? "";
+  const wordCount = answer.trim() ? answer.trim().split(/\s+/).length : 0;
+  const split = layout === "split";
+  const canGrade = !checking && answer.trim().length > 0;
+
+  // Report what the student currently sees (and writes) to the tutor chat.
+  const onActivityChangeRef = useRef(onActivityChange);
+  onActivityChangeRef.current = onActivityChange;
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      onActivityChangeRef.current?.({
+        answerDraft: answer,
+        stepLabel: step.label,
+        stepPrompt: steps.length > 1 ? step.prompt : null,
+      });
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [answer, step.id, step.label, step.prompt, steps.length]);
+  useEffect(() => {
+    return () => onActivityChangeRef.current?.(null);
+  }, []);
+
+  function goToStep(index: number) {
+    setStepIndex(index);
+  }
+
+  function grade() {
+    if (!canGrade) {
+      return;
+    }
+    onGrade({
+      answer,
+      stepLabel: step.label,
+      stepPrompt: steps.length > 1 ? step.prompt : undefined,
+    });
+  }
+
+  return (
+    <div className="relative flex min-h-[70dvh] w-full min-w-0 flex-1 flex-col md:min-h-0">
+      {steps.length > 1 ? (
+        <div className="flex shrink-0 items-center gap-3 px-4 pt-3 md:px-6">
+          <div className="flex min-w-0 flex-1 gap-1">
+            {steps.map((item, index) => (
+              <button
+                aria-label={item.label ?? `Schritt ${index + 1}`}
+                className={cn(
+                  "h-1.5 min-w-0 flex-1 rounded-full transition-colors",
+                  index === stepIndex
+                    ? "bg-primary"
+                    : (answers[item.id] ?? "").trim()
+                      ? "bg-primary/40 hover:bg-primary/60"
+                      : "bg-secondary hover:bg-secondary/80",
+                )}
+                key={item.id}
+                onClick={() => goToStep(index)}
+                type="button"
+              />
+            ))}
+          </div>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {stepIndex + 1}/{steps.length}
+          </span>
+        </div>
+      ) : null}
+
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          split && composerOpen && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(24rem,40%)] lg:overflow-hidden",
+        )}
+      >
+        <div className={cn("px-4 py-6 md:px-8", split && composerOpen && "lg:min-h-0 lg:overflow-y-auto")}>
+          <div className="mx-auto w-full max-w-2xl">
+            {solutionOpen && hasSolution ? (
+              <section className="mb-7 overflow-hidden rounded-3xl border border-amber-500/30 bg-amber-500/10">
+                <div className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold">
+                  <Lightbulb aria-hidden className="size-4 shrink-0 text-amber-500" />
+                  Lösung
+                  {solutionPDFAvailable && solutionMarkdown ? (
+                    <div className="ml-1 inline-flex shrink-0 items-center rounded-full bg-background/70 p-0.5">
+                      <button
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                          solutionTab === "pdf" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setSolutionTab("pdf")}
+                        type="button"
+                      >
+                        PDF
+                      </button>
+                      <button
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                          solutionTab === "text" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setSolutionTab("text")}
+                        type="button"
+                      >
+                        Text
+                      </button>
+                    </div>
+                  ) : null}
+                  <button
+                    aria-label="Lösung schließen"
+                    className="ml-auto grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    onClick={() => setSolutionOpen(false)}
+                    type="button"
+                  >
+                    <X aria-hidden className="size-3.5" />
+                  </button>
+                </div>
+                {solutionTab === "pdf" && courseId && solutionResourceId ? (
+                  <div className="h-[55dvh] min-h-72 bg-muted">
+                    <PDFDocumentViewer
+                      allowFloat
+                      courseId={courseId}
+                      materialId={solutionResourceId}
+                      onStateChange={() => {}}
+                      scrollCommand={null}
+                      title="Lösung"
+                      url={`/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(solutionResourceId)}/pdf`}
+                    />
+                  </div>
+                ) : solutionMarkdown ? (
+                  <div className="max-h-[50dvh] overflow-y-auto px-5 pb-4">
+                    <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {contextMarkdown ? (
+              <div className="mb-6 rounded-2xl bg-secondary/50 px-4 py-3 text-sm">
+                <MarkdownBlock onCitationClick={onCitationClick} text={contextMarkdown} />
+              </div>
+            ) : null}
+            {step.label ? (
+              <span className="mb-3 inline-flex rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {step.label}
+              </span>
+            ) : null}
+            <MarkdownBlock onCitationClick={onCitationClick} text={step.prompt} />
+
+            {feedbackMarkdown ? (
+              <section className="mt-7 rounded-3xl bg-secondary px-5 py-4">
+                <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                  <MessageCircle aria-hidden className="size-4" />
+                  Codex-Bewertung
+                </h4>
+                <MarkdownBlock onCitationClick={onCitationClick} text={feedbackMarkdown} />
+              </section>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            "px-4 pb-4 md:px-6",
+            split && composerOpen && "lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:py-4 lg:pl-0 lg:pr-4",
+            split && !composerOpen && "lg:hidden",
+          )}
+        >
+          <div
+            className={cn(
+              "mx-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-card shadow-lg ring-1 ring-border transition-shadow focus-within:shadow-xl",
+              split && "lg:mx-0 lg:min-h-0 lg:max-w-none lg:flex-1",
+            )}
+          >
+            <textarea
+              className={cn(
+                "min-h-44 w-full resize-none bg-transparent px-4 py-3.5 text-sm leading-6 outline-none placeholder:text-muted-foreground",
+                split && "lg:min-h-0 lg:flex-1",
+              )}
+              onChange={(event) =>
+                setAnswers((current) => ({ ...current, [step.id]: event.target.value }))
+              }
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  grade();
+                }
+              }}
+              placeholder={step.label ? `Deine Antwort zu ${step.label}…` : "Deine Antwort…"}
+              value={answer}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {hasSolution ? (
+                  <button
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                      solutionOpen
+                        ? "bg-amber-500/15 text-amber-600"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                    )}
+                    onClick={() => setSolutionOpen((current) => !current)}
+                    type="button"
+                  >
+                    <Lightbulb aria-hidden className="size-3.5" />
+                    {solutionOpen ? "Lösung verbergen" : "Lösung anzeigen"}
+                  </button>
+                ) : null}
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{wordCount} Wörter</span>
+              </div>
+              <Button disabled={!canGrade} onClick={grade} type="button">
+                {checking ? <Spinner aria-hidden /> : <Sparkles aria-hidden />}
+                Bewerten
+              </Button>
+            </div>
+          </div>
+
+          {steps.length > 1 ? (
+            <div
+              className={cn(
+                "mx-auto mt-3 flex w-full max-w-2xl shrink-0 items-center justify-between",
+                split
+                  ? "lg:mx-0 lg:max-w-none"
+                  : "sticky bottom-3 z-20 rounded-full bg-background/90 px-1.5 py-1 shadow-lg ring-1 ring-border/60 backdrop-blur-md",
+              )}
+            >
+              <Button
+                disabled={stepIndex === 0}
+                onClick={() => goToStep(stepIndex - 1)}
+                type="button"
+                variant="ghost"
+              >
+                <ArrowLeft aria-hidden />
+                Zurück
+              </Button>
+              <Button
+                disabled={stepIndex >= steps.length - 1}
+                onClick={() => goToStep(stepIndex + 1)}
+                type="button"
+                variant="secondary"
+              >
+                Weiter
+                <ArrowRight aria-hidden />
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {split && !composerOpen ? (
+        <button
+          className="absolute bottom-5 right-5 hidden items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg transition-opacity hover:opacity-90 lg:inline-flex"
+          onClick={() => onComposerOpenChange(true)}
+          type="button"
+        >
+          <PanelRightOpen aria-hidden className="size-4" />
+          Antwort schreiben
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskTestLayoutButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: typeof Rows3;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={cn(
+        "grid size-7 place-items-center rounded-full transition-colors",
+        active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+      )}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon aria-hidden className="size-3.5" />
+    </button>
+  );
+}
+
+function StudyLoadingSkeleton({ mode }: { mode: Mode }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <div className="mx-auto w-full max-w-[86ch] px-4 py-8 md:px-10">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner aria-hidden className="size-4" />
+          {mode === "script" ? "Script wird geladen…" : "Aufgaben werden geladen…"}
+        </p>
+        <Skeleton className="mt-7 h-7 w-2/3 rounded-full" />
+        <div className="mt-5 space-y-2.5">
+          <Skeleton className="h-4 w-full rounded-full" />
+          <Skeleton className="h-4 w-11/12 rounded-full" />
+          <Skeleton className="h-4 w-4/5 rounded-full" />
+        </div>
+        <Skeleton className="mt-7 h-36 w-full rounded-3xl" />
+        <div className="mt-7 space-y-2.5">
+          <Skeleton className="h-4 w-full rounded-full" />
+          <Skeleton className="h-4 w-5/6 rounded-full" />
+          <Skeleton className="h-4 w-2/3 rounded-full" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -860,7 +1511,7 @@ function CodexModelPicker({
   }, [openMenu]);
 
   return (
-    <div ref={pickerRef} className="mx-4 mt-4 flex flex-col gap-3 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm lg:mx-5">
+    <div ref={pickerRef} className="mx-4 mt-4 flex flex-col gap-3 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm md:mx-5">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <p className="flex items-center gap-2 font-medium text-foreground">
@@ -1075,12 +1726,114 @@ export function normalizeTaskViewForDisplay(view: TaskViewResponse): TaskViewRes
     ...view,
     scriptSections: asArray(view.scriptSections),
     resources: asArray(view.resources),
-    sheets: asArray(view.sheets).map((sheet) => ({
-      ...sheet,
-      solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
-      tasks: asArray(sheet.tasks).flatMap(splitTaskByHeadings),
-    })),
+    sheets: asArray(view.sheets)
+      .map((sheet) => ({
+        ...sheet,
+        solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
+        tasks: asArray(sheet.tasks)
+          .flatMap(splitTaskByHeadings)
+          .sort(compareTaskViewTasks),
+      }))
+      .sort(compareTaskViewSheets),
   };
+}
+
+function buildTaskOutline(
+  view: TaskViewResponse,
+  pipelineStatus: StudyPipelineStatusResponse | null,
+): StudyOutline["tasks"] {
+  const materialsById = new Map(asArray(pipelineStatus?.materials).map((material) => [material.id, material]));
+  return view.sheets.flatMap((sheet) =>
+    sheet.tasks.map((task) => {
+      const material = materialsById.get(task.sourceResourceId) ?? materialsById.get(sheet.resourceId);
+      return {
+        id: task.taskId,
+        sectionTitle: material?.sectionName,
+        sheetTitle: sheet.title,
+        status: task.status,
+        title: task.title,
+      };
+    }),
+  );
+}
+
+function updateTaskStatusInView(
+  view: TaskViewResponse,
+  taskId: string,
+  status: TaskViewTask["status"],
+): TaskViewResponse {
+  const sheets = view.sheets.map((sheet) => ({
+    ...sheet,
+    tasks: sheet.tasks.map((task) => task.taskId === taskId ? { ...task, status } : task),
+  }));
+  return {
+    ...view,
+    sheets,
+    progress: summarizeTaskProgress(sheets),
+  };
+}
+
+function summarizeTaskProgress(sheets: TaskViewResponse["sheets"]): TaskViewResponse["progress"] {
+  const progress: TaskViewResponse["progress"] = {
+    checked: 0,
+    correct: 0,
+    done: 0,
+    needsReview: 0,
+    open: 0,
+    wrong: 0,
+  };
+  for (const task of sheets.flatMap((sheet) => sheet.tasks)) {
+    switch (task.status) {
+      case "done":
+        progress.done++;
+        progress.checked++;
+        break;
+      case "checked":
+        progress.checked++;
+        break;
+      case "correct":
+        progress.correct++;
+        progress.checked++;
+        break;
+      case "wrong":
+        progress.wrong++;
+        progress.checked++;
+        break;
+      case "needs_review":
+        progress.needsReview++;
+        progress.checked++;
+        break;
+      default:
+        progress.open++;
+    }
+  }
+  return progress;
+}
+
+function isDoneTaskStatus(status: string): boolean {
+  return status === "done" || status === "correct";
+}
+
+function compareTaskViewSheets(left: TaskViewResponse["sheets"][number], right: TaskViewResponse["sheets"][number]): number {
+  return compareNaturalStudyTitles(left.title, right.title);
+}
+
+function compareTaskViewTasks(left: TaskViewTask, right: TaskViewTask): number {
+  return compareNaturalStudyTitles(left.title, right.title);
+}
+
+function compareNaturalStudyTitles(left: string, right: string): number {
+  const leftNumber = firstNumber(left);
+  const rightNumber = firstNumber(right);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return left.localeCompare(right, "de", { numeric: true, sensitivity: "base" });
+}
+
+function firstNumber(value: string): number | null {
+  const match = value.match(/\d+/);
+  return match ? Number(match[0]) : null;
 }
 
 function splitTaskByHeadings(task: TaskViewTask): TaskViewTask[] {
@@ -1221,7 +1974,7 @@ function ScriptReader({
       </aside>
 
       <div className="flex min-h-0 flex-col">
-        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:px-8">
+        <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Reading progress</p>
@@ -1237,7 +1990,7 @@ function ScriptReader({
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-auto px-4 py-6 lg:px-10 lg:py-8"
+          className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-10 md:py-8"
           onScroll={updateScrollProgress}
           ref={scrollRef}
         >
@@ -1476,9 +2229,7 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
   }
   if (block.startsWith("```")) {
     const code = block.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trimEnd();
-    return code.trim()
-      ? `<pre class="overflow-auto rounded-md border border-border bg-secondary p-4 font-mono text-xs leading-5 text-foreground">${escapeHtml(code)}</pre>`
-      : "";
+    return renderCodeBlock(code);
   }
   if (isDisplayMathBlock(block)) {
     return `<div class="my-4 overflow-x-auto">${renderMath(escapeHtml(block))}</div>`;
@@ -1512,6 +2263,41 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
     return `<ul class="ml-6 list-disc space-y-2">${items.map((item) => `<li>${renderListItem(item)}</li>`).join("")}</ul>`;
   }
   return `<p>${inlineMarkdown(block).replace(/\n/g, "<br />")}</p>`;
+}
+
+function renderCodeBlock(code: string): string {
+  if (!code.trim()) {
+    return "";
+  }
+  return [
+    `<pre class="my-5 overflow-auto rounded-[1.25rem] bg-secondary/70 px-5 py-4 font-mono text-sm leading-7 text-foreground shadow-inner" data-code="${escapeHtml(code)}">`,
+    `<code>${highlightPseudoCode(code)}</code>`,
+    "</pre>",
+  ].join("");
+}
+
+function highlightPseudoCode(code: string): string {
+  return code.split("\n").map(highlightPseudoCodeLine).join("\n");
+}
+
+function highlightPseudoCodeLine(line: string): string {
+  const tokenPattern = /\b(for|to|do|od|if|then|else|while|return)\b|(<-|[()+*=/])|\b(\d+)\b/g;
+  let output = "";
+  let cursor = 0;
+  for (const match of line.matchAll(tokenPattern)) {
+    const index = match.index ?? 0;
+    output += escapeHtml(line.slice(cursor, index));
+    const token = match[0];
+    if (match[1]) {
+      output += `<span class="font-semibold text-blue-700">${escapeHtml(token)}</span>`;
+    } else if (match[2]) {
+      output += `<span class="text-emerald-700">${escapeHtml(token)}</span>`;
+    } else {
+      output += `<span class="text-violet-700">${escapeHtml(token)}</span>`;
+    }
+    cursor = index + token.length;
+  }
+  return output + escapeHtml(line.slice(cursor));
 }
 
 function isMarkdownTableBlock(block: string): boolean {
@@ -1674,8 +2460,8 @@ function renderTrustedFigure(block: string): string {
   const src = attributeValue(block, "src") ?? "";
   const alt = attributeValue(block, "alt") ?? "";
   return [
-    '<figure class="my-6 overflow-hidden rounded-md border border-border bg-background">',
-    `<img class="h-auto w-full object-contain" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`,
+    '<figure class="mx-auto my-6 max-w-[min(560px,100%)] overflow-hidden rounded-md border border-border bg-background">',
+    `<img class="mx-auto h-auto max-h-[320px] w-full object-contain" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`,
     alt ? `<figcaption class="border-t border-border px-3 py-2 text-xs text-muted-foreground">${escapeHtml(alt)}</figcaption>` : "",
     "</figure>",
   ].join("");
@@ -1872,8 +2658,21 @@ function studyPipelineEndpoint(path: string): string {
   return `/api/study-pipeline${path}`;
 }
 
-function shouldBuildStudyPipeline(message: string): boolean {
-  return /not found|missing|no .*generated|no .*snapshot|no .*artifact|dataset|task forge|study bundle|failed with 404/i.test(message);
+async function loadTaskViewResponse(courseId: string, includeScript: boolean, signal?: AbortSignal): Promise<TaskViewResponse> {
+  const query = `includeScript=${includeScript ? "1" : "0"}`;
+  const bundlePath = `/api/study-bundles/courses/${encodeURIComponent(courseId)}/task-view?${query}`;
+  const bundleResponse = await fetch(bundlePath, { signal });
+  if (bundleResponse.ok) {
+    return await bundleResponse.json() as TaskViewResponse;
+  }
+  if (![404, 400].includes(bundleResponse.status)) {
+    const payload = await bundleResponse.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Study bundle failed with ${bundleResponse.status}.`);
+  }
+  return await studyPipelineRequest<TaskViewResponse>(
+    `/courses/${encodeURIComponent(courseId)}/study-pipeline/task-view?${query}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
@@ -1910,6 +2709,26 @@ function formatStudyPipelineError(error: unknown): string {
   return getErrorMessage(error)
     .replace(/^Task Forge failed/i, "Moodle study pipeline failed")
     .replace(/^Study bundle/i, "Moodle study pipeline");
+}
+
+function stageMessage(stage: StudyPipelineStage, mode: Mode): string {
+  if (stage === "raw") {
+    return "Moodle-Rohdaten werden vorbereitet...";
+  }
+  if (stage === "extracted") {
+    return "Texte werden aus den Moodle-Ressourcen extrahiert...";
+  }
+  return mode === "script" ? "Texte werden geprüft und das Script wird erstellt..." : "Texte werden geprüft und Aufgaben werden erstellt...";
+}
+
+function stageDoneMessage(stage: StudyPipelineStage, mode: Mode): string {
+  if (stage === "raw") {
+    return "Moodle-Rohdaten sind vorbereitet.";
+  }
+  if (stage === "extracted") {
+    return "Texte sind extrahiert.";
+  }
+  return mode === "script" ? "Script wurde erstellt." : "Aufgaben wurden erstellt.";
 }
 
 function isAbortError(error: unknown): boolean {

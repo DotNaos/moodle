@@ -23,10 +23,10 @@ export function useWebexRecordings() {
     }));
   }
 
-  async function loadRecordings(courseId: string, options: { refresh?: boolean } = {}) {
+  async function loadRecordings(courseId: string, options: { refresh?: boolean } = {}): Promise<WebexRecording[]> {
     const cached = recordingsByCourseId[courseId];
     if (!options.refresh && cached?.loaded) {
-      return;
+      return cached.recordings;
     }
 
     setRecordingsByCourseId((current) => ({
@@ -52,6 +52,7 @@ export function useWebexRecordings() {
         ...current,
         [courseId]: current[courseId] ?? recordings[0] ?? null,
       }));
+      return recordings;
     } catch (loadError) {
       setRecordingsByCourseId((current) => ({
         ...current,
@@ -63,6 +64,8 @@ export function useWebexRecordings() {
         },
       }));
     }
+
+    return cached?.recordings ?? [];
   }
 
   async function signInWebexBrowser(courseId: string, credentials: { username: string; password: string }) {
