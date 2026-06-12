@@ -61,11 +61,11 @@ export function MobileQuickChat({
 
   const [prompt, setPrompt] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const drawerScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep the drawer pinned to the latest message.
+  // Keep drawer and HUD pinned to the latest (streaming) message.
   useEffect(() => {
-    const node = drawerScrollRef.current;
+    const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
@@ -135,7 +135,7 @@ export function MobileQuickChat({
     return (
       <MobileSheet fixedHeight label="Chat" onClose={() => setExpanded(false)}>
         <div className="flex h-full flex-col">
-          <div ref={drawerScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4">
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4">
             <div className="flex flex-col gap-3 pb-3">
               {chat.messages.map((message) => (
                 <ChatMessageBubble key={message.id} message={message} />
@@ -149,20 +149,28 @@ export function MobileQuickChat({
     );
   }
 
-  const recentMessages = chat.messages.slice(-2);
+  // HUD shows the last exchange with the user's question pinned at the bottom
+  // and the streaming answer flowing down towards it from above.
+  const lastUserIndex = chat.messages.findLastIndex((message) => message.role === "user");
+  const lastUserMessage = lastUserIndex >= 0 ? chat.messages[lastUserIndex] : null;
+  const replies = lastUserIndex >= 0 ? chat.messages.slice(lastUserIndex + 1) : [];
 
-  // HUD mode: no panel behind the conversation — every bubble carries its own
-  // blurred background, hugging just the text.
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col justify-end md:hidden">
-      {recentMessages.length > 0 || chat.error ? (
-        <div className="mx-3 mb-2 flex max-h-[45dvh] flex-col gap-2 overflow-y-auto">
-          {recentMessages.map((message) => (
+      {lastUserMessage || chat.error ? (
+        <div
+          ref={scrollRef}
+          className="mx-3 mb-2 flex max-h-[45dvh] flex-col gap-2 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_3rem)]"
+        >
+          {/* Fade-out room at the top so scrolled content dissolves instead of
+              cutting off hard. */}
+          <div aria-hidden className="h-10 shrink-0" />
+          {replies.map((message) => (
             <div
               className={cn(
                 "flex w-full shrink-0 flex-col",
                 message.role === "assistant" &&
-                  "w-fit max-w-[92%] self-start rounded-3xl rounded-bl-lg bg-background/80 px-4 py-2.5 shadow-md ring-1 ring-border/40 backdrop-blur-md",
+                  "w-fit max-w-[92%] self-start rounded-3xl rounded-bl-lg bg-background/40 px-4 py-2.5 ring-1 ring-border/30 backdrop-blur-sm",
               )}
               key={message.id}
             >
@@ -170,9 +178,14 @@ export function MobileQuickChat({
             </div>
           ))}
           {chat.error ? (
-            <p className="w-fit shrink-0 self-start rounded-2xl bg-destructive/10 px-3 py-1.5 text-xs text-destructive backdrop-blur-md">
+            <p className="w-fit shrink-0 self-start rounded-2xl bg-destructive/10 px-3 py-1.5 text-xs text-destructive backdrop-blur-sm">
               {chat.error}
             </p>
+          ) : null}
+          {lastUserMessage ? (
+            <div className="flex w-full shrink-0 flex-col">
+              <ChatMessageBubble message={lastUserMessage} />
+            </div>
           ) : null}
         </div>
       ) : null}
