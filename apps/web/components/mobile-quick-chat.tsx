@@ -134,17 +134,67 @@ export function MobileQuickChat({
   if (expanded) {
     return (
       <MobileSheet fixedHeight label="Chat" onClose={() => setExpanded(false)}>
-        <div className="flex h-full flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4">
-            <div className="flex flex-col gap-3 pb-3">
-              {chat.messages.map((message) => (
-                <ChatMessageBubble key={message.id} message={message} />
-              ))}
-              {chat.error ? <p className="text-xs text-destructive">{chat.error}</p> : null}
+        {(maximized, setMaximized) => (
+          <div className="flex h-full flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2">
+              <span className="text-sm font-semibold">Chat</span>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  aria-label={maximized ? "Verkleinern" : "Maximieren"}
+                  className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  onClick={() => setMaximized(!maximized)}
+                  type="button"
+                >
+                  {maximized ? <Minimize2 aria-hidden className="size-4" /> : <Maximize2 aria-hidden className="size-4" />}
+                </button>
+                <button
+                  aria-label="Chat schließen"
+                  className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  onClick={() => {
+                    setExpanded(false);
+                    onClose();
+                  }}
+                  type="button"
+                >
+                  <X aria-hidden className="size-4" />
+                </button>
+              </div>
+            </div>
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4">
+              <div className="flex flex-col gap-3 pb-3">
+                {chat.messages.map((message) => (
+                  <ChatMessageBubble key={message.id} message={message} />
+                ))}
+                {chat.error ? <p className="text-xs text-destructive">{chat.error}</p> : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 border-t border-border/60 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5">
+              <input
+                autoFocus
+                className="h-11 min-w-0 flex-1 rounded-full bg-secondary px-4 text-sm outline-none placeholder:text-muted-foreground"
+                enterKeyHint="send"
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Frag etwas zur Aufgabe…"
+                value={prompt}
+              />
+              <button
+                aria-label="Senden"
+                className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-95 disabled:bg-secondary disabled:text-muted-foreground"
+                disabled={chat.running || prompt.trim().length === 0}
+                onClick={send}
+                type="button"
+              >
+                {chat.running ? <Spinner aria-hidden className="size-5" /> : <ArrowUp aria-hidden className="size-5" />}
+              </button>
             </div>
           </div>
-          {composer}
-        </div>
+        )}
       </MobileSheet>
     );
   }
@@ -170,7 +220,7 @@ export function MobileQuickChat({
               className={cn(
                 "flex w-full shrink-0 flex-col",
                 message.role === "assistant" &&
-                  "w-fit max-w-[92%] self-start rounded-3xl rounded-bl-lg bg-background/40 px-4 py-2.5 ring-1 ring-border/30 backdrop-blur-sm",
+                  "w-fit max-w-[50vw] self-start rounded-3xl rounded-bl-lg bg-background px-4 py-2.5 shadow-md ring-1 ring-border/50",
               )}
               key={message.id}
             >
