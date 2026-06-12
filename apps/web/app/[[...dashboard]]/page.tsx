@@ -27,6 +27,7 @@ import { CalendarPanel } from "@/components/course-calendar-panel";
 import { ChatPage } from "@/components/chat-page";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
+import { MobileSheet } from "@/components/mobile-sheet";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import {
   CalendarEventDetailPanel,
@@ -110,6 +111,11 @@ export default function Home() {
     return clampSidebarWidth(Number.isFinite(stored) ? stored : SIDEBAR_DEFAULT_WIDTH);
   });
   const [chatSidebarOpen, setChatSidebarOpen] = useState(false);
+  // Mobile chat overlay: the chat opens as a bottom sheet over the current
+  // screen, so getting back to the task is a single dismiss. The sheet stays
+  // mounted after the first open so the conversation survives closing it.
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [mobileChatMounted, setMobileChatMounted] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(() => {
     if (typeof window === "undefined") {
       return CHAT_SIDEBAR_DEFAULT_WIDTH;
@@ -870,16 +876,40 @@ export default function Home() {
 
           {error ? <DashboardToast message={error} onDismiss={() => setError(null)} /> : null}
 
-          {/* Global mobile chat button: always at the thumb, on every screen. */}
+          {/* Global mobile chat button: always at the thumb, on every screen.
+              Opens the chat as an overlay sheet, never the dedicated page. */}
           {!needsConnection && activeDocument?.kind !== "chat-session" ? (
-            <button
-              aria-label="Chat öffnen"
-              className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
-              onClick={() => navigator.open({ kind: "chat-session", sessionId: null, courseId: activeCourseId })}
-              type="button"
-            >
-              <MessageSquare aria-hidden className="size-5" />
-            </button>
+            <>
+              <button
+                aria-label="Chat öffnen"
+                className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
+                onClick={() => {
+                  setMobileChatMounted(true);
+                  setMobileChatOpen(true);
+                }}
+                type="button"
+              >
+                <MessageSquare aria-hidden className="size-5" />
+              </button>
+              {mobileChatMounted ? (
+                <MobileSheet fixedHeight label="Chat" open={mobileChatOpen} onClose={() => setMobileChatOpen(false)}>
+                  <ChatPage
+                    courses={courses}
+                    loadMaterials={ensureCourseMaterials}
+                    materials={materials}
+                    pdfState={pdfState}
+                    selectedCourseId={activeCourseId}
+                    selectedMaterial={selectedMaterial}
+                    studyContext={studyChatContext}
+                    user={user}
+                    variant="sidebar"
+                    onApplyActions={applyCodexActions}
+                    onClose={() => setMobileChatOpen(false)}
+                    onCourseChange={() => {}}
+                  />
+                </MobileSheet>
+              ) : null}
+            </>
           ) : null}
 
           {needsConnection ? (
