@@ -155,7 +155,7 @@ export function StudyPipelinePreview({
               ? "Moodle-Ressourcen werden geprüft…"
               : mode === "script"
                 ? `Aus den Materialien von ${courseTitle(course)} wird ein durchsuchbares Script mit Quellenverweisen erstellt.`
-                : `Aus den Aufgabenblättern von ${courseTitle(course)} werden übbare Aufgaben mit Lösungs-Check erstellt.`}
+                : `Aus den Aufgabenblättern von ${courseTitle(course)} werden prüfbare Aufgaben mit Lösungs-Check erstellt.`}
           </p>
           <div className="mt-5">
             <StageButton

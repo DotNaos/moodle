@@ -1,7 +1,7 @@
 "use client";
 
 import katex from "katex";
-import { ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, MessageCircle, MoreHorizontal, PanelRightClose, PanelRightOpen, Play, RefreshCw, Rows3, Settings2, Sparkles, WandSparkles, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, MessageCircle, MoreHorizontal, PanelRightClose, PanelRightOpen, Play, RefreshCw, Rows3, Settings2, Sparkles, WandSparkles, X } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -728,6 +728,7 @@ export function TaskStudyPanel({
     ? selectedTask.title
     : courseTitle(course);
   const pageIcon = mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />;
+  const fatalLoadError = Boolean(error && !view && !loading && !runningStage);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-visible">
@@ -907,7 +908,7 @@ export function TaskStudyPanel({
         ) : null}
       </div>
 
-      {error ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
+      {error && !fatalLoadError ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
       {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">{message}</div> : null}
       {refineStream.length > 0 ? (
         <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">
@@ -943,7 +944,13 @@ export function TaskStudyPanel({
         />
       ) : null}
 
-      {!view && !loading ? (
+      {fatalLoadError ? (
+        <StudyPipelineErrorState
+          error={error ?? "Moodle study pipeline failed."}
+          mode={mode}
+          onRetry={() => void loadPipelineStatus(courseId, mode === "script")}
+        />
+      ) : !view && !loading ? (
         <StudyPipelinePreview
           course={course}
           extractedDocuments={extractedDocuments}
@@ -1521,6 +1528,36 @@ function StudyLoadingSkeleton({ mode }: { mode: Mode }) {
           <Skeleton className="h-4 w-5/6 rounded-full" />
           <Skeleton className="h-4 w-2/3 rounded-full" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StudyPipelineErrorState({
+  error,
+  mode,
+  onRetry,
+}: {
+  error: string;
+  mode: Mode;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center overflow-auto px-6 py-10 text-center">
+      <div className="flex max-w-md flex-col items-center">
+        <span className="grid size-14 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <AlertCircle aria-hidden className="size-6" />
+        </span>
+        <h3 className="mt-4 text-xl font-semibold tracking-tight">
+          {mode === "script" ? "Script konnte nicht geladen werden" : "Aufgaben konnten nicht geladen werden"}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {error}
+        </p>
+        <Button className="mt-5 w-fit" onClick={onRetry} type="button" variant="secondary">
+          <RefreshCw aria-hidden />
+          Erneut laden
+        </Button>
       </div>
     </div>
   );
