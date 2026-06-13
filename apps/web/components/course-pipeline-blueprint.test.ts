@@ -590,8 +590,10 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.fields[0]?.value).toContain("Berechne die parallele Laufzeit");
     expect(preview.fields[0]?.value).not.toContain("Source:");
     expect(preview.fields[0]?.value).not.toContain("codex-improved");
-    expect(preview.jsonText).toContain('"promptMarkdown"');
-    expect(preview.jsonText).toContain("codex-improved");
+    expect(preview.jsonText).toContain('"taskId"');
+    expect(preview.jsonText).toContain('"sourceResourceId"');
+    expect(preview.jsonText).not.toContain('"promptMarkdown"');
+    expect(preview.jsonText).not.toContain("codex-improved");
   });
 
   test("renders Codex output previews as typed fields when the output is materialized", () => {
@@ -610,6 +612,8 @@ describe("course pipeline blueprint graph", () => {
         "Source: [Moodle resource](moodle-resource:947711)",
         "## Aufgabe 1",
         "Die Schönauer-Vektortriade",
+        "x".repeat(420),
+        "FULL_CONTENT_MARKER_AFTER_400_CHARS",
       ].join("\n"),
       run: null,
       subtitle: "task transform",
@@ -619,13 +623,16 @@ describe("course pipeline blueprint graph", () => {
 
     expect(preview.kind).toBe("mixed");
     if (preview.kind !== "mixed") throw new Error("Expected mixed preview");
-    expect(preview.fields[0]?.path).toBe("output.previewMarkdown");
+    expect(preview.fields[0]?.path).toBe("output.contentMarkdown");
     expect(preview.fields[0]?.value).toContain("Die Schönauer-Vektortriade");
+    expect(preview.fields[0]?.value).toContain("FULL_CONTENT_MARKER_AFTER_400_CHARS");
     expect(preview.fields[0]?.value).not.toContain("Source:");
     expect(preview.fields[0]?.value).not.toContain("codex-improved");
     expect(preview.jsonText).toContain('"type": "codex_transform"');
-    expect(preview.jsonText).toContain('"previewMarkdown"');
-    expect(preview.jsonText).toContain("codex-improved");
+    expect(preview.jsonText).toContain('"hasMaterializedOutput"');
+    expect(preview.jsonText).not.toContain('"contentMarkdown"');
+    expect(preview.jsonText).not.toContain("codex-improved");
+    expect(preview.jsonText).not.toContain("FULL_CONTENT_MARKER_AFTER_400_CHARS");
   });
 
   test("treats extracted documents as usable pipeline input even when run records are missing", () => {

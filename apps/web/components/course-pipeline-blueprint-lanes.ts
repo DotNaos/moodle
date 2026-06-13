@@ -206,7 +206,7 @@ export function addTaskGroupLane({
       inputLabel: group.title,
       outputLabel: "task draft[]",
       outputPreview: taskOutputs.length > 0
-        ? taskOutputs.map((task) => `${task.title}\n${task.promptMarkdown.slice(0, 400)}`).join("\n\n")
+        ? taskOutputs.map((task) => `${task.title}\n${task.promptMarkdown}`).join("\n\n")
         : undefined,
       hasMaterializedOutput: taskOutputs.length > 0,
       run: codexRun,

@@ -20,8 +20,9 @@ export type PipelineNodePreview =
     };
 
 export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodePreview {
-  const jsonText = JSON.stringify(data.bodyData ?? serializableNodeData(data), null, 2);
+  const rawData = data.bodyData ?? serializableNodeData(data);
   const fields = renderableFields(data.renderedFields);
+  const jsonText = JSON.stringify(fields.length > 0 ? omitRenderedFields(rawData, fields) : rawData, null, 2);
   if (fields.length > 0) {
     return { fields, jsonText, kind: "mixed" };
   }
@@ -35,6 +36,54 @@ export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodeP
     kind: "json",
     text: jsonText,
   };
+}
+
+function omitRenderedFields(rawData: unknown, fields: BlueprintRenderedField[]): unknown {
+  const copy = structuredCloneFallback(rawData);
+  for (const field of fields) {
+    deleteValueAtPath(copy, field.path);
+  }
+  return removeEmptyValues(copy);
+}
+
+function structuredCloneFallback(value: unknown): unknown {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
+function deleteValueAtPath(target: unknown, path: string) {
+  const parts = pathParts(path);
+  if (parts.length === 0) return;
+  let current = target;
+  for (const part of parts.slice(0, -1)) {
+    if (!isRecordOrArray(current)) return;
+    current = current[part as keyof typeof current];
+  }
+  if (!isRecordOrArray(current)) return;
+  const last = parts.at(-1);
+  if (typeof last === "number" && Array.isArray(current)) {
+    current[last] = undefined;
+    return;
+  }
+  if (typeof last === "string" && !Array.isArray(current)) {
+    delete current[last];
+  }
+}
+
+function pathParts(path: string): Array<number | string> {
+  const parts: Array<number | string> = [];
+  for (const segment of path.split(".")) {
+    const key = segment.match(/^([^\[]+)/)?.[1];
+    if (key) parts.push(key);
+    for (const index of segment.matchAll(/\[(\d+)]/g)) {
+      parts.push(Number(index[1]));
+    }
+  }
+  return parts;
+}
+
+function isRecordOrArray(value: unknown): value is Record<string, unknown> | unknown[] {
+  return Boolean(value) && typeof value === "object";
 }
 
 function renderableFields(fields: BlueprintRenderedField[] | undefined): BlueprintRenderedField[] {

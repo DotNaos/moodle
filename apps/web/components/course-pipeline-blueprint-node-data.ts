@@ -261,7 +261,7 @@ function codexBodyData({
     output: {
       label: outputLabel,
       hasMaterializedOutput,
-      previewMarkdown: outputPreview ?? null,
+      contentMarkdown: outputPreview ?? null,
     },
     run: run
       ? {
@@ -289,7 +289,7 @@ function codexRenderedFields({
   if (!outputPreview?.trim()) return undefined;
   return [{
     label: outputLabel,
-    path: "output.previewMarkdown",
+    path: "output.contentMarkdown",
     type: "markdown",
     value: outputPreview,
   }];

@@ -562,7 +562,12 @@ function NodePreviewContent({
             <RenderedPreviewField field={field} key={`${field.path}:${field.label}`} size={size} />
           ))}
         </div>
-        <div className={cn(size === "node" ? "pt-1" : "pt-2")}>
+        <div
+          className={cn(
+            "rounded-2xl bg-secondary/55",
+            size === "node" ? "px-2 py-1.5" : "px-4 py-3",
+          )}
+        >
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
             Raw data
           </p>
