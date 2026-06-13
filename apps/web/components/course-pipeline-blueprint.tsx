@@ -440,7 +440,7 @@ function ExtractionActionButtons({
 
 function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
-  const preview = nodeBodyPreview(data.outputPreview);
+  const preview = nodeBodyPreviewMarkdown(data.outputPreview);
   return (
     <div
       className={cn(
@@ -461,7 +461,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <div className="relative z-10 h-full overflow-hidden rounded-3xl px-4 py-3">
+      <div className="relative z-10 h-full overflow-visible rounded-3xl px-4 py-3">
         <NodeLiveIndicator live={data.live} />
         <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
         <div className="flex items-start gap-3">
@@ -481,18 +481,27 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
         </div>
         <ChannelRows inputs={data.inputs} outputs={data.outputs} />
 
-        <div className="mt-3 min-h-[96px] rounded-2xl bg-secondary/45 px-3 py-2">
+        <div className="mt-3 min-h-[112px] rounded-2xl bg-secondary/45 px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
             {data.problems?.length ? (
               <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
-                {data.problems.length}
-              </span>
-            ) : null}
+              {data.problems.length}
+            </span>
+          ) : null}
           </div>
-          <p className="line-clamp-3 whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
-            {preview || "No preview stored yet."}
-          </p>
+          {preview ? (
+            <div className="line-clamp-5 max-h-[6.5rem] overflow-hidden">
+              <MarkdownRenderer
+                className="space-y-1 break-words text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+                text={preview}
+              />
+            </div>
+          ) : (
+            <p className="line-clamp-3 whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
+              No preview stored yet.
+            </p>
+          )}
         </div>
         {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
@@ -573,10 +582,19 @@ function ChannelLabel({
       )}
       title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
     >
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-4 border-background shadow-md shadow-black/25",
+          portColorClass(port),
+        )}
+        style={direction === "input"
+          ? { left: -16, transform: "translate(-50%, -50%)" }
+          : { right: -16, transform: "translate(50%, -50%)" }}
+      />
       <Handle
         className={cn(
-          "pointer-events-auto !absolute !top-1/2 !size-3 !rounded-full !border-2 !border-background shadow-sm shadow-black/20",
-          portColorClass(port),
+          "pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0",
         )}
         id={`${direction === "input" ? "in" : "out"}-${slot}`}
         position={direction === "input" ? Position.Left : Position.Right}
@@ -599,15 +617,17 @@ function portsBySlot(items: BlueprintPort[]): Map<number, BlueprintPort> {
   return map;
 }
 
-function nodeBodyPreview(rawPreview: string | undefined): string {
+function nodeBodyPreviewMarkdown(rawPreview: string | undefined): string {
   if (!rawPreview?.trim()) return "";
   const { markdown } = preparePreviewMarkdown(rawPreview);
   return markdown
-    .replace(/!\[[^\]]*]\([^)]+\)/g, "[image]")
-    .replace(/[#*_`>]/g, "")
+    .split("\n")
+    .filter((line) => !/^\s*(Source|Source task|Original Sources|Solution status|Solution page)\s*:/i.test(line))
+    .join("\n")
+    .replace(/<!--\s*source:[\s\S]*?-->/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
-    .slice(0, 360);
+    .slice(0, 900);
 }
 
 function portColorClass(port: BlueprintPort): string {
