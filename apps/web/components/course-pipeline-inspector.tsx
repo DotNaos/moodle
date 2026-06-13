@@ -10,13 +10,15 @@ import {
   Loader2,
   RotateCcw,
   RefreshCw,
-  Search,
-  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  CoursePipelineBlueprint,
+  type PipelineRunsResponse,
+} from "@/components/course-pipeline-blueprint";
 import { Spinner } from "@/components/ui/spinner";
 import {
   buildInventorySections,
@@ -28,42 +30,6 @@ import { courseTitle } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
 type InspectorTab = "resources" | "buckets" | "runs" | "blueprint" | "review";
-
-type PipelineRunRecord = {
-  id: string;
-  sourceId: string;
-  courseId: string;
-  resourceId?: string;
-  fileHash?: string;
-  stage: string;
-  engine: string;
-  configHash: string;
-  ownership: "shared" | "user_owned" | string;
-  createdBy?: string;
-  status: string;
-  artifactRoot: string;
-  error?: string;
-  startedAt?: string;
-  finishedAt?: string;
-  createdAt: string;
-  artifactRefs?: Array<{ id: string; kind: string; uri?: string; storageKey?: string }>;
-};
-
-type ActiveRunSelectionRecord = {
-  sourceId: string;
-  resourceId?: string;
-  stage: string;
-  activeRunId: string;
-  selectedBy?: string;
-  selectedAt: string;
-  reason: string;
-};
-
-type PipelineRunsResponse = {
-  courseId: string;
-  runs: PipelineRunRecord[];
-  activeSelections: ActiveRunSelectionRecord[];
-};
 
 type CoursePipelineInspectorProps = {
   course: Course;
@@ -208,7 +174,7 @@ export function CoursePipelineInspector({
               status={status}
             />
           ) : activeTab === "blueprint" ? (
-            <BlueprintTab inventory={inventory} status={status} />
+            <CoursePipelineBlueprint inventory={inventory} runs={runs} status={status} />
           ) : (
             <ReviewTab inventory={inventory} />
           )}
@@ -381,38 +347,6 @@ function RunsTab({
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-function BlueprintTab({
-  inventory,
-  status,
-}: {
-  inventory: CourseInventoryResponse | null;
-  status: StudyPipelineStatusResponse | null;
-}) {
-  const nodes = [
-    { label: "Moodle source", detail: `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources`, icon: FileText },
-    { label: "Inventory", detail: inventory ? `${inventory.summary.taskGroups} task groups` : "not loaded", icon: Layers },
-    { label: "Extracted", detail: status?.stage === "extracted" ? "ready" : "pending or unknown", icon: Search },
-    { label: "Codex", detail: status?.stage === "curated" ? "curated output ready" : "not curated", icon: Sparkles },
-    { label: "Review", detail: "review queue placeholder", icon: CheckCircle2 },
-  ];
-  return (
-    <div className="overflow-x-auto rounded-3xl bg-secondary/45 p-4">
-      <div className="grid min-w-[760px] grid-cols-[repeat(5,minmax(130px,1fr))] items-center gap-3">
-        {nodes.map((node, index) => (
-          <div className="flex items-center gap-3" key={node.label}>
-            <div className="min-w-0 flex-1 rounded-3xl bg-background/75 px-4 py-4">
-              <node.icon aria-hidden className="mb-3 size-5 text-muted-foreground" />
-              <p className="truncate text-sm font-semibold text-foreground">{node.label}</p>
-              <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{node.detail}</p>
-            </div>
-            {index < nodes.length - 1 ? <div className="h-px w-8 shrink-0 bg-border" /> : null}
-          </div>
-        ))}
       </div>
     </div>
   );
