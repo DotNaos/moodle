@@ -5,7 +5,6 @@ import {
   Controls,
   Handle,
   MarkerType,
-  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -77,7 +76,11 @@ type BlueprintNodeData = {
   tone: BlueprintNodeTone;
   status?: string;
   active?: boolean;
+  artifacts?: string[];
+  evidence?: string[];
   meta: Array<{ label: string; value: string }>;
+  onSelect?: (nodeId: string) => void;
+  outputPreview?: string;
 };
 
 type BlueprintNode = Node<BlueprintNodeData, "blueprint">;
@@ -104,37 +107,38 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
   const graph = useMemo(() => buildBlueprintGraph({ inventory, runs, status }), [inventory, runs, status]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(graph.nodes[0]?.id ?? null);
   const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? graph.nodes[0];
+  const interactiveNodes = useMemo(
+    () => graph.nodes.map((node) => ({
+      ...node,
+      data: { ...node.data, onSelect: setSelectedNodeId },
+      selected: node.id === selectedNode?.id,
+    })),
+    [graph.nodes, selectedNode?.id],
+  );
 
   return (
-    <div className="grid min-h-[620px] gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid min-h-[640px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
         <ReactFlow
           colorMode="light"
+          defaultViewport={{ x: 28, y: -95, zoom: 0.85 }}
           edges={graph.edges}
-          fitView
           maxZoom={1.4}
-          minZoom={0.35}
+          minZoom={0.45}
           nodeTypes={nodeTypes}
-          nodes={graph.nodes}
+          nodes={interactiveNodes}
           nodesConnectable={false}
           nodesDraggable={false}
           onNodeClick={(_, node) => setSelectedNodeId(node.id)}
           panOnScroll
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#d4d4d4" gap={22} />
+          <Background className="pointer-events-none" color="#d4d4d4" gap={22} />
           <Controls showInteractive={false} />
-          <MiniMap
-            className="hidden md:block"
-            maskColor="rgba(255,255,255,0.72)"
-            nodeColor={(node) => nodeColor((node.data as BlueprintNodeData).tone)}
-            pannable
-            zoomable
-          />
         </ReactFlow>
       </div>
 
-      <aside className="rounded-3xl bg-secondary/45 px-4 py-4">
+      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4">
         {selectedNode ? (
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -147,6 +151,44 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
             <h2 className="mt-4 text-lg font-semibold tracking-tight">{selectedNode.data.title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{selectedNode.data.subtitle}</p>
             <p className="mt-4 text-sm leading-6 text-foreground/80">{selectedNode.data.detail}</p>
+
+            <div className="mt-5 rounded-2xl bg-background/70 px-3 py-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Output</p>
+              <p className="max-h-48 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
+                {selectedNode.data.outputPreview || "No direct output preview is stored for this node yet."}
+              </p>
+            </div>
+
+            <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Evidence</p>
+              {selectedNode.data.evidence?.length ? (
+                <div className="grid gap-2">
+                  {selectedNode.data.evidence.map((item) => (
+                    <p className="rounded-2xl bg-secondary/60 px-3 py-2 text-xs leading-5 text-foreground" key={item}>
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-muted-foreground">No extra evidence was recorded.</p>
+              )}
+            </div>
+
+            <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Artifacts</p>
+              {selectedNode.data.artifacts?.length ? (
+                <div className="grid gap-2">
+                  {selectedNode.data.artifacts.map((artifact) => (
+                    <p className="break-words rounded-2xl bg-secondary/60 px-3 py-2 text-xs leading-5 text-foreground" key={artifact}>
+                      {artifact}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-muted-foreground">No artifacts are attached to this node.</p>
+              )}
+            </div>
+
             <div className="mt-5 grid gap-2">
               {selectedNode.data.meta.map((item) => (
                 <div className="rounded-2xl bg-background/70 px-3 py-2" key={`${selectedNode.id}:${item.label}`}>
@@ -164,14 +206,26 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
   );
 }
 
-function BlueprintNodeCard({ data, selected }: NodeProps<BlueprintNode>) {
+function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
   return (
     <div
       className={cn(
         "w-[220px] rounded-3xl bg-background px-4 py-3 shadow-sm transition-shadow",
-        selected ? "shadow-[0_0_0_3px_rgba(0,0,0,0.18)]" : "shadow-black/5",
+        selected ? "outline outline-2 outline-primary/60" : "shadow-black/5",
       )}
+      onClick={(event) => {
+        event.stopPropagation();
+        data.onSelect?.(id);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          data.onSelect?.(id);
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
       <Handle className="opacity-0" position={Position.Left} type="target" />
       <div className="flex items-start gap-3">
@@ -202,7 +256,7 @@ export function buildBlueprintGraph({
   const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
   const latestRunsByStage = latestRuns(runs?.runs ?? []);
   const taskGroups = inventory?.taskGroups ?? [];
-  const visibleTaskGroups = taskGroups.slice(0, 8);
+  const visibleTaskGroups = taskGroups.slice(0, 7);
   const warnings = buildWarnings(inventory, runs);
 
   addNode(nodes, {
@@ -212,6 +266,11 @@ export function buildBlueprintGraph({
       title: "Moodle course",
       subtitle: `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources`,
       detail: "The course is the shared source. Every downstream pipeline run should map back to this input.",
+      evidence: [
+        "Initial source: Moodle course inventory",
+        `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources are available for classification`,
+      ],
+      outputPreview: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts currently visible downstream`,
       tone: "source",
       status: status?.status,
       meta: [
@@ -227,6 +286,16 @@ export function buildBlueprintGraph({
       title: "Inventory",
       subtitle: inventory ? `${inventory.summary.taskGroups} task groups` : "not loaded",
       detail: "Classifies Moodle resources into task sheets, solutions, lecture material, interactions, references, and unknown items.",
+      evidence: inventory
+        ? [
+            `${inventory.summary.taskGroups} task groups`,
+            `${inventory.summary.lectureMaterial} lecture resources`,
+            `${inventory.summary.unknown} unknown resources`,
+          ]
+        : ["Inventory response is missing"],
+      outputPreview: inventory
+        ? `Task groups: ${inventory.summary.taskGroups}\nPaired: ${inventory.summary.pairedTaskGroups}\nMissing solutions: ${inventory.summary.missingSolutionGroups}`
+        : "",
       tone: "process",
       status: inventory ? "loaded" : "missing",
       meta: inventory
@@ -241,9 +310,9 @@ export function buildBlueprintGraph({
   addEdge(edges, "course", "inventory", "inventory");
 
   const bucketNodes = [
-    { id: "bucket-tasks", title: "Task groups", count: taskGroups.length, y: 40 },
+    { id: "bucket-tasks", title: "Task groups", count: taskGroups.length, y: 20 },
     { id: "bucket-lecture", title: "Lecture material", count: inventory?.lectureMaterial.length ?? 0, y: 180 },
-    { id: "bucket-review", title: "Review inputs", count: warnings.length, y: 320 },
+    { id: "bucket-review", title: "Review inputs", count: warnings.length, y: 340 },
   ];
   for (const bucket of bucketNodes) {
     addNode(nodes, {
@@ -253,23 +322,37 @@ export function buildBlueprintGraph({
         title: bucket.title,
         subtitle: `${bucket.count} item${bucket.count === 1 ? "" : "s"}`,
         detail: "A classified bucket groups resources before extraction and curation decide what becomes user-facing content.",
+        evidence: [`${bucket.count} classified item${bucket.count === 1 ? "" : "s"}`],
+        outputPreview: bucket.id === "bucket-tasks"
+          ? taskGroups.slice(0, 5).map((group) => group.title).join("\n")
+          : bucket.id === "bucket-lecture"
+            ? (inventory?.lectureMaterial ?? []).slice(0, 5).map((item) => item.name).join("\n")
+            : warnings.slice(0, 5).map((item) => item.title).join("\n"),
         tone: bucket.id === "bucket-review" ? "warning" : "resource",
         status: bucket.count > 0 ? "has data" : "empty",
         meta: [{ label: "Count", value: String(bucket.count) }],
       },
     });
-    addEdge(edges, "inventory", bucket.id, bucket.id === "bucket-review" ? "review" : "classified");
+    addEdge(edges, "inventory", bucket.id, bucket.id === "bucket-review" ? "review" : "classified", {
+      muted: bucket.id === "bucket-review",
+    });
   }
 
   visibleTaskGroups.forEach((group, index) => {
     const nodeId = `task-group-${group.id}`;
     addNode(nodes, {
       id: nodeId,
-      position: { x: 860, y: index * 120 },
+      position: { x: 740, y: index * 112 },
       data: {
         title: group.title,
         subtitle: group.solution ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
         detail: group.pairingReason || "Task group created from classified Moodle resources.",
+        evidence: [
+          `Sheet: ${group.sheet.name}`,
+          group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
+          `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
+        ],
+        outputPreview: `${group.title}\n${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
         tone: group.solution ? "resource" : "warning",
         status: group.pairingStatus,
         meta: [
@@ -282,10 +365,28 @@ export function buildBlueprintGraph({
     addEdge(edges, "bucket-tasks", nodeId, "contains");
   });
 
+  if (taskGroups.length > visibleTaskGroups.length) {
+    addNode(nodes, {
+      id: "task-groups-more",
+      position: { x: 740, y: visibleTaskGroups.length * 112 },
+      data: {
+        title: `${taskGroups.length - visibleTaskGroups.length} more task groups`,
+        subtitle: "hidden from graph",
+        detail: "The graph keeps the canvas readable. The Resources and Buckets tabs contain the complete list.",
+        evidence: ["Visible graph is intentionally capped for readability"],
+        outputPreview: taskGroups.slice(visibleTaskGroups.length).map((group) => group.title).join("\n"),
+        tone: "resource",
+        status: "collapsed",
+        meta: [{ label: "Hidden groups", value: String(taskGroups.length - visibleTaskGroups.length) }],
+      },
+    });
+    addEdge(edges, "bucket-tasks", "task-groups-more", "more", { muted: true });
+  }
+
   const runStages = ["inventory", "raw", "extracted", "curated"];
   runStages.forEach((stage, index) => {
     const run = latestRunsByStage.get(stage);
-    const x = 1160 + index * 280;
+    const x = 1020 + index * 240;
     addNode(nodes, {
       id: `run-${stage}`,
       position: { x, y: 180 },
@@ -295,6 +396,15 @@ export function buildBlueprintGraph({
         detail: run
           ? `Latest ${stage} run recorded at ${formatDateTime(run.createdAt)}.`
           : "This stage has no immutable run record yet.",
+        artifacts: run ? runArtifactSummary(run) : [],
+        evidence: run
+          ? [
+              `Run ${run.id}`,
+              `Engine ${run.engine}`,
+              `${run.artifactRefs?.length ?? 0} artifact refs`,
+            ]
+          : ["No immutable run record stored for this stage"],
+        outputPreview: run ? runPreview(run) : "",
         tone: "run",
         status: run?.status ?? (status?.stage === stage ? status.status : "missing"),
         active: run ? activeRunIds.has(run.id) : false,
@@ -313,11 +423,17 @@ export function buildBlueprintGraph({
 
   addNode(nodes, {
     id: "outputs",
-    position: { x: 2280, y: 180 },
+    position: { x: 1980, y: 180 },
     data: {
       title: "Final outputs",
       subtitle: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts`,
       detail: "User-facing tasks, scripts, formulas, and source-linked content should only appear here if traceable upstream nodes exist.",
+      evidence: [
+        `${status?.summary.tasks ?? 0} published tasks`,
+        `${status?.summary.linkedSolutions ?? 0} linked solutions`,
+        `${status?.summary.missingSolutions ?? 0} missing solutions`,
+      ],
+      outputPreview: `Tasks: ${status?.summary.tasks ?? 0}\nScripts: ${status?.summary.scripts ?? 0}\nLinked solutions: ${status?.summary.linkedSolutions ?? 0}`,
       tone: "output",
       status: status?.stage === "curated" ? "ready" : "pending",
       meta: [
@@ -333,10 +449,10 @@ export function buildBlueprintGraph({
     const nodeId = `warning-${index}`;
     addNode(nodes, {
       id: nodeId,
-      position: { x: 1160 + index * 250, y: 430 },
+      position: { x: 1020 + index * 230, y: 420 },
       data: warning,
     });
-    addEdge(edges, warning.sourceId, nodeId, "needs review");
+    addEdge(edges, "bucket-review", nodeId, "review", { muted: true });
   });
 
   return { nodes, edges };
@@ -410,16 +526,46 @@ function addNode(nodes: BlueprintNode[], node: BlueprintNodeInput) {
   nodes.push({ ...node, type: "blueprint" });
 }
 
-function addEdge(edges: Edge[], source: string, target: string, label: string) {
+function addEdge(edges: Edge[], source: string, target: string, label: string, options?: { muted?: boolean }) {
   edges.push({
     id: `${source}->${target}`,
     source,
     target,
     label,
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: label === "failed" || label === "needs review" ? "#dc2626" : "#737373", strokeWidth: 2 },
+    markerEnd: { color: options?.muted ? "#a3a3a3" : "#737373", type: MarkerType.ArrowClosed },
+    style: {
+      stroke: options?.muted ? "#a3a3a3" : label === "failed" ? "#dc2626" : "#737373",
+      strokeDasharray: options?.muted ? "4 6" : undefined,
+      strokeWidth: options?.muted ? 1.5 : 2,
+    },
     type: "smoothstep",
   });
+}
+
+function runPreview(run: PipelineRunRecord): string {
+  for (const ref of run.artifactRefs ?? []) {
+    if (typeof ref.metadata?.preview === "string" && ref.metadata.preview) return ref.metadata.preview;
+    if (typeof ref.metadata?.textPreview === "string" && ref.metadata.textPreview) return ref.metadata.textPreview;
+  }
+  if (run.error) return run.error;
+  return `${run.stage} ${run.status}\nEngine: ${run.engine}\nArtifact root: ${run.artifactRoot || "none"}`;
+}
+
+function runArtifactSummary(run: PipelineRunRecord): string[] {
+  return (run.artifactRefs ?? []).slice(0, 12).map((ref) => {
+    const parts = [
+      ref.kind,
+      ref.pageNumber ? `page ${ref.pageNumber}` : "",
+      ref.blockId ? `block ${ref.blockId}` : "",
+      ref.storageKey || ref.uri || "",
+      ref.checksum ? `checksum ${shortValue(ref.checksum)}` : "",
+    ].filter(Boolean);
+    return `${ref.id}: ${parts.join(" · ")}`;
+  });
+}
+
+function shortValue(value: string) {
+  return value.length > 18 ? `${value.slice(0, 18)}...` : value;
 }
 
 function nodeIcon(tone: BlueprintNodeTone) {
@@ -439,15 +585,6 @@ function nodeToneClass(tone: BlueprintNodeTone): string {
   if (tone === "process") return "bg-sky-500/10 text-sky-700";
   if (tone === "resource") return "bg-amber-500/10 text-amber-700";
   return "bg-secondary text-muted-foreground";
-}
-
-function nodeColor(tone: BlueprintNodeTone): string {
-  if (tone === "warning") return "#dc2626";
-  if (tone === "run") return "#171717";
-  if (tone === "output") return "#047857";
-  if (tone === "process") return "#0369a1";
-  if (tone === "resource") return "#b45309";
-  return "#737373";
 }
 
 function formatDateTime(value: string): string {
