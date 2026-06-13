@@ -694,8 +694,10 @@ function ChannelRows({ inputs, outputs }: { inputs: BlueprintPort[]; outputs: Bl
             className="relative grid min-h-6 grid-cols-2 items-center gap-3 px-6 text-[10px] font-semibold leading-4 text-foreground/70"
             key={`channel-row-${rowIndex}`}
           >
-            {input ? <ChannelLabel direction="input" port={input[1]} slot={input[0]} /> : <span aria-hidden />}
-            {output ? <ChannelLabel direction="output" port={output[1]} slot={output[0]} /> : <span aria-hidden />}
+            {input ? <ChannelPortMarker direction="input" port={input[1]} slot={input[0]} /> : null}
+            {output ? <ChannelPortMarker direction="output" port={output[1]} slot={output[0]} /> : null}
+            {input ? <ChannelLabel direction="input" port={input[1]} /> : <span aria-hidden />}
+            {output ? <ChannelLabel direction="output" port={output[1]} /> : <span aria-hidden />}
           </div>
         );
       })}
@@ -706,11 +708,9 @@ function ChannelRows({ inputs, outputs }: { inputs: BlueprintPort[]; outputs: Bl
 function ChannelLabel({
   direction,
   port,
-  slot,
 }: {
   direction: "input" | "output";
   port: BlueprintPort;
-  slot: number;
 }) {
   return (
     <span
@@ -720,29 +720,43 @@ function ChannelLabel({
       )}
       title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
     >
+      {port.label}
+    </span>
+  );
+}
+
+function ChannelPortMarker({
+  direction,
+  port,
+  slot,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+  slot: number;
+}) {
+  const edgePosition = direction === "input"
+    ? { left: 0, transform: "translate(-50%, -50%)" }
+    : { right: 0, transform: "translate(50%, -50%)" };
+
+  return (
+    <>
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-4 border-background shadow-md shadow-black/25",
+          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-[5px] border-background shadow-md shadow-black/25",
           portColorClass(port),
         )}
-        style={direction === "input"
-          ? { left: -16, transform: "translate(-50%, -50%)" }
-          : { right: -16, transform: "translate(50%, -50%)" }}
+        data-channel-marker="true"
+        style={edgePosition}
       />
       <Handle
-        className={cn(
-          "pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0",
-        )}
+        className="pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0"
         id={`${direction === "input" ? "in" : "out"}-${slot}`}
         position={direction === "input" ? Position.Left : Position.Right}
-        style={direction === "input"
-          ? { left: -16, transform: "translate(-50%, -50%)" }
-          : { right: -16, transform: "translate(50%, -50%)" }}
+        style={edgePosition}
         type={direction === "input" ? "target" : "source"}
       />
-      {port.label}
-    </span>
+    </>
   );
 }
 

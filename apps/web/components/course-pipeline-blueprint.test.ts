@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildBlueprintGraph, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
+import { codexNodeData } from "@/components/course-pipeline-blueprint-node-data";
 import { buildPipelineNodePreview } from "@/components/course-pipeline-node-preview";
 import { buildUpstreamTrace } from "@/components/course-pipeline-trace";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
@@ -590,6 +591,40 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.fields[0]?.value).not.toContain("Source:");
     expect(preview.fields[0]?.value).not.toContain("codex-improved");
     expect(preview.jsonText).toContain('"promptMarkdown"');
+    expect(preview.jsonText).toContain("codex-improved");
+  });
+
+  test("renders Codex output previews as typed fields when the output is materialized", () => {
+    const data = codexNodeData({
+      activeRunIds: new Set(),
+      hasMaterializedOutput: true,
+      inputLabel: "Aufgabenblatt 1",
+      outputLabel: "task draft[]",
+      outputPreview: [
+        "Aufgabenblatt 01",
+        "---",
+        "status: codex-improved",
+        "ai_used: true",
+        "---",
+        "# Aufgabenblatt 01",
+        "Source: [Moodle resource](moodle-resource:947711)",
+        "## Aufgabe 1",
+        "Die Schönauer-Vektortriade",
+      ].join("\n"),
+      run: null,
+      subtitle: "task transform",
+    });
+
+    const preview = buildPipelineNodePreview(data);
+
+    expect(preview.kind).toBe("mixed");
+    if (preview.kind !== "mixed") throw new Error("Expected mixed preview");
+    expect(preview.fields[0]?.path).toBe("output.previewMarkdown");
+    expect(preview.fields[0]?.value).toContain("Die Schönauer-Vektortriade");
+    expect(preview.fields[0]?.value).not.toContain("Source:");
+    expect(preview.fields[0]?.value).not.toContain("codex-improved");
+    expect(preview.jsonText).toContain('"type": "codex_transform"');
+    expect(preview.jsonText).toContain('"previewMarkdown"');
     expect(preview.jsonText).toContain("codex-improved");
   });
 

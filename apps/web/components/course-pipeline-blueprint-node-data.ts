@@ -3,6 +3,7 @@ import type {
   BlueprintExtractionVariant,
   BlueprintNodeData,
   BlueprintProblem,
+  BlueprintRenderedField,
   BlueprintStepKind,
   PipelineRunRecord,
 } from "@/components/course-pipeline-blueprint-model";
@@ -183,8 +184,10 @@ export function codexNodeData({
           "The immutable Codex run record was not exposed for this lane.",
         ],
         inputs: [{ label: "active input bundle", detail: inputLabel }],
+        bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
         outputs: [{ label: outputLabel, state: "ready" }],
         outputPreview: outputPreview ?? "A website-ready draft is available downstream.",
+        renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
         stepKind: "transform",
         tone: "output",
         status: "ready",
@@ -200,8 +203,10 @@ export function codexNodeData({
       detail: "Transforms selected extracted content into website-ready task or script drafts.",
       evidence: ["No Codex run has been recorded for this input yet."],
       inputs: [{ label: "active input bundle", detail: inputLabel }],
+      bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
       outputs: [{ label: outputLabel, state: "missing" }],
       outputPreview: outputPreview ?? "Codex has not produced a draft for this lane yet.",
+      renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
       problems: [{ label: "No Codex output", detail: "There is no final draft to validate or publish.", severity: "warning" }],
       stepKind: "transform",
       tone: "warning",
@@ -217,8 +222,10 @@ export function codexNodeData({
     config: runConfig(run),
     evidence: [`Run ${run.id}`, `Engine ${run.engine}`, `${run.artifactRefs?.length ?? 0} artifact refs`, ...runLiveEvidence(run)],
     inputs: [{ label: "active input bundle", detail: inputLabel }],
+    bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
     outputs: [{ label: outputLabel, state: run.status }],
     outputPreview: outputPreview ?? runPreview(run),
+    renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
     problems: mergeProblems(runProblems(run), runDiagnosticProblems(run)),
     stepKind: "transform",
     tone: run.status === "failed" || run.status === "warning" ? "warning" : "run",
@@ -227,6 +234,65 @@ export function codexNodeData({
     live: runLiveState(run),
     meta: [...runMeta(run), ...runTimingMeta(run)],
   };
+}
+
+function codexBodyData({
+  hasMaterializedOutput,
+  inputLabel,
+  outputLabel,
+  outputPreview,
+  run,
+  subtitle,
+}: {
+  hasMaterializedOutput: boolean;
+  inputLabel: string;
+  outputLabel: string;
+  outputPreview?: string;
+  run: PipelineRunRecord | null;
+  subtitle: string;
+}) {
+  return {
+    type: "codex_transform",
+    subtitle,
+    input: {
+      label: "active input bundle",
+      value: inputLabel,
+    },
+    output: {
+      label: outputLabel,
+      hasMaterializedOutput,
+      previewMarkdown: outputPreview ?? null,
+    },
+    run: run
+      ? {
+          id: run.id,
+          stage: run.stage,
+          engine: run.engine,
+          configHash: run.configHash,
+          status: run.status,
+          createdAt: run.createdAt,
+          startedAt: run.startedAt ?? null,
+          finishedAt: run.finishedAt ?? null,
+          artifactRoot: run.artifactRoot,
+        }
+      : null,
+  };
+}
+
+function codexRenderedFields({
+  outputLabel,
+  outputPreview,
+}: {
+  outputLabel: string;
+  outputPreview?: string;
+}): BlueprintRenderedField[] | undefined {
+  if (!outputPreview?.trim()) return undefined;
+  return [{
+    label: outputLabel,
+    path: "output.previewMarkdown",
+    type: "markdown",
+    value: outputPreview,
+  }];
 }
 
 export function finalOutputNodeData({
