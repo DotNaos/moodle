@@ -95,6 +95,7 @@ export type BlueprintNodeData = {
   problems?: BlueprintProblem[];
   frame?: {
     height: number;
+    variant?: "group" | "stage";
     width: number;
   };
 };
@@ -176,6 +177,12 @@ export function buildBlueprintGraph({
   const taskLaneGap = 540;
   const taskLaneStartY = centerY - ((Math.max(visibleTaskGroups.length, 1) - 1) * taskLaneGap) / 2;
   const scriptLaneY = taskLaneStartY + Math.max(visibleTaskGroups.length, 1) * taskLaneGap + 160;
+  const stageTopY = taskLaneStartY - 120;
+  const stageHeight = Math.max(visibleTaskGroups.length, 1) * taskLaneGap
+    + Math.max(visibleScriptResources.length, 1) * 320
+    + 520;
+
+  addStageFrames(nodes, { height: stageHeight, y: stageTopY });
 
   addNode(nodes, {
     id: "course",
@@ -260,6 +267,7 @@ export function buildBlueprintGraph({
       height: Math.max(visibleTaskGroups.length, 1) * taskLaneGap - 160,
       subtitle: `${taskGroups.length} task groups`,
       title: "Task groups[]",
+      variant: "group",
       width: 2830,
     }),
   });
@@ -311,6 +319,7 @@ export function buildBlueprintGraph({
         height: Math.max(visibleScriptResources.length, 1) * 320 - 16,
         subtitle: `${scriptResources.length} script resources`,
         title: "Script groups[]",
+        variant: "group",
         width: 2830,
       }),
     });
@@ -341,6 +350,37 @@ function addNode(nodes: BlueprintGraphNode[], node: BlueprintNodeInput) {
 
 function addFrame(nodes: BlueprintGraphNode[], node: BlueprintFrameInput) {
   nodes.push({ ...node, selectable: false, type: "frame", zIndex: -1 });
+}
+
+function addStageFrames(nodes: BlueprintGraphNode[], { height, y }: { height: number; y: number }) {
+  const stages = [
+    { id: "stage-course", title: "Course", subtitle: "source", width: 280, x: -20 },
+    { id: "stage-resources", title: "Resources", subtitle: "inventory", width: 300, x: 290 },
+    { id: "stage-groups", title: "Groups", subtitle: "task/script arrays", width: 290, x: 610 },
+    { id: "stage-pdfs", title: "PDFs", subtitle: "sheet + solution", width: 300, x: 930 },
+    { id: "stage-pages", title: "Pages", subtitle: "1 -> N", width: 300, x: 1290 },
+    { id: "stage-sections", title: "Sections", subtitle: "blocks", width: 300, x: 1650 },
+    { id: "stage-extraction", title: "Extraction", subtitle: "OCR variants", width: 320, x: 2010 },
+    { id: "stage-collect", title: "Collect", subtitle: "N -> 1", width: 300, x: 2410 },
+    { id: "stage-codex", title: "Codex", subtitle: "curation", width: 300, x: 2770 },
+    { id: "stage-output", title: "Outputs", subtitle: "website-ready", width: 320, x: 3130 },
+  ];
+  for (const stage of stages) {
+    nodes.push({
+      id: stage.id,
+      position: { x: stage.x, y },
+      selectable: false,
+      type: "frame",
+      zIndex: -3,
+      data: frameData({
+        height,
+        subtitle: stage.subtitle,
+        title: stage.title,
+        variant: "stage",
+        width: stage.width,
+      }),
+    });
+  }
 }
 
 function addEdge(
@@ -556,16 +596,18 @@ function frameData({
   height,
   subtitle,
   title,
+  variant = "group",
   width,
 }: {
   height: number;
   subtitle: string;
   title: string;
+  variant?: "group" | "stage";
   width: number;
 }): BlueprintNodeData {
   return {
     detail: "Visual group for repeated pipeline items.",
-    frame: { height, width },
+    frame: { height, variant, width },
     inputs: [],
     meta: [],
     outputs: [],

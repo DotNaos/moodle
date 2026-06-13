@@ -73,8 +73,13 @@ export function CoursePipelineBlueprint({
   );
 
   return (
-    <div className="grid min-h-[640px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
+    <div className="grid min-h-[720px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="relative h-[640px] overflow-hidden rounded-3xl bg-secondary/45">
+        <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
+          <LegendPill kind="transform" label="1 -> 1 Transform" />
+          <LegendPill kind="split" label="1 -> N Split" />
+          <LegendPill kind="collect" label="N -> 1 Collect" />
+        </div>
         <ReactFlow
           className="pipeline-blueprint-flow"
           colorMode="light"
@@ -95,7 +100,7 @@ export function CoursePipelineBlueprint({
         </ReactFlow>
       </div>
 
-      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4">
+      <aside className="min-h-[640px] rounded-3xl bg-secondary/45 px-4 py-4">
         {selectedNode ? (
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -207,7 +212,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   return (
     <div
       className={cn(
-        "h-[178px] w-[240px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
+        "relative h-[178px] w-[240px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
       onClick={(event) => {
@@ -223,6 +228,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
+      <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
       {HANDLE_POSITIONS.map((top, index) => (
         <Handle
           className="opacity-0"
@@ -243,7 +249,9 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <Badge variant="secondary">{stepKindLabel(data.stepKind)}</Badge>
+        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
+          {stepKindLabel(data.stepKind)}
+        </span>
         {data.active ? <Badge>active</Badge> : null}
         {data.status ? <Badge variant={data.status === "failed" ? "destructive" : "outline"}>{data.status}</Badge> : null}
       </div>
@@ -268,16 +276,32 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
 const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;
 
 function BlueprintGroupFrame({ data }: NodeProps<Extract<BlueprintGraphNode, { type: "frame" }>>) {
+  const stage = data.frame?.variant === "stage";
   return (
     <div
-      className="pointer-events-none rounded-[28px] border-0 bg-foreground/[0.035] shadow-inner"
+      className={cn(
+        "pointer-events-none border-0",
+        stage
+          ? "rounded-[24px] bg-background/40 ring-1 ring-foreground/[0.04]"
+          : "rounded-[28px] bg-foreground/[0.035] shadow-inner",
+      )}
       style={{ height: data.frame?.height ?? 240, width: data.frame?.width ?? 480 }}
     >
-      <div className="flex items-center justify-between px-5 py-3">
-        <p className="text-sm font-semibold text-foreground/70">{data.title}</p>
-        <p className="text-xs font-medium text-muted-foreground">{data.subtitle}</p>
+      <div className={cn("flex items-center justify-between", stage ? "px-4 py-4" : "px-5 py-3")}>
+        <p className={cn("font-semibold", stage ? "text-[13px] text-foreground/55" : "text-sm text-foreground/70")}>
+          {data.title}
+        </p>
+        <p className={cn("font-medium text-muted-foreground", stage ? "text-[11px]" : "text-xs")}>{data.subtitle}</p>
       </div>
     </div>
+  );
+}
+
+function LegendPill({ kind, label }: { kind: "collect" | "split" | "transform"; label: string }) {
+  return (
+    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", stepKindBadgeClass(kind))}>
+      {label}
+    </span>
   );
 }
 
@@ -330,6 +354,18 @@ function nodeToneClass(tone: BlueprintNodeTone): string {
   if (tone === "process") return "bg-sky-500/10 text-sky-700";
   if (tone === "resource") return "bg-amber-500/10 text-amber-700";
   return "bg-secondary text-muted-foreground";
+}
+
+function stepKindBadgeClass(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "bg-teal-500/10 text-teal-800";
+  if (kind === "split") return "bg-amber-500/15 text-amber-800";
+  return "bg-zinc-500/10 text-zinc-800";
+}
+
+function stepKindStripeClass(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "bg-teal-500/70";
+  if (kind === "split") return "bg-amber-500/80";
+  return "bg-zinc-500/55";
 }
 
 function stepKindLabel(kind: "collect" | "split" | "transform"): string {

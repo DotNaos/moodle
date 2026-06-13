@@ -339,6 +339,37 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.some((node) => node.data.tone === "warning")).toBe(true);
   });
 
+  test("adds readable stage columns and keeps conveyor edges moving right", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
+    const stageIds = [
+      "stage-course",
+      "stage-resources",
+      "stage-groups",
+      "stage-pdfs",
+      "stage-pages",
+      "stage-sections",
+      "stage-extraction",
+      "stage-collect",
+      "stage-codex",
+      "stage-output",
+    ];
+    const positions = new Map(graph.nodes.map((node) => [node.id, node.position.x]));
+
+    for (const stageId of stageIds) {
+      const stage = graph.nodes.find((node) => node.id === stageId);
+      expect(stage?.type).toBe("frame");
+      expect(stage?.data.frame?.variant).toBe("stage");
+    }
+
+    for (let index = 1; index < stageIds.length; index += 1) {
+      expect(positions.get(stageIds[index]) ?? 0).toBeGreaterThan(positions.get(stageIds[index - 1]) ?? 0);
+    }
+
+    for (const edge of graph.edges) {
+      expect(positions.get(edge.target) ?? 0).toBeGreaterThanOrEqual(positions.get(edge.source) ?? 0);
+    }
+  });
+
   test("handles empty pipeline data without crashing", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory: null, runs: null, status: null, taskView: null });
 
