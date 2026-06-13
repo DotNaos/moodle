@@ -74,10 +74,24 @@ type PipelineProposalRecord = {
   updatedAt: string;
 };
 
+type PipelineAuditRecord = {
+  id: string;
+  courseId: string;
+  actorId?: string;
+  action: string;
+  targetKind: string;
+  targetId: string;
+  sourceRunId?: string;
+  sourceArtifactId?: string;
+  message?: string;
+  createdAt: string;
+};
+
 type PipelineReviewResponse = {
   courseId: string;
   feedback: PipelineFeedbackRecord[];
   proposals: PipelineProposalRecord[];
+  audit?: PipelineAuditRecord[];
 };
 
 type OptionalInspectorData = "inventory" | "runs" | "review";
@@ -106,8 +120,10 @@ export function CoursePipelineInspector({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
+  const [publishingRunId, setPublishingRunId] = useState<string | null>(null);
   const [rerunningEngine, setRerunningEngine] = useState<string | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
+  const [moderatingId, setModeratingId] = useState<string | null>(null);
 
   const inventorySections = useMemo(() => buildInventorySections(inventory), [inventory]);
   useEffect(() => {
@@ -176,6 +192,48 @@ export function CoursePipelineInspector({
     }
   }
 
+  async function publishRun(runId: string) {
+    const actionId = `publish:${runId}`;
+    setPublishingRunId(actionId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/runs/${encodeURIComponent(runId)}/publish`, {
+        reason: "published in course pipeline inspector",
+      });
+      const [nextRuns, nextReview] = await Promise.all([
+        studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs"),
+        studyPipelineRequest<PipelineReviewResponse>(courseId, "/review"),
+      ]);
+      setRuns(nextRuns);
+      setReview(nextReview);
+    } catch (publishError) {
+      setError(formatStudyPipelineError(publishError));
+    } finally {
+      setPublishingRunId(null);
+    }
+  }
+
+  async function unpublishRun(runId: string) {
+    const actionId = `unpublish:${runId}`;
+    setPublishingRunId(actionId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/runs/${encodeURIComponent(runId)}/unpublish`, {
+        reason: "unpublished in course pipeline inspector",
+      });
+      const [nextRuns, nextReview] = await Promise.all([
+        studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs"),
+        studyPipelineRequest<PipelineReviewResponse>(courseId, "/review"),
+      ]);
+      setRuns(nextRuns);
+      setReview(nextReview);
+    } catch (unpublishError) {
+      setError(formatStudyPipelineError(unpublishError));
+    } finally {
+      setPublishingRunId(null);
+    }
+  }
+
   async function rerunExtracted(engine: string) {
     setRerunningEngine(engine);
     setError(null);
@@ -205,6 +263,40 @@ export function CoursePipelineInspector({
       setError(formatStudyPipelineError(submitError));
     } finally {
       setSubmittingProposalId(null);
+    }
+  }
+
+  async function moderateFeedback(feedbackId: string, action: "resolve" | "dismiss") {
+    const actionId = `feedback:${action}:${feedbackId}`;
+    setModeratingId(actionId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/feedback/${encodeURIComponent(feedbackId)}/${action}`, {
+        reason: action === "resolve" ? "resolved in course pipeline inspector" : "dismissed in course pipeline inspector",
+      });
+      const nextReview = await studyPipelineRequest<PipelineReviewResponse>(courseId, "/review");
+      setReview(nextReview);
+    } catch (moderationError) {
+      setError(formatStudyPipelineError(moderationError));
+    } finally {
+      setModeratingId(null);
+    }
+  }
+
+  async function moderateProposal(proposalId: string, action: "promote" | "dismiss") {
+    const actionId = `proposal:${action}:${proposalId}`;
+    setModeratingId(actionId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/proposals/${encodeURIComponent(proposalId)}/${action}`, {
+        reason: action === "promote" ? "promoted in course pipeline inspector" : "dismissed in course pipeline inspector",
+      });
+      const nextReview = await studyPipelineRequest<PipelineReviewResponse>(courseId, "/review");
+      setReview(nextReview);
+    } catch (moderationError) {
+      setError(formatStudyPipelineError(moderationError));
+    } finally {
+      setModeratingId(null);
     }
   }
 
@@ -267,7 +359,10 @@ export function CoursePipelineInspector({
           ) : activeTab === "runs" ? (
             <RunsTab
               loading={loading}
+              onPublishRun={(runId) => void publishRun(runId)}
               onSelectRun={(runId) => void selectActiveRun(runId)}
+              onUnpublishRun={(runId) => void unpublishRun(runId)}
+              publishingRunId={publishingRunId}
               runs={runs}
               selectingRunId={selectingRunId}
               status={status}
@@ -286,6 +381,9 @@ export function CoursePipelineInspector({
           ) : (
             <ReviewTab
               inventory={inventory}
+              moderatingId={moderatingId}
+              onModerateFeedback={(feedbackId, action) => void moderateFeedback(feedbackId, action)}
+              onModerateProposal={(proposalId, action) => void moderateProposal(proposalId, action)}
               onSubmitProposal={(proposalId) => void submitProposal(proposalId)}
               review={review}
               submittingProposalId={submittingProposalId}
@@ -432,14 +530,20 @@ function BucketsTab({
 
 function RunsTab({
   loading,
+  onPublishRun,
   onSelectRun,
+  onUnpublishRun,
+  publishingRunId,
   runs,
   selectingRunId,
   status,
   unavailableReason,
 }: {
   loading: boolean;
+  onPublishRun: (runId: string) => void;
   onSelectRun: (runId: string) => void;
+  onUnpublishRun: (runId: string) => void;
+  publishingRunId: string | null;
   runs: PipelineRunsResponse | null;
   selectingRunId: string | null;
   status: StudyPipelineStatusResponse | null;
@@ -478,6 +582,8 @@ function RunsTab({
       <div className="grid gap-2">
         {runs.runs.map((run) => {
           const active = activeRunIds.has(run.id);
+          const publishActionId = active ? `unpublish:${run.id}` : `publish:${run.id}`;
+          const publishing = publishingRunId === publishActionId;
           return (
             <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={run.id}>
               <div className="min-w-0">
@@ -495,7 +601,28 @@ function RunsTab({
                 {run.error ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-destructive">{run.error}</p> : null}
                 <p className="mt-2 truncate text-[11px] text-muted-foreground/80">{run.id}</p>
               </div>
-              <div className="flex items-center gap-2 md:justify-end">
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                {active ? (
+                  <Button
+                    disabled={publishing}
+                    onClick={() => onUnpublishRun(run.id)}
+                    type="button"
+                    variant="destructive"
+                  >
+                    {publishing ? <Spinner aria-hidden /> : <RotateCcw aria-hidden />}
+                    Unpublish
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={publishing || run.status === "failed"}
+                    onClick={() => onPublishRun(run.id)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {publishing ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
+                    Publish
+                  </Button>
+                )}
                 <Button
                   disabled={active || selectingRunId === run.id}
                   onClick={() => onSelectRun(run.id)}
@@ -516,12 +643,18 @@ function RunsTab({
 
 function ReviewTab({
   inventory,
+  moderatingId,
+  onModerateFeedback,
+  onModerateProposal,
   onSubmitProposal,
   review,
   submittingProposalId,
   unavailableReason,
 }: {
   inventory: CourseInventoryResponse | null;
+  moderatingId: string | null;
+  onModerateFeedback: (feedbackId: string, action: "resolve" | "dismiss") => void;
+  onModerateProposal: (proposalId: string, action: "promote" | "dismiss") => void;
   onSubmitProposal: (proposalId: string) => void;
   review: PipelineReviewResponse | null;
   submittingProposalId: string | null;
@@ -544,6 +677,7 @@ function ReviewTab({
 
   const feedback = review?.feedback ?? [];
   const proposals = review?.proposals ?? [];
+  const audit = review?.audit ?? [];
 
   if (unavailableReason && reviewItems.length === 0) {
     return (
@@ -555,7 +689,7 @@ function ReviewTab({
     );
   }
 
-  if (reviewItems.length === 0 && feedback.length === 0 && proposals.length === 0) {
+  if (reviewItems.length === 0 && feedback.length === 0 && proposals.length === 0 && audit.length === 0) {
     return (
       <EmptyInspectorState
         icon={CheckCircle2}
@@ -570,9 +704,12 @@ function ReviewTab({
       {feedback.length > 0 ? (
         <section className="grid gap-2">
           <ReviewSectionTitle icon={MessageSquareWarning} title="User feedback" />
-          {feedback.map((item) => (
-            <div className="rounded-3xl bg-secondary/45 px-4 py-3" key={item.id}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          {feedback.map((item) => {
+            const canModerate = item.status !== "resolved" && item.status !== "dismissed";
+            const resolving = moderatingId === `feedback:resolve:${item.id}`;
+            const dismissing = moderatingId === `feedback:dismiss:${item.id}`;
+            return (
+              <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={item.id}>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-foreground">
                     {feedbackTypeLabel(item.feedbackType)} · {item.targetKind} {item.targetId}
@@ -582,18 +719,50 @@ function ReviewTab({
                   </p>
                   <p className="mt-2 text-[11px] text-muted-foreground/80">{formatDateTime(item.createdAt)}</p>
                 </div>
-                <Badge variant={item.status === "open" ? "destructive" : "secondary"}>{item.status}</Badge>
+                <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                  <Badge variant={item.status === "open" ? "destructive" : "secondary"}>{item.status}</Badge>
+                  {canModerate ? (
+                    <>
+                      <Button
+                        disabled={resolving || dismissing}
+                        onClick={() => onModerateFeedback(item.id, "resolve")}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {resolving ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
+                        Resolve
+                      </Button>
+                      <Button
+                        disabled={resolving || dismissing}
+                        onClick={() => onModerateFeedback(item.id, "dismiss")}
+                        size="sm"
+                        type="button"
+                        variant="destructive"
+                      >
+                        {dismissing ? <Spinner aria-hidden /> : <AlertCircle aria-hidden />}
+                        Dismiss
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       ) : null}
 
       {proposals.length > 0 ? (
         <section className="grid gap-2">
           <ReviewSectionTitle icon={Sparkles} title="Codex proposals" />
-          {proposals.map((proposal) => (
-            <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={proposal.id}>
+          {proposals.map((proposal) => {
+            const submitting = submittingProposalId === proposal.id;
+            const promoting = moderatingId === `proposal:promote:${proposal.id}`;
+            const dismissing = moderatingId === `proposal:dismiss:${proposal.id}`;
+            const canPromote = proposal.status === "submitted_for_review";
+            const canDismiss = proposal.status !== "promoted" && proposal.status !== "dismissed";
+            return (
+              <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={proposal.id}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate text-sm font-semibold text-foreground">{proposal.title}</p>
@@ -611,21 +780,47 @@ function ReviewTab({
                   <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">{proposal.contentPreview}</p>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2 md:justify-end">
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
                 {proposal.status === "private" ? (
                   <Button
-                    disabled={submittingProposalId === proposal.id}
+                    disabled={submitting || promoting || dismissing}
                     onClick={() => onSubmitProposal(proposal.id)}
+                    size="sm"
                     type="button"
                     variant="secondary"
                   >
-                    {submittingProposalId === proposal.id ? <Spinner aria-hidden /> : <Send aria-hidden />}
+                    {submitting ? <Spinner aria-hidden /> : <Send aria-hidden />}
                     Zur Review
+                  </Button>
+                ) : null}
+                {canPromote ? (
+                  <Button
+                    disabled={promoting || dismissing}
+                    onClick={() => onModerateProposal(proposal.id, "promote")}
+                    size="sm"
+                    type="button"
+                    variant="secondary"
+                  >
+                    {promoting ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden />}
+                    Promote
+                  </Button>
+                ) : null}
+                {canDismiss ? (
+                  <Button
+                    disabled={submitting || promoting || dismissing}
+                    onClick={() => onModerateProposal(proposal.id, "dismiss")}
+                    size="sm"
+                    type="button"
+                    variant="destructive"
+                  >
+                    {dismissing ? <Spinner aria-hidden /> : <AlertCircle aria-hidden />}
+                    Dismiss
                   </Button>
                 ) : null}
               </div>
             </div>
-          ))}
+            );
+          })}
         </section>
       ) : null}
 
@@ -643,6 +838,33 @@ function ReviewTab({
               </div>
             </div>
           ))}
+        </section>
+      ) : null}
+
+      {audit.length > 0 ? (
+        <section className="grid gap-2">
+          <ReviewSectionTitle icon={GitBranch} title="Audit trail" />
+          <div className="grid gap-2">
+            {audit.slice(0, 20).map((event) => (
+              <div className="grid gap-2 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={event.id}>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{auditActionLabel(event.action)}</p>
+                    <Badge variant="outline">{event.targetKind}</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {event.targetId}
+                    {event.sourceRunId ? ` · run ${shortId(event.sourceRunId)}` : ""}
+                    {event.sourceArtifactId ? ` · ${event.sourceArtifactId}` : ""}
+                  </p>
+                  {event.message ? (
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{event.message}</p>
+                  ) : null}
+                </div>
+                <p className="text-xs text-muted-foreground md:text-right">{formatDateTime(event.createdAt)}</p>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
     </div>
@@ -673,6 +895,29 @@ function feedbackTypeLabel(type: string): string {
     default:
       return "Other";
   }
+}
+
+function auditActionLabel(action: string): string {
+  switch (action) {
+    case "run.published":
+      return "Run published";
+    case "run.unpublished":
+      return "Run unpublished";
+    case "proposal.promoted":
+      return "Proposal promoted";
+    case "proposal.dismissed":
+      return "Proposal dismissed";
+    case "feedback.resolved":
+      return "Feedback resolved";
+    case "feedback.dismissed":
+      return "Feedback dismissed";
+    default:
+      return action || "Audit event";
+  }
+}
+
+function shortId(value: string): string {
+  return value.length > 8 ? value.slice(0, 8) : value;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
