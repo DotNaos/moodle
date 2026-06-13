@@ -168,6 +168,8 @@ type CoursePipelineBlueprintModelInput = {
   taskView: TaskViewResponse | null;
   unavailable?: {
     extractedDocuments?: string;
+    inventory?: string;
+    runs?: string;
     taskView?: string;
   };
 };
@@ -226,7 +228,7 @@ export function buildBlueprintGraph({
       evidence: [
         "Initial input: Moodle course id",
         `${totalResources} Moodle resources reported`,
-        runs ? `${runs.runs.length} immutable runs loaded` : "Run history missing",
+        runs ? `${runs.runs.length} immutable runs loaded` : `Run history missing${unavailable?.runs ? `: ${unavailable.runs}` : ""}`,
         extractedDocuments ? `${extractedDocuments.summary.totalDocuments} extracted documents loaded` : `Extracted documents missing${unavailable?.extractedDocuments ? `: ${unavailable.extractedDocuments}` : ""}`,
         taskView ? `${outputLookup.totalTasks} task outputs and ${outputLookup.totalScriptSections} script sections loaded` : `Task view missing${unavailable?.taskView ? `: ${unavailable.taskView}` : ""}`,
       ],
@@ -244,6 +246,7 @@ export function buildBlueprintGraph({
         { label: "Extracted docs", value: extractedDocuments ? String(extractedDocuments.summary.totalDocuments) : "missing" },
         { label: "Outputs", value: taskView ? String(outputLookup.totalOutputs) : "missing" },
       ],
+      problems: buildRootProblems({ extractedDocuments, runs, taskView, unavailable }),
     },
   });
 
@@ -259,9 +262,11 @@ export function buildBlueprintGraph({
             `${derivedInventory.summary.taskGroups} task groups`,
             `${derivedInventory.summary.lectureMaterial} lecture resources`,
             `${derivedInventory.summary.unknown} unknown resources`,
-            usingDerivedInventory ? "Inventory endpoint unavailable; graph derived from pipeline status materials." : "Inventory endpoint available.",
+            usingDerivedInventory
+              ? `Inventory endpoint unavailable; graph derived from pipeline status materials${unavailable?.inventory ? ` (${unavailable.inventory})` : ""}.`
+              : "Inventory endpoint available.",
           ]
-        : ["Inventory response is missing"],
+        : [`Inventory response is missing${unavailable?.inventory ? `: ${unavailable.inventory}` : ""}`],
       inputs: [{ label: "course source", detail: "Moodle course resources" }],
       outputPreview: inventory
         ? `Task groups: ${inventory.summary.taskGroups}\nLecture resources: ${inventory.summary.lectureMaterial}\nUnknown: ${inventory.summary.unknown}`
@@ -275,9 +280,17 @@ export function buildBlueprintGraph({
       ],
       problems: inventory || derivedInventory
         ? usingDerivedInventory
-          ? [{ label: "Inventory endpoint missing", detail: "The graph is using pipeline status materials as a fallback.", severity: "warning" }]
+          ? [{
+              label: "Inventory endpoint missing",
+              detail: unavailable?.inventory ?? "The graph is using pipeline status materials as a fallback.",
+              severity: "warning",
+            }]
           : undefined
-        : [{ label: "Inventory missing", detail: "The resource classification response is not available.", severity: "warning" }],
+        : [{
+            label: "Inventory missing",
+            detail: unavailable?.inventory ?? "The resource classification response is not available.",
+            severity: "warning",
+          }],
       stepKind: "split",
       tone: "process",
       status: inventory ? "loaded" : derivedInventory ? "derived" : "missing",
@@ -577,6 +590,41 @@ function buildOutputLookup(taskView: TaskViewResponse | null): OutputLookup {
   };
 }
 
+function buildRootProblems({
+  extractedDocuments,
+  runs,
+  taskView,
+  unavailable,
+}: {
+  extractedDocuments: ExtractedDocumentsResponse | null;
+  runs: PipelineRunsResponse | null;
+  taskView: TaskViewResponse | null;
+  unavailable?: CoursePipelineBlueprintModelInput["unavailable"];
+}): BlueprintProblem[] | undefined {
+  const problems: BlueprintProblem[] = [];
+  if (!runs) {
+    problems.push({
+      detail: unavailable?.runs ?? "Run history is not available, so active extraction choices cannot be compared.",
+      label: "Run history missing",
+      severity: "warning",
+    });
+  }
+  if (!extractedDocuments) {
+    problems.push({
+      detail: unavailable?.extractedDocuments ?? "Extracted document structure is not available for inspection.",
+      label: "Extraction output missing",
+      severity: "warning",
+    });
+  }
+  if (!taskView) {
+    problems.push({
+      detail: unavailable?.taskView ?? "Final task and script outputs are not available for website preview.",
+      label: "Website output missing",
+      severity: "warning",
+    });
+  }
+  return problems.length > 0 ? problems : undefined;
+}
 export function resourceKeys(resourceId: string | undefined): string[] {
   if (!resourceId) return [];
   const trimmed = resourceId.trim();

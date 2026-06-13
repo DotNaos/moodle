@@ -21,7 +21,6 @@ import {
   GitBranch,
   ImageOff,
   Layers,
-  Play,
   RotateCw,
   Search,
   type LucideIcon,
@@ -76,6 +75,8 @@ type CoursePipelineBlueprintProps = {
   selectingRunId?: string | null;
   unavailable?: {
     extractedDocuments?: string;
+    inventory?: string;
+    runs?: string;
     taskView?: string;
   };
 };
@@ -118,8 +119,8 @@ export function CoursePipelineBlueprint({
   );
 
   return (
-    <div className="grid min-h-[720px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="relative h-[640px] overflow-hidden rounded-3xl bg-secondary/45">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="relative h-[calc(100dvh-10.5rem)] min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
           <LegendPill kind="transform" label="1 -> 1 Transform" />
           <LegendPill kind="split" label="1 -> N Split" />
@@ -145,7 +146,7 @@ export function CoursePipelineBlueprint({
         </ReactFlow>
       </div>
 
-      <aside className="min-h-[640px] rounded-3xl bg-secondary/45 px-4 py-4">
+      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4 lg:h-[calc(100dvh-10.5rem)] lg:overflow-auto">
         {selectedNode ? (
           <NodeInspector
             node={selectedNode}
@@ -185,8 +186,12 @@ function NodeInspector({
   const problems = data.problems ?? [];
   const lossProblems = problems.filter((problem) => problem.label.toLowerCase().includes("image"));
   const lossEvidence = (data.evidence ?? []).filter((item) => /image|asset/i.test(item));
-  const actions = inspectorActions(data);
   const extractionVariants = data.extractionVariants ?? [];
+  const config = data.config ?? [];
+  const evidence = data.evidence ?? [];
+  const artifacts = data.artifacts ?? [];
+  const metadata = data.meta ?? [];
+  const showExtractionActions = data.title === "Extraction Variants" && onRerunExtraction;
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -244,8 +249,8 @@ function NodeInspector({
         </InspectorSection>
       ) : null}
 
-      <InspectorSection icon={AlertCircle} title="Problems" tone={problems.length > 0 ? "warning" : "default"}>
-        {problems.length > 0 ? (
+      {problems.length > 0 ? (
+        <InspectorSection icon={AlertCircle} title="Problems" tone="warning">
           <div className="grid gap-2">
             {problems.map((problem) => (
               <div className="rounded-2xl bg-background/80 px-3 py-2" key={`${problem.label}:${problem.detail}`}>
@@ -254,53 +259,42 @@ function NodeInspector({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">No problems recorded for this node.</p>
-        )}
-      </InspectorSection>
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={ClipboardList} title="Config">
-        <KeyValuePanel items={data.config ?? []} emptyText="No engine or model config is attached to this node." />
-      </InspectorSection>
+      {showExtractionActions ? (
+        <InspectorSection icon={RotateCw} title="Run extraction">
+          <ExtractionActionButtons
+            onRerunExtraction={onRerunExtraction}
+            rerunningEngine={rerunningEngine}
+            variants={extractionVariants}
+          />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Search} title="Evidence">
-        <StringList items={data.evidence ?? []} emptyText="No extra evidence was recorded." />
-      </InspectorSection>
+      {evidence.length > 0 ? (
+        <InspectorSection icon={Search} title="Evidence">
+          <StringList items={evidence} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={FileText} title="Artifacts">
-        <StringList items={data.artifacts ?? []} emptyText="No artifacts are attached to this node." />
-      </InspectorSection>
+      {artifacts.length > 0 ? (
+        <InspectorSection icon={FileText} title="Artifacts">
+          <StringList items={artifacts} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Database} title="Metadata">
-        <KeyValuePanel items={data.meta} emptyText="No metadata is attached to this node." />
-      </InspectorSection>
+      {config.length > 0 ? (
+        <InspectorSection icon={ClipboardList} title="Config">
+          <KeyValuePanel items={config} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Play} title="Actions">
-        <div className="grid gap-2">
-          {data.title === "Extraction Variants" && onRerunExtraction ? (
-            <ExtractionActionButtons
-              onRerunExtraction={onRerunExtraction}
-              rerunningEngine={rerunningEngine}
-              variants={extractionVariants}
-            />
-          ) : (
-            <>
-              {actions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Button className="h-9 justify-start rounded-full" disabled key={action.label} type="button" variant="secondary">
-                    <Icon aria-hidden className="size-4" />
-                    {action.label}
-                  </Button>
-                );
-              })}
-              <p className="text-xs leading-5 text-muted-foreground">
-                Actions are shown here so the workflow is visible; backend execution buttons will be wired in a later goal.
-              </p>
-            </>
-          )}
-        </div>
-      </InspectorSection>
+      {metadata.length > 0 ? (
+        <InspectorSection icon={Database} title="Metadata">
+          <KeyValuePanel items={metadata} />
+        </InspectorSection>
+      ) : null}
     </div>
   );
 }
@@ -567,10 +561,7 @@ function PortPanel({ items, title }: { items: BlueprintPort[]; title: string }) 
   );
 }
 
-function KeyValuePanel({ emptyText, items }: { emptyText: string; items: Array<{ label: string; value: string }> }) {
-  if (items.length === 0) {
-    return <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>;
-  }
+function KeyValuePanel({ items }: { items: Array<{ label: string; value: string }> }) {
   return (
     <div className="grid gap-2">
       {items.map((item) => (
@@ -583,10 +574,7 @@ function KeyValuePanel({ emptyText, items }: { emptyText: string; items: Array<{
   );
 }
 
-function StringList({ emptyText, items }: { emptyText: string; items: string[] }) {
-  if (items.length === 0) {
-    return <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>;
-  }
+function StringList({ items }: { items: string[] }) {
   return (
     <div className="grid gap-2">
       {items.map((item) => (
@@ -596,33 +584,6 @@ function StringList({ emptyText, items }: { emptyText: string; items: string[] }
       ))}
     </div>
   );
-}
-
-function inspectorActions(data: BlueprintNode["data"]) {
-  if (data.title === "Extraction Variants") {
-    return [
-      { icon: RotateCw, label: "Run another extraction" },
-      { icon: Search, label: "Compare variants" },
-      { icon: CheckCircle2, label: "Set active result" },
-    ];
-  }
-  if (data.title === "Codex Transform") {
-    return [
-      { icon: RotateCw, label: "Rerun Codex" },
-      { icon: Search, label: "Compare draft" },
-      { icon: CheckCircle2, label: "Validate output" },
-    ];
-  }
-  if (data.tone === "output" || data.subtitle.includes("website")) {
-    return [
-      { icon: Eye, label: "Open rendered output" },
-      { icon: CheckCircle2, label: "Validate output" },
-    ];
-  }
-  return [
-    { icon: Search, label: "Inspect source" },
-    { icon: RotateCw, label: "Rerun step" },
-  ];
 }
 
 function variantStatusBadge(status: BlueprintExtractionVariant["status"]): "default" | "destructive" | "outline" | "secondary" {
