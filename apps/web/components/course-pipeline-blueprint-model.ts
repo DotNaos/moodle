@@ -354,7 +354,7 @@ export function buildBlueprintGraph({
         meta: [{ label: "Hidden groups", value: String(hiddenCount) }],
       },
     });
-    addEdge(edges, "resource-set", "task-groups-more", "more", { muted: true });
+    addEdge(edges, "resource-set", "task-groups-more", "more", { muted: true, sourceHandle: "out-0", targetHandle: "in-2" });
   }
 
   if (visibleScriptResources.length > 0) {
@@ -434,7 +434,7 @@ function addEdge(
   source: string,
   target: string,
   label: string,
-  options?: { edgeType?: Edge["type"]; muted?: boolean },
+  options?: { edgeType?: Edge["type"]; muted?: boolean; sourceHandle?: string; targetHandle?: string },
 ) {
   const color = options?.muted ? "#a3a3a3" : label === "failed" ? "#dc2626" : "#525252";
   edges.push({
@@ -444,12 +444,14 @@ function addEdge(
     labelStyle: { fill: options?.muted ? "#737373" : "#404040", fontSize: 11, fontWeight: 600 },
     markerEnd: { color, type: MarkerType.ArrowClosed },
     source,
+    sourceHandle: options?.sourceHandle,
     style: {
       stroke: color,
       strokeDasharray: options?.muted ? "4 6" : undefined,
       strokeWidth: options?.muted ? 1.5 : 2.25,
     },
     target,
+    targetHandle: options?.targetHandle,
     type: options?.edgeType ?? "smoothstep",
   });
 }

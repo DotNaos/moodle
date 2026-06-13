@@ -437,7 +437,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   return (
     <div
       className={cn(
-        "relative h-[286px] w-[320px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
+        "relative h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
         liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
@@ -454,38 +454,40 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <NodeLiveIndicator live={data.live} />
-      <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
       <BorderPorts direction="input" items={data.inputs} />
       <BorderPorts direction="output" items={data.outputs} />
-      <div className="flex items-start gap-3">
-        <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
-          <Icon aria-hidden className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
-          <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
+      <div className="relative z-10 h-full overflow-hidden rounded-3xl px-4 py-3">
+        <NodeLiveIndicator live={data.live} />
+        <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
+        <div className="flex items-start gap-3">
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
+            <Icon aria-hidden className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
+            <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
+          </div>
         </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
-          {stepKindLabel(data.stepKind)}
-        </span>
-        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
-      </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
+            {stepKindLabel(data.stepKind)}
+          </span>
+          <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
+        </div>
 
-      <div className="mt-4 min-h-[96px] rounded-2xl bg-secondary/45 px-3 py-2">
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
-          {data.problems?.length ? (
-            <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
-              {data.problems.length}
-            </span>
-          ) : null}
+        <div className="mt-4 min-h-[96px] rounded-2xl bg-secondary/45 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
+            {data.problems?.length ? (
+              <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                {data.problems.length}
+              </span>
+            ) : null}
+          </div>
+          <p className="line-clamp-3 whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
+            {preview || "No preview stored yet."}
+          </p>
         </div>
-        <p className="line-clamp-3 whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
-          {preview || "No preview stored yet."}
-        </p>
       </div>
     </div>
   );
@@ -502,40 +504,41 @@ const CHANNEL_SLOTS_BY_COUNT: Record<number, number[]> = {
 };
 
 function BorderPorts({ direction, items }: { direction: "input" | "output"; items: BlueprintPort[] }) {
-  const slotPorts = portsBySlot(items);
+  const slotPorts = Array.from(portsBySlot(items).entries()).sort(([left], [right]) => left - right);
   return (
     <>
-      {HANDLE_POSITIONS.map((top, index) => {
-        const port = slotPorts.get(index);
+      {slotPorts.map(([index, port]) => {
+        const top = HANDLE_POSITIONS[index] ?? HANDLE_POSITIONS[2];
         return (
           <div
             className={cn(
-              "pointer-events-none absolute z-20 flex max-w-[8.75rem] items-center gap-1.5",
-              direction === "input" ? "left-0 -translate-x-1/2 pl-0" : "right-0 translate-x-1/2 flex-row-reverse pr-0",
+              "pointer-events-none absolute z-30 flex h-6 w-[9.75rem] items-center",
+              direction === "input" ? "left-0 pl-3" : "right-0 justify-end pr-3",
             )}
             key={`${direction}-${index}`}
             style={{ top: `${top}%` }}
           >
             <Handle
               className={cn(
-                "pointer-events-auto !static !size-3 !translate-x-0 !translate-y-0 !rounded-full !border-2 !border-background",
-                port ? portColorClass(port) : "!bg-muted-foreground/25",
+                "pointer-events-auto !absolute !top-1/2 !size-3 !rounded-full !border-2 !border-background shadow-sm shadow-black/20",
+                portColorClass(port),
               )}
               id={`${direction === "input" ? "in" : "out"}-${index}`}
               position={direction === "input" ? Position.Left : Position.Right}
+              style={direction === "input"
+                ? { left: 0, transform: "translate(-50%, -50%)" }
+                : { right: 0, transform: "translate(50%, -50%)" }}
               type={direction === "input" ? "target" : "source"}
             />
-            {port ? (
-              <span
-                className={cn(
-                  "truncate rounded-full bg-background/95 px-2 py-0.5 text-[10px] font-semibold text-foreground/75 shadow-sm shadow-black/10",
-                  direction === "output" ? "text-right" : "",
-                )}
-                title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
-              >
-                {port.label}
-              </span>
-            ) : null}
+            <span
+              className={cn(
+                "block max-w-[7.75rem] truncate rounded-full bg-background/95 px-2 py-0.5 text-[10px] font-semibold leading-4 text-foreground/75 shadow-sm shadow-black/10",
+                direction === "output" ? "mr-1 text-right" : "ml-1",
+              )}
+              title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
+            >
+              {port.label}
+            </span>
           </div>
         );
       })}
@@ -565,35 +568,63 @@ function nodeBodyPreview(rawPreview: string | undefined): string {
 
 function portColorClass(port: BlueprintPort): string {
   const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
-  if (/missing|failed|problem|review/.test(value)) return "bg-destructive";
-  if (/published|website|output|ready|script section|task draft|task/.test(value)) return "bg-emerald-500";
-  if (/extract|ocr|active extraction/.test(value)) return "bg-blue-500";
-  if (/section|block/.test(value)) return "bg-violet-500";
-  if (/page/.test(value)) return "bg-sky-500";
-  if (/pdf|file|resource|course/.test(value)) return "bg-amber-500";
-  return "bg-muted-foreground";
+  if (/missing|failed|problem|review/.test(value)) return "!bg-destructive";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "!bg-emerald-500";
+  if (/extract|ocr|active extraction/.test(value)) return "!bg-blue-500";
+  if (/script|section|block/.test(value)) return "!bg-violet-500";
+  if (/page/.test(value)) return "!bg-sky-500";
+  if (/pdf|file|resource|course/.test(value)) return "!bg-amber-500";
+  return "!bg-muted-foreground";
 }
 
 function portColorHex(port: BlueprintPort | null | undefined): string {
   if (!port) return "#737373";
   const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
   if (/missing|failed|problem|review/.test(value)) return "#dc2626";
-  if (/published|website|output|ready|script section|task draft|task/.test(value)) return "#10b981";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "#10b981";
   if (/extract|ocr|active extraction/.test(value)) return "#3b82f6";
-  if (/section|block/.test(value)) return "#8b5cf6";
+  if (/script|section|block/.test(value)) return "#8b5cf6";
   if (/page/.test(value)) return "#0ea5e9";
   if (/pdf|file|resource|course/.test(value)) return "#f59e0b";
   return "#737373";
 }
 
-function edgeColor(edge: Pick<Edge, "source" | "sourceHandle">, nodeById: Map<string, BlueprintGraphNode>): string {
+function edgeColor(edge: Pick<Edge, "label" | "source" | "sourceHandle">, nodeById: Map<string, BlueprintGraphNode>): string {
   const source = nodeById.get(edge.source);
   if (source?.type !== "blueprint") return "#737373";
+  const semanticPort = source.data.outputs.find((port) => portMatchesEdgeLabel(port, edge.label));
+  if (semanticPort) return portColorHex(semanticPort);
   const slot = Number(edge.sourceHandle?.replace("out-", ""));
   if (Number.isFinite(slot)) {
-    return portColorHex(portsBySlot(source.data.outputs).get(slot));
+    return portColorHex(portForSlot(source.data.outputs, slot));
   }
   return portColorHex(source.data.outputs[0]);
+}
+
+function portForSlot(items: BlueprintPort[], slot: number): BlueprintPort | undefined {
+  const slotPorts = portsBySlot(items);
+  const exact = slotPorts.get(slot);
+  if (exact) return exact;
+  let nearest: { distance: number; port: BlueprintPort } | null = null;
+  for (const [candidateSlot, port] of slotPorts.entries()) {
+    const distance = Math.abs(candidateSlot - slot);
+    if (!nearest || distance < nearest.distance) nearest = { distance, port };
+  }
+  return nearest?.port ?? items[0];
+}
+
+function portMatchesEdgeLabel(port: BlueprintPort, label: Edge["label"]): boolean {
+  if (typeof label !== "string") return false;
+  const edgeLabel = label.toLowerCase();
+  const portLabel = port.label.toLowerCase();
+  if (edgeLabel.includes("task") && portLabel.includes("task")) return true;
+  if (edgeLabel.includes("script") && portLabel.includes("script")) return true;
+  if (edgeLabel.includes("review") && portLabel.includes("review")) return true;
+  if (edgeLabel.includes("sheet") && portLabel.includes("sheet")) return true;
+  if (edgeLabel.includes("solution") && portLabel.includes("solution")) return true;
+  if (edgeLabel.includes("pdf") && portLabel.includes("pdf")) return true;
+  if (edgeLabel.includes("publish") && /output|task|script/.test(portLabel)) return true;
+  return false;
 }
 
 function BlueprintGroupFrame({ data }: NodeProps<Extract<BlueprintGraphNode, { type: "frame" }>>) {

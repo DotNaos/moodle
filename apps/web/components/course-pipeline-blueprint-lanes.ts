@@ -110,7 +110,7 @@ export function addTaskGroupLane({
     },
   });
   addEdge(edges, "resource-set", groupId, "task group", {
-    sourceHandle: laneHandle(index),
+    sourceHandle: "out-0",
     targetHandle: "in-2",
   });
 
@@ -282,7 +282,7 @@ export function addScriptLane({
     },
   });
   addEdge(edges, "resource-set", baseId, "script group", {
-    sourceHandle: laneHandle(index + 3),
+    sourceHandle: "out-2",
     targetHandle: "in-2",
   });
 
@@ -522,7 +522,7 @@ export function addReviewLane({
   });
   addEdge(edges, "resource-set", "review-collector", "review", {
     muted: true,
-    sourceHandle: "out-5",
+    sourceHandle: "out-4",
     targetHandle: "in-2",
   });
 }
@@ -692,10 +692,6 @@ function addEdge(
     targetHandle: options?.targetHandle,
     type: options?.edgeType ?? "smoothstep",
   });
-}
-
-function laneHandle(index: number): string {
-  return `out-${Math.max(0, Math.min(5, index))}`;
 }
 
 const PIPELINE_X = {
