@@ -444,7 +444,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   return (
     <div
       className={cn(
-        "relative h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
+        "relative min-h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
         liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
@@ -461,8 +461,6 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <BorderPorts direction="input" items={data.inputs} />
-      <BorderPorts direction="output" items={data.outputs} />
       <div className="relative z-10 h-full overflow-hidden rounded-3xl px-4 py-3">
         <NodeLiveIndicator live={data.live} />
         <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
@@ -481,8 +479,9 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
           </span>
           <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
         </div>
+        <ChannelRows inputs={data.inputs} outputs={data.outputs} />
 
-        <div className="mt-4 min-h-[96px] rounded-2xl bg-secondary/45 px-3 py-2">
+        <div className="mt-3 min-h-[96px] rounded-2xl bg-secondary/45 px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
             {data.problems?.length ? (
@@ -532,43 +531,62 @@ const CHANNEL_SLOTS_BY_COUNT: Record<number, number[]> = {
   6: [0, 1, 2, 3, 4, 5],
 };
 
-function BorderPorts({ direction, items }: { direction: "input" | "output"; items: BlueprintPort[] }) {
-  const slotPorts = Array.from(portsBySlot(items).entries()).sort(([left], [right]) => left - right);
+function ChannelRows({ inputs, outputs }: { inputs: BlueprintPort[]; outputs: BlueprintPort[] }) {
+  const inputPorts = Array.from(portsBySlot(inputs).entries()).sort(([left], [right]) => left - right);
+  const outputPorts = Array.from(portsBySlot(outputs).entries()).sort(([left], [right]) => left - right);
+  const rowCount = Math.max(inputPorts.length, outputPorts.length);
+  if (rowCount === 0) return null;
+
   return (
-    <>
-      {slotPorts.map(([index, port]) => {
-        const top = HANDLE_POSITIONS[index] ?? HANDLE_POSITIONS[2];
+    <div className="-mx-4 mt-3 border-y border-foreground/[0.04] bg-secondary/20 py-1">
+      {Array.from({ length: rowCount }, (_, rowIndex) => {
+        const input = inputPorts[rowIndex];
+        const output = outputPorts[rowIndex];
         return (
           <div
-            className="pointer-events-none absolute inset-x-0 z-30 h-6"
-            key={`${direction}-${index}`}
-            style={{ top: `${top}%` }}
+            className="relative grid min-h-6 grid-cols-2 items-center gap-2 px-4 text-[10px] font-semibold leading-4 text-foreground/70"
+            key={`channel-row-${rowIndex}`}
           >
-            <Handle
-              className={cn(
-                "pointer-events-auto !absolute !top-1/2 !size-3 !rounded-full !border-2 !border-background shadow-sm shadow-black/20",
-                portColorClass(port),
-              )}
-              id={`${direction === "input" ? "in" : "out"}-${index}`}
-              position={direction === "input" ? Position.Left : Position.Right}
-              style={direction === "input"
-                ? { left: 0, transform: "translate(-50%, -50%)" }
-                : { right: 0, transform: "translate(50%, -50%)" }}
-              type={direction === "input" ? "target" : "source"}
-            />
-            <span
-              className={cn(
-                "absolute top-1/2 block max-w-[8.25rem] -translate-y-1/2 truncate rounded-full bg-background/95 px-2 py-0.5 text-[10px] font-semibold leading-4 text-foreground/75 shadow-sm shadow-black/10",
-                direction === "input" ? "right-[calc(100%+0.5rem)] text-right" : "left-[calc(100%+0.5rem)]",
-              )}
-              title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
-            >
-              {port.label}
-            </span>
+            {input ? <ChannelLabel direction="input" port={input[1]} slot={input[0]} /> : <span aria-hidden />}
+            {output ? <ChannelLabel direction="output" port={output[1]} slot={output[0]} /> : <span aria-hidden />}
           </div>
         );
       })}
-    </>
+    </div>
+  );
+}
+
+function ChannelLabel({
+  direction,
+  port,
+  slot,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+  slot: number;
+}) {
+  return (
+    <span
+      className={cn(
+        "relative min-w-0 truncate rounded-full px-2 py-0.5",
+        direction === "output" ? "justify-self-end text-right" : "justify-self-start",
+      )}
+      title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
+    >
+      <Handle
+        className={cn(
+          "pointer-events-auto !absolute !top-1/2 !size-3 !rounded-full !border-2 !border-background shadow-sm shadow-black/20",
+          portColorClass(port),
+        )}
+        id={`${direction === "input" ? "in" : "out"}-${slot}`}
+        position={direction === "input" ? Position.Left : Position.Right}
+        style={direction === "input"
+          ? { left: -16, transform: "translate(-50%, -50%)" }
+          : { right: -16, transform: "translate(50%, -50%)" }}
+        type={direction === "input" ? "target" : "source"}
+      />
+      {port.label}
+    </span>
   );
 }
 
