@@ -19,6 +19,7 @@ import {
   FileText,
   GitCompareArrows,
   GitBranch,
+  ImageOff,
   Layers,
   Play,
   RotateCw,
@@ -58,6 +59,7 @@ import {
 } from "@/components/course-pipeline-live-ui";
 import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course-pipeline-trace";
 import { SourceTracePanel } from "@/components/course-pipeline-trace-panel";
+import { LossTracePanel } from "@/components/course-pipeline-loss-panel";
 
 export { buildBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
@@ -181,6 +183,8 @@ function NodeInspector({
 }) {
   const data = node.data;
   const problems = data.problems ?? [];
+  const lossProblems = problems.filter((problem) => problem.label.toLowerCase().includes("image"));
+  const lossEvidence = (data.evidence ?? []).filter((item) => /image|asset/i.test(item));
   const actions = inspectorActions(data);
   const extractionVariants = data.extractionVariants ?? [];
   return (
@@ -213,6 +217,12 @@ function NodeInspector({
       <InspectorSection icon={GitBranch} title="Source trace">
         <SourceTracePanel onSelectNode={onSelectTraceNode} steps={trace} />
       </InspectorSection>
+
+      {lossProblems.length > 0 ? (
+        <InspectorSection icon={ImageOff} title="Loss trace" tone="warning">
+          <LossTracePanel evidence={lossEvidence} problems={lossProblems} />
+        </InspectorSection>
+      ) : null}
 
       {data.live ? (
         <InspectorSection icon={Activity} title="Live state" tone={data.live.status === "failed" ? "warning" : "default"}>

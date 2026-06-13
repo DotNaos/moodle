@@ -1,16 +1,20 @@
 import type { CourseInventoryNode, CourseInventoryTaskGroup } from "@/components/study-pipeline-preview";
 import { finalOutputNodeData } from "@/components/course-pipeline-blueprint-node-data";
+import { buildTaskOutputLossDiagnostics } from "@/components/course-pipeline-loss-diagnostics";
 import type { BlueprintNodeData, BlueprintProblem, ScriptOutputRecord, TaskOutputRecord } from "@/components/course-pipeline-blueprint-model";
+import type { PDFDocumentStructure } from "@/components/extracted-document-inspector";
 
 export function finalTaskOutputNodeData({
   group,
   index,
   outputs,
+  sourceDocuments,
   upstreamProblems,
 }: {
   group: CourseInventoryTaskGroup;
   index: number;
   outputs: TaskOutputRecord[];
+  sourceDocuments?: Array<PDFDocumentStructure | null>;
   upstreamProblems: BlueprintProblem[];
 }): BlueprintNodeData {
   if (outputs.length === 0) {
@@ -23,7 +27,11 @@ export function finalTaskOutputNodeData({
     });
   }
   const validationProblems = outputs.flatMap((output) => validateWebsiteReadyMarkdown(output.promptMarkdown, output.title));
-  const needsReview = outputs.some((output) => output.status === "needs_review") || upstreamProblems.length > 0 || validationProblems.length > 0;
+  const lossDiagnostics = buildTaskOutputLossDiagnostics({ outputs, sourceDocuments: sourceDocuments ?? [] });
+  const needsReview = outputs.some((output) => output.status === "needs_review")
+    || upstreamProblems.length > 0
+    || validationProblems.length > 0
+    || lossDiagnostics.problems.length > 0;
   return {
     title: outputs.length === 1 ? outputs[0]?.title ?? `Output ${index + 1}` : `${outputs.length} Task Outputs`,
     subtitle: "website task output",
@@ -32,6 +40,7 @@ export function finalTaskOutputNodeData({
       `Source lane: ${group.title}`,
       `${outputs.length} task output${outputs.length === 1 ? "" : "s"} loaded`,
       validationProblems.length > 0 ? `${validationProblems.length} website-ready validation problem${validationProblems.length === 1 ? "" : "s"}` : "Website-ready validation passed",
+      ...lossDiagnostics.evidence,
       ...outputs.map((output) => `${output.taskId}: ${output.status}`),
     ],
     inputs: [{ label: "task draft", detail: group.title }],
@@ -41,6 +50,7 @@ export function finalTaskOutputNodeData({
       ? [
           ...upstreamProblems,
           ...validationProblems,
+          ...lossDiagnostics.problems,
           ...outputs
             .filter((output) => output.status === "needs_review")
             .map((output) => ({ label: "Output needs review", detail: `${output.title} is marked needs_review.`, severity: "warning" as const })),
@@ -54,6 +64,7 @@ export function finalTaskOutputNodeData({
       { label: "Count", value: String(outputs.length) },
       { label: "Source", value: outputs[0]?.sheetTitle ?? group.title },
       { label: "Website validation", value: validationProblems.length > 0 ? `${validationProblems.length} problem${validationProblems.length === 1 ? "" : "s"}` : "passed" },
+      { label: "Missing source images", value: String(lossDiagnostics.missingImages) },
     ],
   };
 }

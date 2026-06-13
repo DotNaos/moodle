@@ -549,8 +549,42 @@ describe("course pipeline blueprint graph", () => {
     expect(pageNode?.data.status).toBe("succeeded");
     expect(pageNode?.data.meta.find((item) => item.label === "Stored count")?.value).toBe("1");
     expect(sectionNode?.data.meta.find((item) => item.label === "Stored count")?.value).toBe("2");
-    expect(outputNode?.data.status).toBe("ready");
+    expect(outputNode?.data.status).toBe("needs_review");
     expect(outputNode?.data.outputPreview).toContain("parallele Laufzeit");
+  });
+
+  test("marks extracted images that disappeared from final task output", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    const problem = outputNode?.data.problems?.find((item) => item.label === "Extracted image missing from output");
+
+    expect(outputNode?.data.status).toBe("needs_review");
+    expect(problem?.detail).toContain("img-1");
+    expect(problem?.detail).toContain("page 1");
+    expect(problem?.detail).toContain("Aufgabenblatt 01");
+    expect(outputNode?.data.evidence).toContain("1 extracted source image block checked");
+    expect(outputNode?.data.evidence).toContain("0 final output image references found");
+    expect(outputNode?.data.meta.find((item) => item.label === "Missing source images")?.value).toBe("1");
+  });
+
+  test("does not mark extracted images as lost when the final task references the asset", () => {
+    const taskViewWithImage: TaskViewResponse = {
+      ...taskView,
+      sheets: taskView.sheets.map((sheet) => ({
+        ...sheet,
+        tasks: sheet.tasks.map((task) => ({
+          ...task,
+          promptMarkdown: `${task.promptMarkdown}\n\n![Diagramm](/assets/img-1.png)`,
+        })),
+      })),
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView: taskViewWithImage });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    const problemLabels = outputNode?.data.problems?.map((problem) => problem.label) ?? [];
+
+    expect(problemLabels).not.toContain("Extracted image missing from output");
+    expect(outputNode?.data.evidence).toContain("1 final output image reference found");
+    expect(outputNode?.data.meta.find((item) => item.label === "Missing source images")?.value).toBe("0");
   });
 
   test("traces a final task output back to its source documents", () => {

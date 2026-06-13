@@ -74,6 +74,8 @@ export function addTaskGroupLane({
   const paired = Boolean(group.solution);
   const sheetRun = findLatestRun(runLookup, group.sheet.id, ["extracted", "extract_text", "extract_pages"]);
   const solutionRun = group.solution ? findLatestRun(runLookup, group.solution.id, ["extracted", "extract_text", "extract_pages"]) : null;
+  const sheetDocument = findExtractedDocument(extractedLookup, group.sheet.id);
+  const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
   const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
   const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
 
@@ -116,7 +118,7 @@ export function addTaskGroupLane({
     edges,
     extractionId: sheetExtractionId,
     extractionRun: sheetRun,
-    extractedDocument: findExtractedDocument(extractedLookup, group.sheet.id),
+    extractedDocument: sheetDocument,
     nodes,
     pagesId: sheetPagesId,
     pdfId: sheetPdfId,
@@ -136,7 +138,7 @@ export function addTaskGroupLane({
       edges,
       extractionId: solutionExtractionId,
       extractionRun: solutionRun,
-      extractedDocument: findExtractedDocument(extractedLookup, group.solution.id),
+      extractedDocument: solutionDocument,
       nodes,
       pagesId: solutionPagesId,
       pdfId: solutionPdfId,
@@ -211,7 +213,13 @@ export function addTaskGroupLane({
   addNode(nodes, {
     id: outputId,
     position: { x: PIPELINE_X.output, y },
-    data: finalTaskOutputNodeData({ group, index, outputs: taskOutputs, upstreamProblems: collectProblems(group, sheetRun, solutionRun) }),
+    data: finalTaskOutputNodeData({
+      group,
+      index,
+      outputs: taskOutputs,
+      sourceDocuments: [sheetDocument, solutionDocument],
+      upstreamProblems: collectProblems(group, sheetRun, solutionRun),
+    }),
   });
   addEdge(edges, codexId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
 }
