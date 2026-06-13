@@ -47,6 +47,7 @@ import {
   type BlueprintNode,
   type BlueprintNodeTone,
   type BlueprintPort,
+  type BlueprintRenderedField,
   type PipelineRunRecord,
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint-model";
@@ -553,17 +554,26 @@ function NodePreviewContent({
   preview: PipelineNodePreview;
   size: "inspector" | "modal" | "node";
 }) {
-  if (preview.kind === "json") {
+  if (preview.kind === "mixed") {
     return (
-      <pre
-        className={cn(
-          "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
-          size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
-        )}
-      >
-        {preview.text}
-      </pre>
+      <div className={cn("grid", size === "node" ? "gap-2" : "gap-4")}>
+        <div className={cn("grid", size === "node" ? "gap-2" : "gap-3")}>
+          {preview.fields.map((field) => (
+            <RenderedPreviewField field={field} key={`${field.path}:${field.label}`} size={size} />
+          ))}
+        </div>
+        <div className={cn(size === "node" ? "pt-1" : "pt-2")}>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+            Raw data
+          </p>
+          <JsonPreviewText text={preview.jsonText} size={size} />
+        </div>
+      </div>
     );
+  }
+
+  if (preview.kind === "json") {
+    return <JsonPreviewText text={preview.text} size={size} />;
   }
 
   return (
@@ -576,6 +586,64 @@ function NodePreviewContent({
       )}
       text={preview.text}
     />
+  );
+}
+
+function RenderedPreviewField({
+  field,
+  size,
+}: {
+  field: BlueprintRenderedField;
+  size: "inspector" | "modal" | "node";
+}) {
+  return (
+    <section className={cn("rounded-2xl bg-background/80", size === "node" ? "px-2 py-1.5" : "px-4 py-3")}>
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="truncate text-[11px] font-semibold text-foreground/80">{field.label}</span>
+        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[9px] leading-4 text-muted-foreground">
+          {field.path}
+        </span>
+      </div>
+      {field.description ? (
+        <p className="mb-2 text-[11px] leading-4 text-muted-foreground">{field.description}</p>
+      ) : null}
+      {field.type === "markdown" ? (
+        <MarkdownRenderer
+          className={cn(
+            "break-words text-foreground",
+            size === "node"
+              ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+              : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+          )}
+          text={field.value}
+        />
+      ) : field.type === "json" ? (
+        <JsonPreviewText text={field.value} size={size} />
+      ) : (
+        <p className={cn("whitespace-pre-wrap break-words text-foreground/80", size === "node" ? "text-[11px] leading-4" : "text-sm leading-6")}>
+          {field.value}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function JsonPreviewText({
+  size,
+  text,
+}: {
+  size: "inspector" | "modal" | "node";
+  text: string;
+}) {
+  return (
+    <pre
+      className={cn(
+        "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
+        size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
+      )}
+    >
+      {text}
+    </pre>
   );
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildBlueprintGraph, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
+import { buildPipelineNodePreview } from "@/components/course-pipeline-node-preview";
 import { buildUpstreamTrace } from "@/components/course-pipeline-trace";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
 import type { CourseInventoryResponse, StudyPipelineStatusResponse } from "@/components/study-pipeline-preview";
@@ -555,6 +556,41 @@ describe("course pipeline blueprint graph", () => {
     expect(sectionNode?.data.meta.find((item) => item.label === "Stored count")?.value).toBe("2");
     expect(outputNode?.data.status).toBe("needs_review");
     expect(outputNode?.data.outputPreview).toContain("parallele Laufzeit");
+  });
+
+  test("builds mixed previews with rendered fields and raw task data", () => {
+    const taskViewWithTraceLines: TaskViewResponse = {
+      ...taskView,
+      sheets: taskView.sheets.map((sheet) => ({
+        ...sheet,
+        tasks: sheet.tasks.map((task) => ({
+          ...task,
+          promptMarkdown: [
+            "---",
+            "status: codex-improved",
+            "ai_used: true",
+            "---",
+            "Source: [Moodle resource](moodle-resource:947711)",
+            "## Aufgabe 1",
+            "Berechne die parallele Laufzeit mit \\(p\\) Prozessoren.",
+          ].join("\n"),
+        })),
+      })),
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView: taskViewWithTraceLines });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    if (!outputNode || outputNode.type !== "blueprint") throw new Error("Output node missing");
+
+    const preview = buildPipelineNodePreview(outputNode.data);
+
+    expect(preview.kind).toBe("mixed");
+    if (preview.kind !== "mixed") throw new Error("Expected mixed preview");
+    expect(preview.fields[0]?.path).toBe("outputs[0].promptMarkdown");
+    expect(preview.fields[0]?.value).toContain("Berechne die parallele Laufzeit");
+    expect(preview.fields[0]?.value).not.toContain("Source:");
+    expect(preview.fields[0]?.value).not.toContain("codex-improved");
+    expect(preview.jsonText).toContain('"promptMarkdown"');
+    expect(preview.jsonText).toContain("codex-improved");
   });
 
   test("treats extracted documents as usable pipeline input even when run records are missing", () => {

@@ -39,6 +39,7 @@ function isPipelineTraceLine(line: string): boolean {
   return [
     /^Source task:/i,
     /^Source script:/i,
+    /^Source:/i,
     /^Solution status:/i,
     /^Solution page:/i,
     /^This is the versioned working copy/i,

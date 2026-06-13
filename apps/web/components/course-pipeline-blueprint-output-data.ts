@@ -1,7 +1,13 @@
 import type { CourseInventoryNode, CourseInventoryTaskGroup } from "@/components/study-pipeline-preview";
 import { finalOutputNodeData } from "@/components/course-pipeline-blueprint-node-data";
 import { buildTaskOutputLossDiagnostics } from "@/components/course-pipeline-loss-diagnostics";
-import type { BlueprintNodeData, BlueprintProblem, ScriptOutputRecord, TaskOutputRecord } from "@/components/course-pipeline-blueprint-model";
+import type {
+  BlueprintNodeData,
+  BlueprintProblem,
+  BlueprintRenderedField,
+  ScriptOutputRecord,
+  TaskOutputRecord,
+} from "@/components/course-pipeline-blueprint-model";
 import type { PDFDocumentStructure } from "@/components/extracted-document-inspector";
 
 export function finalTaskOutputNodeData({
@@ -44,6 +50,7 @@ export function finalTaskOutputNodeData({
       ...outputs.map((output) => `${output.taskId}: ${output.status}`),
     ],
     inputs: [{ label: "task draft", detail: group.title }],
+    bodyData: taskOutputBodyData({ group, outputs }),
     outputs: outputs.map((output) => ({ label: output.title, detail: output.taskId, state: outputState(output.status, validationProblems.length) })),
     outputPreview: outputs.map((output) => `${output.title}\n${output.promptMarkdown || "No prompt markdown stored."}`).join("\n\n---\n\n"),
     problems: needsReview
@@ -59,6 +66,7 @@ export function finalTaskOutputNodeData({
     stepKind: "transform",
     tone: needsReview ? "warning" : "output",
     status: needsReview ? "needs_review" : "ready",
+    renderedFields: taskOutputRenderedFields(outputs),
     meta: [
       { label: "Output type", value: "task" },
       { label: "Count", value: String(outputs.length) },
@@ -102,12 +110,14 @@ export function finalScriptOutputNodeData({
       ...outputs.map((output) => `${output.id}: ${output.statusLabel}`),
     ],
     inputs: [{ label: "script draft", detail: resource.name }],
+    bodyData: scriptOutputBodyData({ outputs, resource }),
     outputs: outputs.map((output) => ({ label: output.title, detail: output.id, state: outputState(output.status, validationProblems.length) })),
     outputPreview: outputs.map((output) => `${output.title}\n${output.statusLabel}${output.sourcePath ? `\n${output.sourcePath}` : ""}`).join("\n\n---\n\n"),
     problems: needsReview ? [...upstreamProblems, ...validationProblems] : undefined,
     stepKind: "transform",
     tone: needsReview ? "warning" : "output",
     status: needsReview ? "needs_review" : "ready",
+    renderedFields: scriptOutputRenderedFields(outputs),
     meta: [
       { label: "Output type", value: "script" },
       { label: "Count", value: String(outputs.length) },
@@ -115,6 +125,108 @@ export function finalScriptOutputNodeData({
       { label: "Website validation", value: validationProblems.length > 0 ? `${validationProblems.length} problem${validationProblems.length === 1 ? "" : "s"}` : "passed" },
     ],
   };
+}
+
+function taskOutputBodyData({
+  group,
+  outputs,
+}: {
+  group: CourseInventoryTaskGroup;
+  outputs: TaskOutputRecord[];
+}) {
+  return {
+    type: "task_outputs",
+    sourceGroup: {
+      id: group.id,
+      title: group.title,
+      pairingStatus: group.pairingStatus,
+      sheetResourceId: group.sheet.id,
+      solutionResourceId: group.solution?.id ?? null,
+    },
+    outputs: outputs.map((output) => ({
+      taskId: output.taskId,
+      title: output.title,
+      status: output.status,
+      sourceResourceId: output.sourceResourceId,
+      sheetTitle: output.sheetTitle,
+      solutionResourceId: output.solutionResourceId ?? null,
+      solutionTitle: output.solutionTitle ?? null,
+      promptMarkdown: output.promptMarkdown,
+      parts: output.parts,
+      contentState: output.contentState ?? null,
+    })),
+  };
+}
+
+function scriptOutputBodyData({
+  outputs,
+  resource,
+}: {
+  outputs: ScriptOutputRecord[];
+  resource: CourseInventoryNode;
+}) {
+  return {
+    type: "script_outputs",
+    sourceResource: {
+      id: resource.id,
+      name: resource.name,
+      bucket: resource.bucket,
+      role: resource.role,
+    },
+    outputs: outputs.map((output) => ({
+      id: output.id,
+      title: output.title,
+      status: output.status,
+      statusLabel: output.statusLabel,
+      sourcePath: output.sourcePath ?? null,
+      model: output.model ?? null,
+      updatedAt: output.updatedAt ?? null,
+    })),
+  };
+}
+
+function taskOutputRenderedFields(outputs: TaskOutputRecord[]): BlueprintRenderedField[] {
+  return outputs.flatMap((output, outputIndex) => {
+    const fields: BlueprintRenderedField[] = [];
+    if (output.promptMarkdown.trim()) {
+      fields.push({
+        label: output.title,
+        path: `outputs[${outputIndex}].promptMarkdown`,
+        type: "markdown",
+        value: output.promptMarkdown,
+      });
+    }
+    for (const [partIndex, part] of output.parts.entries()) {
+      if (!part.promptMarkdown.trim()) continue;
+      fields.push({
+        label: part.label ? `${output.title} · ${part.label}` : `${output.title} · Part ${partIndex + 1}`,
+        path: `outputs[${outputIndex}].parts[${partIndex}].promptMarkdown`,
+        type: "markdown",
+        value: part.promptMarkdown,
+      });
+    }
+    const feedback = output.latestAttempt?.verdict.feedbackMarkdown;
+    if (feedback?.trim()) {
+      fields.push({
+        label: `${output.title} · latest feedback`,
+        path: `outputs[${outputIndex}].latestAttempt.verdict.feedbackMarkdown`,
+        type: "markdown",
+        value: feedback,
+      });
+    }
+    return fields;
+  });
+}
+
+function scriptOutputRenderedFields(outputs: ScriptOutputRecord[]): BlueprintRenderedField[] {
+  return outputs
+    .filter((output) => output.statusLabel.trim())
+    .map((output, outputIndex) => ({
+      label: output.title,
+      path: `outputs[${outputIndex}].statusLabel`,
+      type: "text",
+      value: output.statusLabel,
+    }));
 }
 
 function validateWebsiteReadyMarkdown(markdown: string | undefined, outputTitle: string): BlueprintProblem[] {

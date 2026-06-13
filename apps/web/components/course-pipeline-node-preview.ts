@@ -1,4 +1,7 @@
-import type { BlueprintNodeData } from "@/components/course-pipeline-blueprint-model";
+import type {
+  BlueprintNodeData,
+  BlueprintRenderedField,
+} from "@/components/course-pipeline-blueprint-model";
 import { preparePreviewMarkdown } from "@/components/course-pipeline-blueprint-preview";
 
 export type PipelineNodePreview =
@@ -9,9 +12,20 @@ export type PipelineNodePreview =
   | {
       kind: "markdown";
       text: string;
+    }
+  | {
+      fields: BlueprintRenderedField[];
+      jsonText: string;
+      kind: "mixed";
     };
 
 export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodePreview {
+  const jsonText = JSON.stringify(data.bodyData ?? serializableNodeData(data), null, 2);
+  const fields = renderableFields(data.renderedFields);
+  if (fields.length > 0) {
+    return { fields, jsonText, kind: "mixed" };
+  }
+
   if (supportsRenderedPreview(data)) {
     const markdown = nodeBodyPreviewMarkdown(data.outputPreview);
     if (markdown) return { kind: "markdown", text: markdown };
@@ -19,8 +33,20 @@ export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodeP
 
   return {
     kind: "json",
-    text: JSON.stringify(data.bodyData ?? serializableNodeData(data), null, 2),
+    text: jsonText,
   };
+}
+
+function renderableFields(fields: BlueprintRenderedField[] | undefined): BlueprintRenderedField[] {
+  return (fields ?? [])
+    .map((field) => {
+      if (field.type !== "markdown") return field;
+      return {
+        ...field,
+        value: preparePreviewMarkdown(field.value).markdown,
+      };
+    })
+    .filter((field) => field.value.trim().length > 0);
 }
 
 function supportsRenderedPreview(data: BlueprintNodeData): boolean {
@@ -39,6 +65,7 @@ function serializableNodeData(data: BlueprintNodeData): Record<string, unknown> 
     inputs: data.inputs,
     outputs: data.outputs,
     outputPreview: data.outputPreview,
+    renderedFields: data.renderedFields,
     live: data.live,
     problems: data.problems,
     evidence: data.evidence,

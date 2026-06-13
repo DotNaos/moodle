@@ -85,6 +85,14 @@ export type BlueprintPort = {
   state?: string;
 };
 
+export type BlueprintRenderedField = {
+  label: string;
+  path: string;
+  type: "json" | "markdown" | "text";
+  value: string;
+  description?: string;
+};
+
 export type BlueprintExtractionVariant = {
   active: boolean;
   artifactCount: number;
@@ -126,6 +134,7 @@ export type BlueprintNodeData = {
   outputPreview?: string;
   outputs: BlueprintPort[];
   problems?: BlueprintProblem[];
+  renderedFields?: BlueprintRenderedField[];
   extractionVariants?: BlueprintExtractionVariant[];
   frame?: {
     height: number;
