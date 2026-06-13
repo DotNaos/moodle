@@ -1,7 +1,7 @@
 "use client";
 
 import katex from "katex";
-import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, CheckCircle2, Circle, Columns2, FileText, Gauge, Lightbulb, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Play, RefreshCw, Rows3, Sparkles, Square, WandSparkles, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, CheckCircle2, Circle, Columns2, FileText, Gauge, Lightbulb, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Play, RefreshCw, Rows3, Sparkles, Square, X } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -103,21 +103,6 @@ export type ScriptPDFMappingItem = {
   title: string;
 };
 
-type CodexModelOption = {
-  id: string;
-  label: string;
-  description?: string;
-  defaultReasoningEffort?: string;
-  reasoningEfforts?: CodexReasoningOption[];
-  speedTiers?: string[];
-};
-
-type CodexReasoningOption = {
-  id: string;
-  label: string;
-  description?: string;
-};
-
 const PIPELINE_FEEDBACK_OPTIONS = [
   { id: "task_missing", label: "Aufgabe fehlt" },
   { id: "image_missing", label: "Bild fehlt" },
@@ -127,16 +112,15 @@ const PIPELINE_FEEDBACK_OPTIONS = [
   { id: "other", label: "Etwas anderes" },
 ] as const;
 
-type RefineStreamEvent = {
-  type?: string;
-  message?: string;
-  model?: string;
-  reasoningEffort?: string;
-  error?: string;
-  contentPreview?: string;
-};
-
 type Mode = "tasks" | "script";
+
+type FeedbackTarget = {
+  message?: string;
+  targetId: string;
+  targetKind: string;
+  title?: string;
+  type: (typeof PIPELINE_FEEDBACK_OPTIONS)[number]["id"];
+};
 
 export function TaskStudyPanel({
   course,
@@ -182,16 +166,10 @@ export function TaskStudyPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
   const [feedbackType, setFeedbackType] = useState<(typeof PIPELINE_FEEDBACK_OPTIONS)[number]["id"]>("task_confusing");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [refiningTarget, setRefiningTarget] = useState<string | null>(null);
-  const [refineModels, setRefineModels] = useState<CodexModelOption[]>([]);
-  const [selectedRefineModel, setSelectedRefineModel] = useState("");
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
-  const [refineInstructions, setRefineInstructions] = useState("");
-  const [codexConnected, setCodexConnected] = useState(false);
-  const [refineStream, setRefineStream] = useState<string[]>([]);
   const [taskMode, setTaskMode] = useState<"view" | "test">("view");
   const [testLayout, setTestLayout] = useState<TaskTestLayout>(() => {
     if (typeof window === "undefined") {
@@ -311,19 +289,6 @@ export function TaskStudyPanel({
       controller.abort();
     };
   }, [courseId, mode, taskViewOverride]);
-
-  useEffect(() => {
-    if (!courseId) {
-      setRefineModels([]);
-      setSelectedRefineModel("");
-      setSelectedReasoningEffort("");
-      setCodexConnected(false);
-      return;
-    }
-    const controller = new AbortController();
-    void refreshCodexModelCatalog(controller.signal);
-    return () => controller.abort();
-  }, [courseId]);
 
   useEffect(() => {
     if (!selectedTask) {
@@ -611,21 +576,22 @@ export function TaskStudyPanel({
     if (!courseId || submittingFeedback) {
       return;
     }
-    const targetID = selectedTask?.taskId ?? selectedSheet?.resourceId ?? courseId;
-    const targetKind = selectedTask ? "task" : selectedSheet ? "assignment_sheet" : "course";
+    const targetID = feedbackTarget?.targetId ?? selectedTask?.taskId ?? selectedSheet?.resourceId ?? courseId;
+    const targetKind = feedbackTarget?.targetKind ?? (selectedTask ? "task" : selectedSheet ? "assignment_sheet" : "course");
     setSubmittingFeedback(true);
     setError(null);
     try {
       await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/feedback`, {
         method: "POST",
         body: JSON.stringify({
-          feedbackType,
+          feedbackType: feedbackTarget?.type ?? feedbackType,
           message: feedbackMessage.trim(),
           targetId: targetID,
           targetKind,
         }),
       });
       setFeedbackDialogOpen(false);
+      setFeedbackTarget(null);
       setFeedbackMessage("");
       setFeedbackType("task_confusing");
       setMessage("Problem wurde im Pipeline Review erfasst.");
@@ -636,115 +602,11 @@ export function TaskStudyPanel({
     }
   }
 
-  async function refreshCodexModelCatalog(signal?: AbortSignal) {
-    try {
-      const response = await fetch("/api/codex/auth", {
-        cache: "no-store",
-        signal,
-      });
-      const payload = await response.json().catch(() => ({})) as { authenticated?: boolean; error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Codex status failed with ${response.status}.`);
-      }
-      if (!payload.authenticated) {
-        setCodexConnected(false);
-        setRefineModels([]);
-        setSelectedRefineModel("");
-        setSelectedReasoningEffort("");
-        return;
-      }
-      setCodexConnected(true);
-      await loadCodexModels(signal);
-    } catch (authError) {
-      if (!isAbortError(authError)) {
-        setCodexConnected(false);
-        setRefineModels([]);
-        setSelectedRefineModel("");
-        setSelectedReasoningEffort("");
-      }
-    }
-  }
-
-  async function loadCodexModels(signal?: AbortSignal) {
-    try {
-      const response = await fetch("/api/codex/models", {
-        cache: "no-store",
-        signal,
-      });
-      const payload = await response.json().catch(() => ({})) as { error?: string; models?: CodexModelOption[] };
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Model catalog failed with ${response.status}.`);
-      }
-      const models = asArray(payload.models).filter((model) => model.id && model.label);
-      setRefineModels(models);
-      setSelectedRefineModel((current) => {
-        const nextModel = models.some((model) => model.id === current) ? current : models[0]?.id ?? "";
-        const model = models.find((item) => item.id === nextModel) ?? null;
-        setSelectedReasoningEffort((currentEffort) => nextReasoningEffort(model, currentEffort));
-        return nextModel;
-      });
-    } catch (modelsError) {
-      if (!isAbortError(modelsError)) {
-        setRefineModels([]);
-        setSelectedRefineModel("");
-        setSelectedReasoningEffort("");
-      }
-    }
-  }
-
-  async function refineStudyContent(kind: "script-section" | "task", targetID: string) {
-    if (!courseId || !targetID || refiningTarget) {
-      return;
-    }
-    if (!codexConnected) {
-      setError("Connect ChatGPT before improving study content.");
-      return;
-    }
-    if (!selectedRefineModel) {
-      setError("Choose a Codex model from the catalog before improving this content.");
-      return;
-    }
-    const refineKey = `${kind}:${targetID}`;
-    setRefiningTarget(refineKey);
-    setError(null);
-    setRefineStream([]);
-    setMessage(null);
-    try {
-      const response = await fetch(studyPipelineEndpoint(`/courses/${encodeURIComponent(courseId)}/study-pipeline/refine`), {
-        method: "POST",
-        headers: {
-          accept: "application/x-ndjson",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          kind,
-          targetId: targetID,
-          model: selectedRefineModel,
-          reasoningEffort: selectedReasoningEffort,
-          customPrompt: refineInstructions.trim() || undefined,
-        }),
-      });
-      await readRefineStream(response, (event) => {
-        const line = refineEventMessage(event);
-        if (line) {
-          setRefineStream((current) => [...current.slice(-5), line]);
-        }
-      });
-      await loadView(courseId, mode === "script" || scriptIncluded);
-      setMessage("Codex-improved version saved separately from the extracted source.");
-    } catch (refineError) {
-      const message = getErrorMessage(refineError);
-      setError(message);
-      if (isCodexAuthError(message)) {
-        setCodexConnected(false);
-        setRefineModels([]);
-        setSelectedRefineModel("");
-        setSelectedReasoningEffort("");
-      }
-    } finally {
-      setRefiningTarget(null);
-      setRefineStream([]);
-    }
+  function openFeedbackDialog(target?: FeedbackTarget) {
+    setFeedbackTarget(target ?? null);
+    setFeedbackType(target?.type ?? "task_confusing");
+    setFeedbackMessage(target?.message ?? "");
+    setFeedbackDialogOpen(true);
   }
 
   const pageTitle = mode === "script"
@@ -776,7 +638,7 @@ export function TaskStudyPanel({
         </DropdownMenuItem>
       ) : null}
       {hasPdfActions ? <DropdownMenuSeparator /> : null}
-      <DropdownMenuItem onSelect={() => setFeedbackDialogOpen(true)}>
+      <DropdownMenuItem onSelect={() => openFeedbackDialog()}>
         <AlertCircle aria-hidden />
         Problem melden
       </DropdownMenuItem>
@@ -999,19 +861,6 @@ export function TaskStudyPanel({
 
       {error && !fatalLoadError ? <div className="mx-4 mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-5">{error}</div> : null}
       {message ? <div className="mx-4 mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">{message}</div> : null}
-      {refineStream.length > 0 ? (
-        <div className="mx-4 mt-4 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm text-muted-foreground md:mx-5">
-          <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
-            <Spinner aria-hidden />
-            Codex arbeitet
-          </div>
-          <div className="space-y-1">
-            {refineStream.map((line, index) => (
-              <p className="truncate" key={`${line}-${index}`}>{line}</p>
-            ))}
-          </div>
-        </div>
-      ) : null}
       {fatalLoadError ? (
         <StudyPipelineErrorState
           error={error ?? "Moodle study pipeline failed."}
@@ -1040,11 +889,15 @@ export function TaskStudyPanel({
       ) : mode === "script" ? (
         <ScriptReader
           courseTitleText={courseTitle(course)}
-          modelReady={codexConnected && Boolean(selectedRefineModel)}
           onCitationClick={onOpenResource}
-          onRefine={(targetID) => void refineStudyContent("script-section", targetID)}
+          onRequestImprovement={(chapter) => openFeedbackDialog({
+            message: `Bitte diese Script-Section prüfen und verbessern: ${chapter.title}`,
+            targetId: chapter.state?.id ?? chapter.id,
+            targetKind: "script_section",
+            title: chapter.title,
+            type: "other",
+          })}
           onSelectSection={onSelectedScriptSectionIdChange}
-          refiningTarget={refiningTarget}
           selectedSectionId={selectedScriptSectionId}
           view={view}
         />
@@ -1190,10 +1043,23 @@ export function TaskStudyPanel({
           </main>
         </div>
       )}
-      <Dialog open={feedbackDialogOpen} onOpenChange={setFeedbackDialogOpen}>
+      <Dialog
+        open={feedbackDialogOpen}
+        onOpenChange={(open) => {
+          setFeedbackDialogOpen(open);
+          if (!open) {
+            setFeedbackTarget(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-[min(92vw,520px)] rounded-[1.75rem] border-0 p-5 shadow-xl">
-          <DialogTitle>Problem melden</DialogTitle>
+          <DialogTitle>{feedbackTarget ? "Verbesserung anfragen" : "Problem melden"}</DialogTitle>
           <div className="space-y-4">
+            {feedbackTarget?.title ? (
+              <p className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">
+                {feedbackTarget.title}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {PIPELINE_FEEDBACK_OPTIONS.map((option) => (
                 <button
@@ -1220,7 +1086,10 @@ export function TaskStudyPanel({
             <div className="flex justify-end gap-2">
               <Button
                 disabled={submittingFeedback}
-                onClick={() => setFeedbackDialogOpen(false)}
+                onClick={() => {
+                  setFeedbackDialogOpen(false);
+                  setFeedbackTarget(null);
+                }}
                 type="button"
                 variant="secondary"
               >
@@ -1904,84 +1773,6 @@ function StudyPipelineErrorState({
   );
 }
 
-function nextReasoningEffort(model: CodexModelOption | null, current: string): string {
-  const options = asArray(model?.reasoningEfforts);
-  if (options.some((option) => option.id === current)) {
-    return current;
-  }
-  if (model?.defaultReasoningEffort && options.some((option) => option.id === model.defaultReasoningEffort)) {
-    return model.defaultReasoningEffort;
-  }
-  return options[0]?.id ?? "";
-}
-
-async function readRefineStream(response: Response, onEvent: (event: RefineStreamEvent) => void): Promise<void> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/x-ndjson") || !response.body) {
-    const payload = await response.json().catch(() => ({})) as { error?: string };
-    if (!response.ok) {
-      throw new Error(payload.error ?? `Codex refinement failed with ${response.status}.`);
-    }
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const event = parseRefineStreamEvent(line);
-      if (!event) {
-        continue;
-      }
-      onEvent(event);
-      if (event.type === "error") {
-        throw new Error(event.error ?? event.message ?? "Codex refinement failed.");
-      }
-    }
-  }
-  if (buffer.trim()) {
-    const event = parseRefineStreamEvent(buffer);
-    if (event) {
-      onEvent(event);
-      if (event.type === "error") {
-        throw new Error(event.error ?? event.message ?? "Codex refinement failed.");
-      }
-    }
-  }
-}
-
-function parseRefineStreamEvent(line: string): RefineStreamEvent | null {
-  if (!line.trim()) {
-    return null;
-  }
-  try {
-    return JSON.parse(line) as RefineStreamEvent;
-  } catch {
-    return null;
-  }
-}
-
-function refineEventMessage(event: RefineStreamEvent): string | null {
-  if (event.error) {
-    return event.error;
-  }
-  if (event.message) {
-    return event.message;
-  }
-  if (event.type === "done") {
-    return "Codex refinement finished.";
-  }
-  return null;
-}
-
 function taskPromptText(task: TaskViewTask): string {
   return [
     task.promptMarkdown,
@@ -2156,22 +1947,18 @@ function slugifyTaskId(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function ScriptReader({
+export function ScriptReader({
   courseTitleText,
-  modelReady,
   onCitationClick,
-  onRefine,
+  onRequestImprovement,
   onSelectSection,
-  refiningTarget,
   selectedSectionId,
   view,
 }: {
   courseTitleText: string;
-  modelReady: boolean;
   onCitationClick: (resourceId: string) => void;
-  onRefine: (targetID: string) => void;
+  onRequestImprovement: (chapter: ScriptChapter) => void;
   onSelectSection: (sectionId: string | null) => void;
-  refiningTarget: string | null;
   selectedSectionId: string | null;
   view: TaskViewResponse | null;
 }) {
@@ -2304,18 +2091,15 @@ function ScriptReader({
                         <ContentStateBadge state={chapter.state} />
                       </div>
                     </div>
-                    {chapter.state?.id ? (
-                      <Button
-                        className="w-fit"
-                        disabled={!modelReady || refiningTarget === `script-section:${chapter.state.id}`}
-                        onClick={() => onRefine(chapter.state?.id ?? "")}
-                        type="button"
-                        variant="secondary"
-                      >
-                        {refiningTarget === `script-section:${chapter.state.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
-                        Mit Codex verbessern
-                      </Button>
-                    ) : null}
+                    <Button
+                      className="w-fit"
+                      onClick={() => onRequestImprovement(chapter)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <AlertCircle aria-hidden />
+                      Verbesserung anfragen
+                    </Button>
                   </div>
                   <MarkdownBlock onCitationClick={onCitationClick} text={chapter.bodyMarkdown} />
                 </section>
@@ -2982,15 +2766,6 @@ async function runCodex(prompt: string): Promise<{ finalResponse: string }> {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
-}
-
-function isCodexAuthError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return normalized.includes("not connected") ||
-    normalized.includes("connect chatgpt") ||
-    normalized.includes("not logged in") ||
-    normalized.includes("missing bearer") ||
-    normalized.includes("401 unauthorized");
 }
 
 function formatStudyPipelineError(error: unknown): string {

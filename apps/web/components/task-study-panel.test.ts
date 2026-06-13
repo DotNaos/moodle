@@ -8,7 +8,7 @@ import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/co
 import { groupScriptSections, groupStudyTasksBySection, groupStudyTasksBySheet } from "@/components/course-study-outline";
 import { buildBlockTypeSummary, documentDiagnosticCounts } from "@/components/extracted-document-inspector";
 import { buildInventorySections, buildStudyPipelinePreviewSections, StudyPipelinePreview } from "@/components/study-pipeline-preview";
-import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
+import { ScriptReader, buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
 import {
   buildDashboardRouteURL,
   dashboardRouteFromInput,
@@ -517,6 +517,35 @@ describe("script markdown renderer", () => {
     expect(chapters[1]?.state?.status).toBe("codex-improved");
     expect(chapters[1]?.bodyMarkdown).toContain("Use the sequential API");
     expect(chapters[1]?.bodyMarkdown).not.toContain("Keras Coding Formats");
+  });
+
+  test("keeps script improvement as a simple review request in the user UI", () => {
+    const html = renderToStaticMarkup(React.createElement(ScriptReader, {
+      courseTitleText: "High Performance Computing",
+      onCitationClick: () => undefined,
+      onRequestImprovement: () => undefined,
+      onSelectSection: () => undefined,
+      selectedSectionId: null,
+      view: {
+        courseId: "22584",
+        generatedAt: "2026-06-13T08:00:00Z",
+        progress: { checked: 0, correct: 0, done: 0, needsReview: 0, open: 0, wrong: 0 },
+        resources: [],
+        scriptMarkdown: ["# Course Script", "", "## Cache Coherence", "", "Read the source section."].join("\n"),
+        scriptSections: [{
+          id: "script-cache",
+          kind: "script-section",
+          status: "machine-extracted",
+          statusLabel: "Machine extracted",
+          title: "Cache Coherence",
+        }],
+        sheets: [],
+        source: "moodle-services",
+      },
+    }));
+
+    expect(html).toContain("Verbesserung anfragen");
+    expect(html).not.toContain("Mit Codex verbessern");
   });
 
   test("renders study bundle figures as images instead of escaped HTML", () => {
