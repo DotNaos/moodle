@@ -19,7 +19,7 @@ export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodeP
 
   return {
     kind: "json",
-    text: JSON.stringify(serializableNodeData(data), null, 2),
+    text: JSON.stringify(data.bodyData ?? serializableNodeData(data), null, 2),
   };
 }
 
@@ -43,6 +43,7 @@ function serializableNodeData(data: BlueprintNodeData): Record<string, unknown> 
     problems: data.problems,
     evidence: data.evidence,
     artifacts: data.artifacts,
+    bodyData: data.bodyData,
     config: data.config,
     meta: data.meta,
     extractionVariants: data.extractionVariants,

@@ -115,6 +115,7 @@ export type BlueprintNodeData = {
   status?: string;
   active?: boolean;
   artifacts?: string[];
+  bodyData?: unknown;
   config?: Array<{ label: string; value: string }>;
   evidence?: string[];
   hiddenItems?: string[];
@@ -235,6 +236,18 @@ export function buildBlueprintGraph({
         taskView ? `${outputLookup.totalTasks} task outputs and ${outputLookup.totalScriptSections} script sections loaded` : `Task view missing${unavailable?.taskView ? `: ${unavailable.taskView}` : ""}`,
       ],
       inputs: [{ label: "course_id", detail: status?.courseId ?? inventory?.courseId ?? "unknown" }],
+      bodyData: {
+        courseId: status?.courseId ?? derivedInventory?.courseId ?? "unknown",
+        status: status?.status ?? "not_started",
+        currentStage: status?.stage ?? null,
+        summary: {
+          totalResources,
+          extractedDocuments: extractedDocuments?.summary.totalDocuments ?? null,
+          immutableRuns: runs?.runs.length ?? null,
+          taskOutputs: outputLookup.totalTasks,
+          scriptOutputs: outputLookup.totalScriptSections,
+        },
+      },
       outputPreview: `${outputLookup.totalTasks} task output(s) loaded\n${outputLookup.totalScriptSections} script section output(s) loaded\n${totalResources} Moodle resource(s) traced from the course input`,
       outputs: [{ label: "course source", detail: `${totalResources} resources` }],
       stepKind: "transform",
@@ -270,6 +283,12 @@ export function buildBlueprintGraph({
           ]
         : [`Inventory response is missing${unavailable?.inventory ? `: ${unavailable.inventory}` : ""}`],
       inputs: [{ label: "course source", detail: "Moodle course resources" }],
+      bodyData: resourceSetBodyData({
+        inventory: derivedInventory,
+        source: usingDerivedInventory ? "pipeline_status_fallback" : inventory ? "inventory" : "missing",
+        unavailableReason: unavailable?.inventory,
+        warnings: buildWarnings(derivedInventory, runs),
+      }),
       outputPreview: inventory
         ? `Task groups: ${inventory.summary.taskGroups}\nLecture resources: ${inventory.summary.lectureMaterial}\nUnknown: ${inventory.summary.unknown}`
         : derivedInventory
@@ -432,6 +451,79 @@ function addEdge(
     targetHandle: options?.targetHandle,
     type: options?.edgeType ?? "smoothstep",
   });
+}
+
+function resourceSetBodyData({
+  inventory,
+  source,
+  unavailableReason,
+  warnings,
+}: {
+  inventory: CourseInventoryResponse | null;
+  source: "inventory" | "missing" | "pipeline_status_fallback";
+  unavailableReason?: string;
+  warnings: Array<BlueprintNodeData & { sourceId: string }>;
+}) {
+  if (!inventory) {
+    return {
+      source,
+      unavailableReason: unavailableReason ?? "No inventory response loaded.",
+      taskGroups: [],
+      lectureMaterial: [],
+      reviewItems: [],
+      unknown: [],
+    };
+  }
+
+  return {
+    source,
+    courseId: inventory.courseId,
+    generatedAt: inventory.generatedAt,
+    artifactRoot: inventory.artifactRoot ?? null,
+    summary: inventory.summary,
+    taskGroups: sortTaskGroups(inventory.taskGroups).map(taskGroupBodyData),
+    lectureMaterial: sortInventoryNodes(inventory.lectureMaterial).map(resourceBodyData),
+    references: sortInventoryNodes(inventory.references).map(resourceBodyData),
+    interactions: sortInventoryNodes(inventory.interactions).map(resourceBodyData),
+    ignoredAllowed: sortInventoryNodes(inventory.ignoredAllowed ?? []).map(resourceBodyData),
+    unknown: sortInventoryNodes(inventory.unknown).map(resourceBodyData),
+    reviewItems: warnings.map((warning) => ({
+      title: warning.title,
+      status: warning.status ?? null,
+      detail: warning.detail,
+      sourceId: warning.sourceId,
+    })),
+  };
+}
+
+function taskGroupBodyData(group: CourseInventoryResponse["taskGroups"][number]) {
+  return {
+    id: group.id,
+    title: group.title,
+    pairingStatus: group.pairingStatus,
+    pairingConfidence: group.pairingConfidence,
+    pairingReason: group.pairingReason,
+    sheet: resourceBodyData(group.sheet),
+    solution: group.solution ? resourceBodyData(group.solution) : null,
+    solutionCandidates: group.solutionCandidates?.map(resourceBodyData) ?? [],
+  };
+}
+
+function resourceBodyData(resource: CourseInventoryNode) {
+  return {
+    id: resource.id,
+    name: resource.name,
+    type: resource.type,
+    resourceType: resource.resourceType ?? null,
+    fileType: resource.fileType ?? null,
+    sectionId: resource.sectionId ?? null,
+    sectionName: resource.sectionName ?? null,
+    bucket: resource.bucket,
+    role: resource.role,
+    confidence: resource.confidence,
+    reason: resource.reason,
+    url: resource.url ?? null,
+  };
 }
 
 function inventoryFromStatus(status: StudyPipelineStatusResponse | null): CourseInventoryResponse | null {
