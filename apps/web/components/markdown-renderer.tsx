@@ -27,9 +27,19 @@ function renderMarkdownBlocks(blocks: string[]): string[] {
 
 function renderMarkdownBlock(block: string): string {
   if (block.startsWith("```")) {
-    const language = block.match(/^```([a-zA-Z0-9_-]+)/)?.[1];
     const code = block.replace(/^```[a-zA-Z0-9_-]*\n?/i, "").replace(/```$/, "");
-    return `<pre class="overflow-auto rounded-2xl bg-secondary p-3 font-mono text-xs leading-5 text-foreground"><code>${language ? `<span class="mb-2 block text-[0.7rem] uppercase text-muted-foreground">${escapeHtml(language)}</span>` : ""}${escapeHtml(code)}</code></pre>`;
+    return `<pre class="overflow-auto rounded-2xl bg-secondary p-3 font-mono text-xs leading-5 text-foreground"><code>${escapeHtml(code)}</code></pre>`;
+  }
+  const image = block.match(/^!\[([^\]]*)]\(([^)\s]+)(?:\s+"[^"]*")?\)$/);
+  if (image) {
+    return `<figure class="overflow-hidden rounded-2xl bg-secondary"><img class="max-h-72 w-full object-contain" src="${escapeAttribute(image[2])}" alt="${escapeAttribute(image[1])}" /></figure>`;
+  }
+  if (/^<figure\b/i.test(block) && /<img\b/i.test(block)) {
+    const src = htmlAttribute(block, "src");
+    if (src) {
+      const alt = htmlAttribute(block, "alt") ?? "";
+      return `<figure class="overflow-hidden rounded-2xl bg-secondary"><img class="max-h-72 w-full object-contain" src="${escapeAttribute(src)}" alt="${escapeAttribute(alt)}" /></figure>`;
+    }
   }
   const heading = block.match(/^(#{1,4})\s+(.+)$/);
   if (heading) {
@@ -77,6 +87,15 @@ function escapeHtml(value: string): string {
     '"': "&quot;",
     "'": "&#39;",
   })[char] ?? char);
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function htmlAttribute(html: string, name: string): string | null {
+  const match = html.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
+  return match?.[1] ?? null;
 }
 
 function unescapeHtml(value: string): string {

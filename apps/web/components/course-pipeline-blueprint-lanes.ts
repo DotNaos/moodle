@@ -1,6 +1,7 @@
 import { MarkerType, type Edge } from "@xyflow/react";
 
 import type { CourseInventoryNode, CourseInventoryResponse, CourseInventoryTaskGroup } from "@/components/study-pipeline-preview";
+import { buildExtractionVariants } from "@/components/course-pipeline-blueprint-extraction-variants";
 import {
   codexNodeData,
   collectProblems,
@@ -120,6 +121,7 @@ export function addTaskGroupLane({
     pagesId: sheetPagesId,
     pdfId: sheetPdfId,
     resource: group.sheet,
+    runLookup,
     sectionsId: sheetSectionsId,
     sourceId: groupId,
     sourceHandle: "out-1",
@@ -139,6 +141,7 @@ export function addTaskGroupLane({
       pagesId: solutionPagesId,
       pdfId: solutionPdfId,
       resource: group.solution,
+      runLookup,
       sectionsId: solutionSectionsId,
       sourceHandle: "out-4",
       sourceId: groupId,
@@ -281,6 +284,7 @@ export function addScriptLane({
     pagesId,
     pdfId,
     resource,
+    runLookup,
     sectionsId,
     sourceHandle: "out-2",
     sourceId: baseId,
@@ -348,6 +352,7 @@ function addPdfPath({
   pagesId,
   pdfId,
   resource,
+  runLookup,
   sectionsId,
   sourceHandle = "out-2",
   sourceId,
@@ -365,6 +370,7 @@ function addPdfPath({
   pagesId: string;
   pdfId: string;
   resource: CourseInventoryNode;
+  runLookup: RunLookup;
   sectionsId: string;
   sourceHandle?: string;
   sourceId: string;
@@ -438,7 +444,13 @@ function addPdfPath({
   addNode(nodes, {
     id: extractionId,
     position: { x: PIPELINE_X.extraction, y: y + yOffset },
-    data: extractionNodeData({ activeRunIds, document: extractedDocument, resource, run: extractionRun }),
+    data: extractionNodeData({
+      activeRunIds,
+      document: extractedDocument,
+      resource,
+      run: extractionRun,
+      variants: buildExtractionVariants({ activeRunIds, resourceId: resource.id, runLookup }),
+    }),
   });
   addEdge(edges, sectionsId, extractionId, "extract", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
 }

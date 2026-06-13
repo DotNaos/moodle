@@ -76,6 +76,17 @@ export type BlueprintPort = {
   state?: string;
 };
 
+export type BlueprintExtractionVariant = {
+  active: boolean;
+  artifactCount: number;
+  chars: number | null;
+  configHash: string;
+  engine: string;
+  preview: string;
+  runId?: string;
+  status: "active" | "failed" | "missing" | "ok" | "stale" | "weak";
+};
+
 export type BlueprintNodeData = {
   title: string;
   subtitle: string;
@@ -93,6 +104,7 @@ export type BlueprintNodeData = {
   outputPreview?: string;
   outputs: BlueprintPort[];
   problems?: BlueprintProblem[];
+  extractionVariants?: BlueprintExtractionVariant[];
   frame?: {
     height: number;
     variant?: "group" | "stage";

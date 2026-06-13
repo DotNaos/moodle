@@ -400,7 +400,11 @@ export function CoursePipelineInspector({
             <CoursePipelineBlueprint
               extractedDocuments={extractedDocuments}
               inventory={inventory}
+              onRerunExtraction={(engine) => void rerunExtracted(engine)}
+              onSelectRun={(runId) => void selectActiveRun(runId)}
+              rerunningEngine={rerunningEngine}
               runs={runs}
+              selectingRunId={selectingRunId}
               status={status}
               taskView={taskView}
               unavailable={{

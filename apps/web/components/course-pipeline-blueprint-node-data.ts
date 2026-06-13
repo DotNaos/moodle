@@ -1,5 +1,11 @@
 import type { CourseInventoryNode, CourseInventoryTaskGroup } from "@/components/study-pipeline-preview";
-import type { BlueprintNodeData, BlueprintProblem, BlueprintStepKind, PipelineRunRecord } from "@/components/course-pipeline-blueprint-model";
+import type {
+  BlueprintExtractionVariant,
+  BlueprintNodeData,
+  BlueprintProblem,
+  BlueprintStepKind,
+  PipelineRunRecord,
+} from "@/components/course-pipeline-blueprint-model";
 import type { PDFDocumentStructure } from "@/components/extracted-document-inspector";
 import {
   runArtifactSummary,
@@ -53,11 +59,13 @@ export function extractionNodeData({
   document,
   resource,
   run,
+  variants = [],
 }: {
   activeRunIds: Set<string>;
   document: PDFDocumentStructure | null;
   resource: CourseInventoryNode;
   run: PipelineRunRecord | null;
+  variants?: BlueprintExtractionVariant[];
 }): BlueprintNodeData {
   if (!run && !document) {
     return {
@@ -65,6 +73,7 @@ export function extractionNodeData({
       subtitle: "missing",
       detail: "OCR and extraction variants should appear here for this resource.",
       evidence: ["No extraction run record was found for this resource."],
+      extractionVariants: variants,
       inputs: [{ label: "sections[]", detail: resource.name }],
       outputs: [{ label: "extracted document", state: "missing" }],
       outputPreview: "Run pdftotext, docling, or marker to create inspectable extraction output.",
@@ -88,6 +97,7 @@ export function extractionNodeData({
         `Pages ${document.pages.length}`,
         `Assets ${document.assets.length}`,
       ],
+      extractionVariants: variants,
       inputs: [{ label: "sections[]", detail: resource.name }],
       outputs: [{ label: "extracted document", detail: document.engine, state: document.status }],
       outputPreview: extractedDocumentPreview(document),
@@ -123,6 +133,7 @@ export function extractionNodeData({
       `${run.artifactRefs?.length ?? 0} artifact refs`,
       ...(document ? [`Extracted document ${document.id}`, `${document.pages.length} pages`, `${document.assets.length} assets`] : ["No extracted document payload loaded"]),
     ],
+    extractionVariants: variants,
     inputs: [{ label: "sections[]", detail: resource.name }],
     outputs: [{ label: "extracted document", detail: run.engine, state: run.status }],
     outputPreview: document ? extractedDocumentPreview(document) : runPreview(run),

@@ -16,6 +16,7 @@ import {
   Database,
   Eye,
   FileText,
+  GitCompareArrows,
   GitBranch,
   Layers,
   Play,
@@ -28,8 +29,11 @@ import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { Spinner } from "@/components/ui/spinner";
 import {
   buildBlueprintGraph,
+  type BlueprintExtractionVariant,
   type BlueprintGraphNode,
   type BlueprintNode,
   type BlueprintNodeTone,
@@ -54,6 +58,10 @@ type CoursePipelineBlueprintProps = {
   runs: PipelineRunsResponse | null;
   status: StudyPipelineStatusResponse | null;
   taskView: TaskViewResponse | null;
+  onRerunExtraction?: (engine: string) => void;
+  onSelectRun?: (runId: string) => void;
+  rerunningEngine?: string | null;
+  selectingRunId?: string | null;
   unavailable?: {
     extractedDocuments?: string;
     taskView?: string;
@@ -71,6 +79,10 @@ export function CoursePipelineBlueprint({
   runs,
   status,
   taskView,
+  onRerunExtraction,
+  onSelectRun,
+  rerunningEngine,
+  selectingRunId,
   unavailable,
 }: CoursePipelineBlueprintProps) {
   const graph = useMemo(
@@ -118,16 +130,39 @@ export function CoursePipelineBlueprint({
       </div>
 
       <aside className="min-h-[640px] rounded-3xl bg-secondary/45 px-4 py-4">
-        {selectedNode ? <NodeInspector node={selectedNode} /> : <p className="text-sm text-muted-foreground">Select a node to inspect its pipeline evidence.</p>}
+        {selectedNode ? (
+          <NodeInspector
+            node={selectedNode}
+            onRerunExtraction={onRerunExtraction}
+            onSelectRun={onSelectRun}
+            rerunningEngine={rerunningEngine}
+            selectingRunId={selectingRunId}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">Select a node to inspect its pipeline evidence.</p>
+        )}
       </aside>
     </div>
   );
 }
 
-function NodeInspector({ node }: { node: BlueprintNode }) {
+function NodeInspector({
+  node,
+  onRerunExtraction,
+  onSelectRun,
+  rerunningEngine,
+  selectingRunId,
+}: {
+  node: BlueprintNode;
+  onRerunExtraction?: (engine: string) => void;
+  onSelectRun?: (runId: string) => void;
+  rerunningEngine?: string | null;
+  selectingRunId?: string | null;
+}) {
   const data = node.data;
   const problems = data.problems ?? [];
   const actions = inspectorActions(data);
+  const extractionVariants = data.extractionVariants ?? [];
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -157,10 +192,18 @@ function NodeInspector({ node }: { node: BlueprintNode }) {
       </InspectorSection>
 
       <InspectorSection icon={Eye} title="Preview">
-        <p className="max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-foreground">
-          {data.outputPreview || "No direct output preview is stored for this node yet."}
-        </p>
+        <RenderedNodePreview node={node} />
       </InspectorSection>
+
+      {extractionVariants.length > 0 ? (
+        <InspectorSection icon={GitCompareArrows} title="Extraction variants">
+          <ExtractionVariantPanel
+            onSelectRun={onSelectRun}
+            selectingRunId={selectingRunId}
+            variants={extractionVariants}
+          />
+        </InspectorSection>
+      ) : null}
 
       <InspectorSection icon={AlertCircle} title="Problems" tone={problems.length > 0 ? "warning" : "default"}>
         {problems.length > 0 ? (
@@ -195,21 +238,138 @@ function NodeInspector({ node }: { node: BlueprintNode }) {
 
       <InspectorSection icon={Play} title="Actions">
         <div className="grid gap-2">
-          {actions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Button className="h-9 justify-start rounded-full" disabled key={action.label} type="button" variant="secondary">
-                <Icon aria-hidden className="size-4" />
-                {action.label}
-              </Button>
-            );
-          })}
-          <p className="text-xs leading-5 text-muted-foreground">
-            Actions are shown here so the workflow is visible; backend execution buttons will be wired in a later goal.
-          </p>
+          {data.title === "Extraction Variants" && onRerunExtraction ? (
+            <ExtractionActionButtons
+              onRerunExtraction={onRerunExtraction}
+              rerunningEngine={rerunningEngine}
+              variants={extractionVariants}
+            />
+          ) : (
+            <>
+              {actions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Button className="h-9 justify-start rounded-full" disabled key={action.label} type="button" variant="secondary">
+                    <Icon aria-hidden className="size-4" />
+                    {action.label}
+                  </Button>
+                );
+              })}
+              <p className="text-xs leading-5 text-muted-foreground">
+                Actions are shown here so the workflow is visible; backend execution buttons will be wired in a later goal.
+              </p>
+            </>
+          )}
         </div>
       </InspectorSection>
     </div>
+  );
+}
+
+function RenderedNodePreview({ node }: { node: BlueprintNode }) {
+  const rawPreview = node.data.outputPreview ?? "";
+  const { hiddenCount, markdown } = useMemo(() => preparePreviewMarkdown(rawPreview), [rawPreview]);
+  if (!markdown.trim()) {
+    return (
+      <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">
+        No direct output preview is stored for this node yet.
+      </p>
+    );
+  }
+  return (
+    <div className="max-h-[36rem] overflow-auto rounded-2xl bg-background/80 px-3 py-3">
+      {hiddenCount > 0 ? (
+        <p className="mb-3 rounded-2xl bg-secondary/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {hiddenCount} pipeline trace line{hiddenCount === 1 ? "" : "s"} hidden from this rendered preview.
+        </p>
+      ) : null}
+      <MarkdownRenderer className="space-y-3 break-words text-sm leading-6 text-foreground" text={markdown} />
+    </div>
+  );
+}
+
+function ExtractionVariantPanel({
+  onSelectRun,
+  selectingRunId,
+  variants,
+}: {
+  onSelectRun?: (runId: string) => void;
+  selectingRunId?: string | null;
+  variants: BlueprintExtractionVariant[];
+}) {
+  return (
+    <div className="grid gap-2">
+      {variants.map((variant) => {
+        const selecting = selectingRunId === variant.runId;
+        return (
+          <div className="rounded-2xl bg-background/80 px-3 py-3" key={variant.engine}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{variant.engine}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{variant.configHash}</p>
+              </div>
+              <Badge variant={variantStatusBadge(variant.status)}>{variant.active ? "active" : variant.status}</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <MetricTile label="Chars" value={variant.chars === null ? "missing" : String(variant.chars)} />
+              <MetricTile label="Artifacts" value={String(variant.artifactCount)} />
+            </div>
+            {variant.preview ? (
+              <p className="mt-3 line-clamp-3 rounded-2xl bg-secondary/55 px-3 py-2 text-xs leading-5 text-foreground/80">
+                {variant.preview}
+              </p>
+            ) : null}
+            {variant.runId && onSelectRun ? (
+              <Button
+                className="mt-3 h-8 w-full justify-center rounded-full"
+                disabled={variant.active || selecting}
+                onClick={() => onSelectRun(variant.runId!)}
+                type="button"
+                variant={variant.active ? "secondary" : "default"}
+              >
+                {selecting ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden className="size-4" />}
+                {variant.active ? "Active output" : "Use this output"}
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExtractionActionButtons({
+  onRerunExtraction,
+  rerunningEngine,
+  variants,
+}: {
+  onRerunExtraction: (engine: string) => void;
+  rerunningEngine?: string | null;
+  variants: BlueprintExtractionVariant[];
+}) {
+  const engines = variants.length > 0 ? variants.map((variant) => variant.engine) : ["pdftotext", "docling", "marker"];
+  return (
+    <>
+      {engines.map((engine) => {
+        const running = rerunningEngine === engine;
+        return (
+          <Button
+            className="h-9 justify-start rounded-full"
+            disabled={Boolean(rerunningEngine)}
+            key={engine}
+            onClick={() => onRerunExtraction(engine)}
+            type="button"
+            variant="secondary"
+          >
+            {running ? <Spinner aria-hidden /> : <RotateCw aria-hidden className="size-4" />}
+            Run {engine}
+          </Button>
+        );
+      })}
+      <p className="text-xs leading-5 text-muted-foreground">
+        Runs create a new immutable extraction variant. Selecting a variant decides which output downstream steps use.
+      </p>
+    </>
   );
 }
 
@@ -423,6 +583,82 @@ function inspectorActions(data: BlueprintNode["data"]) {
     { icon: Search, label: "Inspect source" },
     { icon: RotateCw, label: "Rerun step" },
   ];
+}
+
+function preparePreviewMarkdown(rawPreview: string): { hiddenCount: number; markdown: string } {
+  const lines = rawPreview
+    .replace(/^---[\s\S]*?---\s*/u, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .split("\n");
+  const kept: string[] = [];
+  let hiddenCount = 0;
+  let skippingOriginalSources = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^#{1,4}\s+Original Sources$/i.test(trimmed)) {
+      skippingOriginalSources = true;
+      hiddenCount += 1;
+      continue;
+    }
+    if (skippingOriginalSources) {
+      hiddenCount += trimmed ? 1 : 0;
+      continue;
+    }
+    if (isPipelineTraceLine(trimmed)) {
+      hiddenCount += 1;
+      continue;
+    }
+    kept.push(line);
+  }
+  const withoutDuplicateTitle = removeDuplicateLeadingTitle(kept.join("\n"));
+  const markdown = normalizePreviewMarkdown(withoutDuplicateTitle)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { hiddenCount, markdown };
+}
+
+function isPipelineTraceLine(line: string): boolean {
+  return [
+    /^Source task:/i,
+    /^Source script:/i,
+    /^Solution status:/i,
+    /^Solution page:/i,
+    /^This is the versioned working copy/i,
+    /^#{1,4}\s+Task Text$/i,
+  ].some((pattern) => pattern.test(line));
+}
+
+function removeDuplicateLeadingTitle(markdown: string): string {
+  const lines = markdown.split("\n");
+  const first = lines[0]?.trim();
+  const second = lines[1]?.trim();
+  if (first && second) {
+    const headingText = second.replace(/^#{1,6}\s+/, "").trim();
+    if (headingText && first.toLowerCase() === headingText.toLowerCase()) {
+      return lines.slice(1).join("\n");
+    }
+  }
+  return markdown;
+}
+
+function normalizePreviewMarkdown(markdown: string): string {
+  return markdown
+    .replace(/^``([a-zA-Z0-9_-]*)\s*$/gm, "```$1")
+    .replace(/^```pseud\no\n/gm, "```pseudo\n")
+    .replace(/([^\n])\n?(```[a-zA-Z0-9_-]*\n)/g, "$1\n\n$2")
+    .replace(/(\n```\n)([^\n])/g, "$1\n$2")
+    .replace(/([^\n])(\s*#{1,4}\s+)/g, "$1\n\n$2")
+    .replace(/^(#{1,4}\s+.+)\n(?!\n)/gm, "$1\n\n")
+    .replace(/([^\n])(<figure\b)/g, "$1\n\n$2")
+    .replace(/(<\/figure>)([^\n])/g, "$1\n\n$2")
+    .replace(/```([a-zA-Z0-9_-]+)([^\n`])/g, "```$1\n$2");
+}
+
+function variantStatusBadge(status: BlueprintExtractionVariant["status"]): "default" | "destructive" | "outline" | "secondary" {
+  if (status === "active" || status === "ok") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "missing") return "outline";
+  return "secondary";
 }
 
 function nodeIcon(tone: BlueprintNodeTone) {

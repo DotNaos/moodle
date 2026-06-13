@@ -453,6 +453,18 @@ describe("course pipeline blueprint graph", () => {
     expect(sheetExtraction?.data.problems?.map((problem) => problem.label)).toContain("No extraction run");
   });
 
+  test("attaches OCR engine variants to resource extraction nodes", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
+    const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");
+    const variants = sheetExtraction?.data.extractionVariants ?? [];
+
+    expect(variants.map((variant) => variant.engine)).toEqual(["pdftotext", "docling", "marker"]);
+    expect(variants.find((variant) => variant.engine === "docling")?.status).toBe("active");
+    expect(variants.find((variant) => variant.engine === "docling")?.chars).toBe(240);
+    expect(variants.find((variant) => variant.engine === "pdftotext")?.status).toBe("missing");
+    expect(variants.find((variant) => variant.engine === "marker")?.status).toBe("missing");
+  });
+
   test("uses real extracted documents and task-view outputs when available", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const pageNode = graph.nodes.find((node) =>
