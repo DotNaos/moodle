@@ -1,7 +1,7 @@
 "use client";
 
 import katex from "katex";
-import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, Check, CheckCircle2, ChevronDown, Circle, Columns2, FileText, Gauge, Lightbulb, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Play, RefreshCw, Rows3, Settings2, Sparkles, Square, WandSparkles, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpenText, CheckCircle2, Circle, Columns2, FileText, Gauge, Lightbulb, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Play, RefreshCw, Rows3, Sparkles, Square, WandSparkles, X } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -118,6 +118,15 @@ type CodexReasoningOption = {
   description?: string;
 };
 
+const PIPELINE_FEEDBACK_OPTIONS = [
+  { id: "task_missing", label: "Aufgabe fehlt" },
+  { id: "image_missing", label: "Bild fehlt" },
+  { id: "solution_wrong", label: "Lösung stimmt nicht" },
+  { id: "ocr_bad", label: "Text falsch erkannt" },
+  { id: "task_confusing", label: "Aufgabe unklar" },
+  { id: "other", label: "Etwas anderes" },
+] as const;
+
 type RefineStreamEvent = {
   type?: string;
   message?: string;
@@ -172,17 +181,17 @@ export function TaskStudyPanel({
   const [runningStage, setRunningStage] = useState<StudyPipelineStage | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<(typeof PIPELINE_FEEDBACK_OPTIONS)[number]["id"]>("task_confusing");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [refiningTarget, setRefiningTarget] = useState<string | null>(null);
-  const [modelLoading, setModelLoading] = useState(false);
-  const [modelError, setModelError] = useState<string | null>(null);
   const [refineModels, setRefineModels] = useState<CodexModelOption[]>([]);
   const [selectedRefineModel, setSelectedRefineModel] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
   const [refineInstructions, setRefineInstructions] = useState("");
   const [codexConnected, setCodexConnected] = useState(false);
-  const [codexAuthChecking, setCodexAuthChecking] = useState(false);
   const [refineStream, setRefineStream] = useState<string[]>([]);
-  const [codexSettingsOpen, setCodexSettingsOpen] = useState(false);
   const [taskMode, setTaskMode] = useState<"view" | "test">("view");
   const [testLayout, setTestLayout] = useState<TaskTestLayout>(() => {
     if (typeof window === "undefined") {
@@ -259,10 +268,6 @@ export function TaskStudyPanel({
     },
     [],
   );
-  const selectedModel = useMemo(
-    () => refineModels.find((model) => model.id === selectedRefineModel) ?? null,
-    [refineModels, selectedRefineModel],
-  );
   const materialById = useMemo(() => new Map(materials.map((material) => [material.id, material])), [materials]);
   const previewMaterial = previewResourceId ? materialById.get(previewResourceId) ?? null : null;
   const previewResource = previewResourceId
@@ -312,7 +317,6 @@ export function TaskStudyPanel({
       setRefineModels([]);
       setSelectedRefineModel("");
       setSelectedReasoningEffort("");
-      setModelError(null);
       setCodexConnected(false);
       return;
     }
@@ -603,9 +607,36 @@ export function TaskStudyPanel({
     }
   }
 
+  async function submitPipelineFeedback() {
+    if (!courseId || submittingFeedback) {
+      return;
+    }
+    const targetID = selectedTask?.taskId ?? selectedSheet?.resourceId ?? courseId;
+    const targetKind = selectedTask ? "task" : selectedSheet ? "assignment_sheet" : "course";
+    setSubmittingFeedback(true);
+    setError(null);
+    try {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/feedback`, {
+        method: "POST",
+        body: JSON.stringify({
+          feedbackType,
+          message: feedbackMessage.trim(),
+          targetId: targetID,
+          targetKind,
+        }),
+      });
+      setFeedbackDialogOpen(false);
+      setFeedbackMessage("");
+      setFeedbackType("task_confusing");
+      setMessage("Problem wurde im Pipeline Review erfasst.");
+    } catch (feedbackError) {
+      setError(getErrorMessage(feedbackError));
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }
+
   async function refreshCodexModelCatalog(signal?: AbortSignal) {
-    setCodexAuthChecking(true);
-    setModelError(null);
     try {
       const response = await fetch("/api/codex/auth", {
         cache: "no-store",
@@ -620,7 +651,6 @@ export function TaskStudyPanel({
         setRefineModels([]);
         setSelectedRefineModel("");
         setSelectedReasoningEffort("");
-        setModelError("Connect ChatGPT before loading refinement models.");
         return;
       }
       setCodexConnected(true);
@@ -631,16 +661,11 @@ export function TaskStudyPanel({
         setRefineModels([]);
         setSelectedRefineModel("");
         setSelectedReasoningEffort("");
-        setModelError(getErrorMessage(authError));
       }
-    } finally {
-      setCodexAuthChecking(false);
     }
   }
 
   async function loadCodexModels(signal?: AbortSignal) {
-    setModelLoading(true);
-    setModelError(null);
     try {
       const response = await fetch("/api/codex/models", {
         cache: "no-store",
@@ -663,10 +688,7 @@ export function TaskStudyPanel({
         setRefineModels([]);
         setSelectedRefineModel("");
         setSelectedReasoningEffort("");
-        setModelError(getErrorMessage(modelsError));
       }
-    } finally {
-      setModelLoading(false);
     }
   }
 
@@ -718,7 +740,6 @@ export function TaskStudyPanel({
         setRefineModels([]);
         setSelectedRefineModel("");
         setSelectedReasoningEffort("");
-        setModelError("Connect ChatGPT again before improving study content.");
       }
     } finally {
       setRefiningTarget(null);
@@ -736,6 +757,8 @@ export function TaskStudyPanel({
     : courseTitle(course);
   const pageIcon = mode === "script" ? <BookOpenText aria-hidden className="size-4" /> : <CheckCircle2 aria-hidden className="size-4" />;
   const fatalLoadError = Boolean(error && !view && !loading && !runningStage);
+  const coursePipelineHref = `/courses/${encodeURIComponent(courseId)}/pipeline`;
+  const hasPdfActions = Boolean(selectedTask?.sourceResourceId || selectedSheet?.resourceId || selectedSheet?.solutionResourceId);
 
   // Shared between the desktop header dropdown and the floating mobile one.
   const actionMenuItems = (
@@ -752,40 +775,14 @@ export function TaskStudyPanel({
           Lösungs-PDF öffnen
         </DropdownMenuItem>
       ) : null}
-      {selectedTask?.contentState?.id ? (
-        <DropdownMenuItem
-          disabled={!codexConnected || !selectedRefineModel || refiningTarget === `task:${selectedTask.contentState.id}`}
-          onSelect={() => void refineStudyContent("task", selectedTask.contentState?.id ?? selectedTask.sourceResourceId)}
-        >
-          {refiningTarget === `task:${selectedTask.contentState.id}` ? <Spinner aria-hidden /> : <WandSparkles aria-hidden />}
-          Extraktion verbessern
-        </DropdownMenuItem>
-      ) : null}
-      <DropdownMenuItem onSelect={() => setCodexSettingsOpen((open) => !open)}>
-        <Settings2 aria-hidden />
-        Codex-Einstellungen
+      {hasPdfActions ? <DropdownMenuSeparator /> : null}
+      <DropdownMenuItem onSelect={() => setFeedbackDialogOpen(true)}>
+        <AlertCircle aria-hidden />
+        Problem melden
       </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem
-        disabled={loading || Boolean(runningStage)}
-        onSelect={() => void runPipelineStage("raw")}
-      >
-        {runningStage === "raw" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
-        Rohdaten laden
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        disabled={loading || Boolean(runningStage)}
-        onSelect={() => void runPipelineStage("extracted")}
-      >
-        {runningStage === "extracted" ? <Spinner aria-hidden /> : <FileText aria-hidden />}
-        Texte extrahieren
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        disabled={loading || Boolean(runningStage)}
-        onSelect={() => void runPipelineStage("curated")}
-      >
-        {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-        Neu erstellen
+      <DropdownMenuItem onSelect={() => window.location.assign(coursePipelineHref)}>
+        <Gauge aria-hidden />
+        Pipeline-Status anzeigen
       </DropdownMenuItem>
     </>
   );
@@ -918,15 +915,11 @@ export function TaskStudyPanel({
               </DropdownMenuContent>
             </DropdownMenu>
             {!selectedTask ? (
-              <Button
-                className="w-fit"
-                disabled={loading || Boolean(runningStage)}
-                onClick={() => void runPipelineStage("curated")}
-                type="button"
-                variant="secondary"
-              >
-                {loading || runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-                Neu erstellen
+              <Button asChild className="w-fit" variant="secondary">
+                <a href={coursePipelineHref}>
+                  <Gauge aria-hidden />
+                  Pipeline-Status anzeigen
+                </a>
               </Button>
             ) : null}
           </div>
@@ -1019,27 +1012,6 @@ export function TaskStudyPanel({
           </div>
         </div>
       ) : null}
-      {view && codexSettingsOpen ? (
-        <CodexModelPicker
-          authChecking={codexAuthChecking}
-          connected={codexConnected}
-          error={modelError}
-          loading={modelLoading}
-          models={refineModels}
-          onModelChange={(modelId) => {
-            const nextModel = refineModels.find((model) => model.id === modelId) ?? null;
-            setSelectedRefineModel(modelId);
-            setSelectedReasoningEffort((current) => nextReasoningEffort(nextModel, current));
-          }}
-          onReasoningChange={setSelectedReasoningEffort}
-          onInstructionsChange={setRefineInstructions}
-          instructions={refineInstructions}
-          reasoningValue={selectedReasoningEffort}
-          selectedModel={selectedModel}
-          value={selectedRefineModel}
-        />
-      ) : null}
-
       {fatalLoadError ? (
         <StudyPipelineErrorState
           error={error ?? "Moodle study pipeline failed."}
@@ -1199,8 +1171,8 @@ export function TaskStudyPanel({
                   </span>
                   <p className="mt-4 font-medium">Keine Aufgaben gefunden</p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    In den extrahierten Materialien wurden keine Aufgaben erkannt. Erstelle den Study-Stand neu, um es
-                    erneut zu versuchen.
+                    In den extrahierten Materialien wurden keine Aufgaben erkannt. Fordere die Aufgaben erneut mit den
+                    Standard-Einstellungen an.
                   </p>
                   <Button
                     className="mt-4"
@@ -1209,8 +1181,8 @@ export function TaskStudyPanel({
                     type="button"
                     variant="secondary"
                   >
-                    {runningStage === "curated" ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-                    Neu erstellen
+                    {runningStage === "curated" ? <Spinner aria-hidden /> : <Sparkles aria-hidden />}
+                    {runningStage === "curated" ? "Wird erstellt" : "Aufgaben anfordern"}
                   </Button>
                 </div>
               </div>
@@ -1218,6 +1190,50 @@ export function TaskStudyPanel({
           </main>
         </div>
       )}
+      <Dialog open={feedbackDialogOpen} onOpenChange={setFeedbackDialogOpen}>
+        <DialogContent className="max-w-[min(92vw,520px)] rounded-[1.75rem] border-0 p-5 shadow-xl">
+          <DialogTitle>Problem melden</DialogTitle>
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {PIPELINE_FEEDBACK_OPTIONS.map((option) => (
+                <button
+                  className={cn(
+                    "min-h-9 rounded-full px-3 text-sm font-medium transition-colors",
+                    feedbackType === option.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-muted-foreground hover:text-foreground",
+                  )}
+                  key={option.id}
+                  onClick={() => setFeedbackType(option.id)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              className="min-h-28 w-full resize-none rounded-[1.5rem] border-0 bg-secondary px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+              onChange={(event) => setFeedbackMessage(event.target.value)}
+              placeholder="Kurz beschreiben, was fehlt oder falsch ist."
+              value={feedbackMessage}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                disabled={submittingFeedback}
+                onClick={() => setFeedbackDialogOpen(false)}
+                type="button"
+                variant="secondary"
+              >
+                Abbrechen
+              </Button>
+              <Button disabled={submittingFeedback} onClick={() => void submitPipelineFeedback()} type="button">
+                {submittingFeedback ? <Spinner aria-hidden /> : <AlertCircle aria-hidden />}
+                Senden
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(previewResourceId)}
         onOpenChange={(open) => {
@@ -1884,196 +1900,6 @@ function StudyPipelineErrorState({
           Erneut laden
         </Button>
       </div>
-    </div>
-  );
-}
-
-function CodexModelPicker({
-  authChecking,
-  connected,
-  error,
-  loading,
-  models,
-  onModelChange,
-  onReasoningChange,
-  onInstructionsChange,
-  instructions,
-  reasoningValue,
-  selectedModel,
-  value,
-}: {
-  authChecking: boolean;
-  connected: boolean;
-  error: string | null;
-  loading: boolean;
-  models: CodexModelOption[];
-  onModelChange: (value: string) => void;
-  onReasoningChange: (value: string) => void;
-  onInstructionsChange: (value: string) => void;
-  instructions: string;
-  reasoningValue: string;
-  selectedModel: CodexModelOption | null;
-  value: string;
-}) {
-  const [openMenu, setOpenMenu] = useState<"model" | "reasoning" | null>(null);
-  const pickerRef = useRef<HTMLDivElement | null>(null);
-  const reasoningOptions = asArray(selectedModel?.reasoningEfforts);
-  const selectedReasoning = reasoningOptions.find((option) => option.id === reasoningValue) ?? null;
-  const disabled = authChecking || loading || !connected;
-  const statusText = authChecking
-    ? "Checking ChatGPT connection..."
-    : !connected
-      ? "Connect ChatGPT before choosing a model."
-      : loading
-        ? "Loading model catalog..."
-        : error
-          ? error
-      : "Loaded from your Codex catalog.";
-
-  useEffect(() => {
-    if (!openMenu) {
-      return;
-    }
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
-        setOpenMenu(null);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpenMenu(null);
-      }
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [openMenu]);
-
-  return (
-    <div ref={pickerRef} className="mx-4 mt-4 flex flex-col gap-3 rounded-[1.5rem] bg-secondary px-4 py-3 text-sm md:mx-5">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 font-medium text-foreground">
-            <Sparkles aria-hidden className="size-4" />
-            Codex refinement
-          </p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{statusText}</p>
-        </div>
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <CatalogMenu
-            disabled={disabled || models.length === 0}
-            icon={<Sparkles aria-hidden className="size-4" />}
-            label="Model"
-            onOpenChange={(open) => setOpenMenu(open ? "model" : null)}
-            open={openMenu === "model"}
-            options={models.map((model) => ({
-              id: model.id,
-              label: model.label,
-              description: model.speedTiers?.length ? `Speed: ${model.speedTiers.join(", ")}` : model.description,
-            }))}
-            onSelect={onModelChange}
-            value={value}
-            valueLabel={selectedModel?.label ?? "No model"}
-          />
-          <CatalogMenu
-            disabled={disabled || reasoningOptions.length === 0}
-            icon={<Gauge aria-hidden className="size-4" />}
-            label="Reasoning"
-            onOpenChange={(open) => setOpenMenu(open ? "reasoning" : null)}
-            open={openMenu === "reasoning"}
-            options={reasoningOptions}
-            onSelect={onReasoningChange}
-            value={reasoningValue}
-            valueLabel={selectedReasoning?.label ?? "Default"}
-          />
-        </div>
-      </div>
-      <label className="block">
-        <span className="sr-only">Additional Codex refinement prompt</span>
-        <textarea
-          className="min-h-20 w-full resize-y rounded-[1.25rem] border-0 bg-background px-4 py-3 text-sm leading-6 text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          disabled={disabled}
-          maxLength={2000}
-          onChange={(event) => onInstructionsChange(event.target.value)}
-          placeholder="Optional: Sag Codex, worauf es beim Verbessern achten soll..."
-          value={instructions}
-        />
-      </label>
-    </div>
-  );
-}
-
-function CatalogMenu({
-  disabled,
-  icon,
-  label,
-  onOpenChange,
-  onSelect,
-  open,
-  options,
-  value,
-  valueLabel,
-}: {
-  disabled: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onOpenChange: (open: boolean) => void;
-  onSelect: (value: string) => void;
-  open: boolean;
-  options: Array<{ id: string; label: string; description?: string }>;
-  value: string;
-  valueLabel: string;
-}) {
-  return (
-    <div className="relative min-w-0">
-      <Button
-        aria-expanded={open}
-        className="h-11 w-full justify-between bg-background px-4 shadow-sm hover:bg-background sm:w-auto sm:min-w-44"
-        disabled={disabled}
-        onClick={() => onOpenChange(!open)}
-        type="button"
-        variant="secondary"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          {icon}
-          <span className="min-w-0">
-            <span className="block text-left text-[0.68rem] font-medium uppercase leading-3 text-muted-foreground">{label}</span>
-            <span className="block max-w-48 truncate text-left text-sm text-foreground">{valueLabel}</span>
-          </span>
-        </span>
-        <ChevronDown aria-hidden className={cn("size-4 transition-transform", open ? "rotate-180" : "")} />
-      </Button>
-      {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 max-h-80 w-full overflow-auto rounded-[1.5rem] bg-popover p-2 text-popover-foreground shadow-2xl sm:w-72">
-          {options.map((option) => (
-            <button
-              className={cn(
-                "flex w-full items-start gap-3 rounded-[1rem] px-3 py-2 text-left transition-colors hover:bg-secondary",
-                option.id === value ? "bg-secondary" : "",
-              )}
-              key={option.id}
-              onClick={() => {
-                onSelect(option.id);
-                onOpenChange(false);
-              }}
-              type="button"
-            >
-              <span className="mt-0.5 grid size-5 place-items-center">
-                {option.id === value ? <Check aria-hidden className="size-4" /> : null}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{option.label}</span>
-                {option.description ? (
-                  <span className="mt-0.5 line-clamp-2 block text-xs leading-4 text-muted-foreground">{option.description}</span>
-                ) : null}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -3123,14 +2949,18 @@ async function loadTaskViewResponse(courseId: string, includeScript: boolean, si
   if (bundleResponse.ok) {
     return await bundleResponse.json() as TaskViewResponse;
   }
-  if (![404, 400].includes(bundleResponse.status)) {
-    const payload = await bundleResponse.json().catch(() => null) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Study bundle failed with ${bundleResponse.status}.`);
+  try {
+    return await studyPipelineRequest<TaskViewResponse>(
+      `/courses/${encodeURIComponent(courseId)}/study-pipeline/task-view?${query}`,
+      signal ? { signal } : undefined,
+    );
+  } catch (pipelineError) {
+    if (![404, 400].includes(bundleResponse.status)) {
+      const payload = await bundleResponse.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? getErrorMessage(pipelineError));
+    }
+    throw pipelineError;
   }
-  return await studyPipelineRequest<TaskViewResponse>(
-    `/courses/${encodeURIComponent(courseId)}/study-pipeline/task-view?${query}`,
-    signal ? { signal } : undefined,
-  );
 }
 
 async function runCodex(prompt: string): Promise<{ finalResponse: string }> {

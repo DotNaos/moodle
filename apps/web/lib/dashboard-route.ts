@@ -1,7 +1,7 @@
 import type { StudyMode } from "@/components/study-mode-actions";
 import type { HomeView } from "@/lib/home-navigation";
 
-const ROUTABLE_STUDY_MODES = new Set<StudyMode>(["materials", "tasks", "script", "formula", "recordings"]);
+const ROUTABLE_STUDY_MODES = new Set<StudyMode>(["materials", "tasks", "script", "formula", "recordings", "pipeline"]);
 
 const STUDY_MODE_SEGMENTS: Record<StudyMode, string> = {
   materials: "materials",
@@ -9,6 +9,7 @@ const STUDY_MODE_SEGMENTS: Record<StudyMode, string> = {
   script: "script",
   formula: "formula",
   recordings: "recordings",
+  pipeline: "pipeline",
 };
 
 const SEGMENT_TO_STUDY_MODE = Object.fromEntries(

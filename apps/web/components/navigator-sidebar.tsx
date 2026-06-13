@@ -235,6 +235,18 @@ function SidebarContent({
           />
         );
       }
+      if (path.mode === "pipeline") {
+        return (
+          <div className="min-h-0 flex-1 overflow-auto px-1">
+            <div className="px-1 py-2">
+              <p className="text-sm font-semibold text-foreground">Pipeline</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Inspector for resources, buckets, runs, blueprint, and review.
+              </p>
+            </div>
+          </div>
+        );
+      }
       return (
         <RecordingDrillList
           activeRecordingId={activeDocument?.kind === "recording" ? activeDocument.recordingId : null}

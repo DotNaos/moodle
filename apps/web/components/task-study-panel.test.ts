@@ -1,10 +1,13 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { ExtractedDetailsPanel } from "@/components/extracted-document-details";
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
 import { groupScriptSections, groupStudyTasksBySection, groupStudyTasksBySheet } from "@/components/course-study-outline";
 import { buildBlockTypeSummary, documentDiagnosticCounts } from "@/components/extracted-document-inspector";
-import { buildInventorySections, buildStudyPipelinePreviewSections } from "@/components/study-pipeline-preview";
+import { buildInventorySections, buildStudyPipelinePreviewSections, StudyPipelinePreview } from "@/components/study-pipeline-preview";
 import { buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
 import {
   buildDashboardRouteURL,
@@ -128,6 +131,33 @@ describe("task outline", () => {
 });
 
 describe("study pipeline preview", () => {
+  test("renders the normal request state without pipeline internals", () => {
+    const html = renderToStaticMarkup(React.createElement(StudyPipelinePreview, {
+      course: { id: 22584, fullname: "High Performance Computing" },
+      extractedDocuments: null,
+      extractedError: null,
+      extractedLoading: false,
+      inventory: null,
+      inventoryError: null,
+      inventoryLoading: false,
+      loading: false,
+      mode: "tasks",
+      onLoadExtractedDocuments: () => undefined,
+      onRefreshInventory: () => undefined,
+      onRunStage: () => undefined,
+      runningStage: null,
+      status: null,
+    }));
+
+    expect(html).toContain("Aufgaben anfordern");
+    expect(html).toContain("Problem melden");
+    expect(html).toContain("Status anschauen");
+    expect(html).toContain("Noch nicht gestartet");
+    expect(html).not.toContain("Kurs-Mapping");
+    expect(html).not.toContain("Erweiterte Schritte");
+    expect(html).not.toContain("PDF-/Block-Inspector");
+  });
+
   test("groups resources by section and highlights task solution links", () => {
     const sections = buildStudyPipelinePreviewSections({
       courseId: "22584",
@@ -168,7 +198,7 @@ describe("study pipeline preview", () => {
     ]);
   });
 
-  test("builds inventory bucket sections without task groups", () => {
+  test("builds inventory bucket sections with task groups and classification buckets", () => {
     const sections = buildInventorySections({
       courseId: "22584",
       generatedAt: "2026-06-12T08:00:00.000Z",
@@ -181,19 +211,42 @@ describe("study pipeline preview", () => {
         references: 1,
         taskGroups: 2,
         totalResources: 5,
+        ignoredAllowed: 1,
         unknown: 1,
       },
       lectureMaterial: [{ id: "teil-01", name: "Teil 01", bucket: "lecture_material", confidence: "high", reason: "", role: "lecture_source", type: "slide" }],
-      taskGroups: [],
+      taskGroups: [
+        {
+          id: "sheet-01",
+          title: "Aufgabenblatt 01",
+          pairingConfidence: "high",
+          pairingReason: "same normalized sheet number",
+          pairingStatus: "paired",
+          sheet: { id: "task-01", name: "Aufgabenblatt 01", bucket: "assignment_sheet", confidence: "high", reason: "title contains Aufgabenblatt 01", role: "assignment_sheet", type: "pdf" },
+          solution: { id: "solution-01", name: "Aufgabenblatt 01 Lösung", bucket: "solution_pdf", confidence: "high", reason: "title contains Lösung", role: "solution_pdf", type: "pdf" },
+        },
+        {
+          id: "sheet-09",
+          title: "Aufgabenblatt 09",
+          pairingConfidence: "high",
+          pairingReason: "no matching solution PDF found",
+          pairingStatus: "missing_solution",
+          sheet: { id: "task-09", name: "Aufgabenblatt 09", bucket: "assignment_sheet", confidence: "high", reason: "title contains Aufgabenblatt 09", role: "assignment_sheet", type: "pdf" },
+        },
+      ],
       references: [{ id: "modul", name: "Modulbeschreibung", bucket: "reference", confidence: "medium", reason: "", role: "course_reference", type: "other" }],
       interactions: [{ id: "forum", name: "Forum", bucket: "interaction", confidence: "medium", reason: "", role: "course_interaction", type: "other" }],
+      ignoredAllowed: [{ id: "zoom", name: "Zoom Link", bucket: "ignored_allowed", confidence: "medium", reason: "external meeting tool", role: "interaction", type: "external_tool" }],
       unknown: [{ id: "unknown", name: "Extern", bucket: "unknown", confidence: "low", reason: "", role: "unknown", type: "other" }],
     });
 
     expect(sections.map((section) => [section.id, section.items.map((item) => item.name)])).toEqual([
       ["lecture", ["Teil 01"]],
+      ["assignments", ["Aufgabenblatt 01", "Aufgabenblatt 09"]],
+      ["solutions", ["Aufgabenblatt 01 Lösung"]],
       ["references", ["Modulbeschreibung"]],
       ["interactions", ["Forum"]],
+      ["ignored", ["Zoom Link"]],
       ["unknown", ["Extern"]],
     ]);
   });
@@ -254,6 +307,47 @@ describe("extracted document inspector", () => {
       visualOnlyPages: 1,
       warnings: 1,
     });
+  });
+
+  test("renders selected block details with image asset references", () => {
+    const asset = {
+      id: "img-1",
+      kind: "embedded_image",
+      mimeType: "image/png",
+      pageNumber: 1,
+      path: "/srv/moodle-study/courses/22584/extracted/runs/run-1/assets/image.png",
+      role: "diagram",
+    };
+    const block = {
+      assetId: "img-1",
+      id: "block-image-1",
+      label: "diagram",
+      pageNumber: 1,
+      source: "extracted_image",
+      type: "image",
+    };
+    const html = renderToStaticMarkup(React.createElement(ExtractedDetailsPanel, {
+      assetsById: new Map([[asset.id, asset]]),
+      courseId: "22584",
+      document: {
+        assets: [asset],
+        diagnostics: { unusedImageAssets: [] },
+        engine: "docling",
+        id: "doc-1",
+        pages: [{ blocks: [block], id: "page-1", pageNumber: 1, previewAssetId: "img-1" }],
+        resource: { id: "947711", name: "Aufgabenblatt 01", type: "task" },
+        runId: "run-1",
+        status: "machine-extracted",
+      },
+      page: { blocks: [block], id: "page-1", pageNumber: 1, previewAssetId: "img-1" },
+      selectedBlock: block,
+    }));
+
+    expect(html).toContain("Block details");
+    expect(html).toContain("block-image-1");
+    expect(html).toContain("Selected asset");
+    expect(html).toContain("/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=");
+    expect(html).toContain("image.png");
   });
 });
 
@@ -684,6 +778,11 @@ describe("dashboard URL routing", () => {
     expect(route.courseId).toBe("42");
     expect(route.mode).toBe("tasks");
     expect(route.courseHubOpen).toBe(false);
+
+    const pipelineRoute = parseDashboardRoute("/courses/42/pipeline", "");
+    expect(pipelineRoute.courseId).toBe("42");
+    expect(pipelineRoute.mode).toBe("pipeline");
+    expect(pipelineRoute.courseHubOpen).toBe(false);
   });
 
   test("keeps modern chat URLs from being parsed as legacy course routes", () => {
@@ -742,6 +841,18 @@ describe("dashboard URL routing", () => {
       selectedTaskId: null,
       studyMode: "materials",
     })).toBe("/calendar");
+
+    expect(buildDashboardRouteURL({
+      courseHubOpen: false,
+      homeView: "courses",
+      navigationMode: "materials",
+      recordingId: null,
+      selectedCourseId: "42",
+      selectedMaterialId: null,
+      selectedScriptSectionId: null,
+      selectedTaskId: null,
+      studyMode: "pipeline",
+    })).toBe("/courses/42/pipeline");
   });
 
   test("treats courses navigation as home even when a course id is still in memory", () => {

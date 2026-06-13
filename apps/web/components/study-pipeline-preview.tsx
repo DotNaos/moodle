@@ -1,15 +1,13 @@
 "use client";
 
-import { AlertCircle, BookOpenText, CheckCircle2, ChevronDown, FileQuestion, FileText, Layers, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { BookOpenText, CheckCircle2, Loader2, MessageCircle, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
-import { ExtractedDocumentInspector, type ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
+import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
 import type { Course } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
-import { cn } from "@/lib/utils";
 
 export type StudyPipelineStage = "raw" | "extracted" | "curated";
 
@@ -62,12 +60,14 @@ export type CourseInventoryResponse = {
     ambiguousTaskGroups: number;
     references: number;
     interactions: number;
+    ignoredAllowed?: number;
     unknown: number;
   };
   lectureMaterial: CourseInventoryNode[];
   taskGroups: CourseInventoryTaskGroup[];
   references: CourseInventoryNode[];
   interactions: CourseInventoryNode[];
+  ignoredAllowed?: CourseInventoryNode[];
   unknown: CourseInventoryNode[];
 };
 
@@ -116,29 +116,26 @@ type StudyPipelinePreviewProps = {
 
 export function StudyPipelinePreview({
   course,
-  extractedDocuments,
-  extractedError,
-  extractedLoading,
-  inventory,
-  inventoryError,
-  inventoryLoading,
   loading,
   mode,
-  onLoadExtractedDocuments,
-  onRefreshInventory,
   runningStage,
   status,
   onRunStage,
 }: StudyPipelinePreviewProps) {
-  const sections = useMemo(() => buildStudyPipelinePreviewSections(status), [status]);
-  const groupedInventory = useMemo(() => buildInventorySections(inventory), [inventory]);
   const summary = status?.summary;
-  const resourceCount = sections.reduce((total, section) => total + section.items.length, 0);
   const busy = loading || Boolean(runningStage);
+  const progress = useMemo(
+    () => pipelineRequestProgress({ loading, mode, runningStage, status }),
+    [loading, mode, runningStage, status],
+  );
+  const courseId = String(course.id);
+  const pipelineHref = `/courses/${encodeURIComponent(courseId)}/pipeline`;
+  const chatHref = `/chat?course=${encodeURIComponent(courseId)}`;
+  const requestLabel = mode === "script" ? "Script anfordern" : "Aufgaben anfordern";
 
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-background">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-10 md:px-6 md:py-14">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-10 md:px-6 md:py-14">
         <header className="flex flex-col items-center text-center">
           <span className="grid size-14 place-items-center rounded-full bg-secondary text-muted-foreground">
             {mode === "script" ? (
@@ -157,22 +154,22 @@ export function StudyPipelinePreview({
                 ? `Aus den Materialien von ${courseTitle(course)} wird ein durchsuchbares Script mit Quellenverweisen erstellt.`
                 : `Aus den Aufgabenblättern von ${courseTitle(course)} werden prüfbare Aufgaben mit Lösungs-Check erstellt.`}
           </p>
-          <div className="mt-5">
+          <div className="mt-5 flex flex-col items-center gap-2 sm:flex-row">
             <StageButton
               disabled={busy}
-              label={mode === "script" ? "Script erstellen" : "Aufgaben erstellen"}
+              label={runningStage ? "Wird erstellt" : requestLabel}
               primary
               running={runningStage === "curated"}
               stage="curated"
               onRunStage={onRunStage}
             />
+            <Button asChild variant="secondary">
+              <a href={chatHref}>
+                <MessageCircle aria-hidden />
+                Problem melden
+              </a>
+            </Button>
           </div>
-          {runningStage ? (
-            <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner aria-hidden className="size-3.5" />
-              Das kann ein paar Minuten dauern – die Ansicht aktualisiert sich danach automatisch.
-            </p>
-          ) : null}
         </header>
 
         {summary ? (
@@ -184,205 +181,41 @@ export function StudyPipelinePreview({
         ) : null}
 
         <section className="rounded-3xl bg-secondary/40 px-5 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <FileQuestion aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                Kurs-Mapping
-              </p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Erste Zuordnung der Moodle-Ressourcen, bevor Extracted oder Codex daraus Aufgaben baut.
-              </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{progress.title}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{progress.description}</p>
+              </div>
+              <Button asChild className="w-fit" variant="secondary">
+                <a href={pipelineHref}>
+                  <RefreshCw aria-hidden />
+                  Status anschauen
+                </a>
+              </Button>
             </div>
-            <Button
-              className="w-fit"
-              disabled={busy || inventoryLoading}
-              onClick={onRefreshInventory}
-              type="button"
-              variant="secondary"
-            >
-              {inventoryLoading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-              Aktualisieren
-            </Button>
+
+            <div>
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>{progress.stepLabel}</span>
+                <span className="tabular-nums">{progress.percent}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
+            </div>
+
+            {runningStage ? (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Spinner aria-hidden className="size-3.5" />
+                Die Erstellung läuft im Hintergrund. Du kannst die Seite geöffnet lassen oder später zurückkommen.
+              </p>
+            ) : null}
           </div>
-
-          {inventoryLoading && !inventory ? (
-            <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner aria-hidden className="size-4" />
-              Inventory wird geladen…
-            </p>
-          ) : null}
-
-          {inventoryError ? (
-            <p className="mt-4 flex items-start gap-2 rounded-2xl bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
-              <span>{inventoryError}</span>
-            </p>
-          ) : null}
-
-          {inventory ? (
-            <div className="mt-4 flex flex-col gap-4">
-              <div className="flex flex-wrap gap-2">
-                <StatChip label="Vorlesung" value={inventory.summary.lectureMaterial} />
-                <StatChip label="Aufgabengruppen" value={inventory.summary.taskGroups} />
-                <StatChip label="mit Lösung" value={inventory.summary.pairedTaskGroups} />
-                <StatChip label="ohne Lösung" value={inventory.summary.missingSolutionGroups} />
-                <StatChip label="unklar" value={inventory.summary.ambiguousTaskGroups + inventory.summary.unknown} />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {inventory.taskGroups.slice(0, 10).map((group) => (
-                  <TaskGroupRow group={group} key={group.id} />
-                ))}
-                {inventory.taskGroups.length > 10 ? (
-                  <p className="px-1 text-xs text-muted-foreground">
-                    +{inventory.taskGroups.length - 10} weitere Aufgabengruppen
-                  </p>
-                ) : null}
-              </div>
-
-              {groupedInventory.length > 0 ? (
-                <details className="group rounded-2xl bg-background/60 px-4 py-3">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
-                    <Layers aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">Weitere Buckets</span>
-                    <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                  </summary>
-                  <div className="mt-3 flex flex-col gap-3">
-                    {groupedInventory.map((section) => (
-                      <InventoryBucket key={section.id} section={section} />
-                    ))}
-                  </div>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
         </section>
-
-        <ExtractedDocumentInspector
-          courseId={String(course.id)}
-          documents={extractedDocuments}
-          error={extractedError}
-          loading={extractedLoading}
-          onLoad={onLoadExtractedDocuments}
-        />
-
-        {sections.length > 0 ? (
-          <details className="group rounded-3xl bg-secondary/40 px-5 py-4">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
-              <Layers aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">Gefundene Ressourcen ({resourceCount})</span>
-              <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="mt-3 flex flex-col gap-3">
-              {sections.map((section) => (
-                <div key={section.id}>
-                  <p className="mb-1.5 line-clamp-1 text-xs font-medium text-muted-foreground">
-                    {section.name} · {section.items.length}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {section.items.slice(0, 8).map((item) => (
-                      <span
-                        className={cn(
-                          "inline-flex max-w-64 items-center gap-1 rounded-full px-2.5 py-1 text-xs",
-                          item.kind === "task"
-                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
-                            : item.kind === "solution"
-                              ? "bg-sky-500/12 text-sky-700 dark:text-sky-300"
-                              : "bg-background text-muted-foreground",
-                        )}
-                        key={item.id}
-                      >
-                        <FileText aria-hidden className="size-3 shrink-0" />
-                        <span className="truncate">{item.name}</span>
-                      </span>
-                    ))}
-                    {section.items.length > 8 ? (
-                      <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
-                        +{section.items.length - 8}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-        ) : null}
-
-        <details className="group rounded-3xl bg-secondary/40 px-5 py-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
-            <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">Erweiterte Schritte</span>
-            <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-          </summary>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Die Erstellung läuft in Stufen. Normalerweise reicht der Button oben – hier kannst du einzelne Stufen
-            gezielt neu ausführen.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <StageButton
-              disabled={busy}
-              label="Rohdaten holen"
-              running={runningStage === "raw"}
-              stage="raw"
-              onRunStage={onRunStage}
-            />
-            <StageButton
-              disabled={busy}
-              label="Texte extrahieren"
-              running={runningStage === "extracted"}
-              stage="extracted"
-              onRunStage={onRunStage}
-            />
-          </div>
-        </details>
-      </div>
-    </div>
-  );
-}
-
-function TaskGroupRow({ group }: { group: CourseInventoryTaskGroup }) {
-  const missing = group.pairingStatus === "missing_solution";
-  const ambiguous = group.pairingStatus === "ambiguous_solution";
-  return (
-    <div className="rounded-2xl bg-background/70 px-3 py-2.5">
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">{group.title}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{group.sheet.name}</p>
-        </div>
-        <Badge variant={missing || ambiguous ? "destructive" : "secondary"}>
-          {missing ? "Lösung fehlt" : ambiguous ? "Mehrdeutig" : "Lösung verknüpft"}
-        </Badge>
-      </div>
-      {group.solution ? (
-        <p className="mt-2 truncate text-xs text-muted-foreground">Lösung: {group.solution.name}</p>
-      ) : null}
-      {missing || ambiguous ? (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{group.pairingReason}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function InventoryBucket({ section }: { section: { id: string; label: string; items: CourseInventoryNode[] } }) {
-  return (
-    <div>
-      <p className="mb-1.5 line-clamp-1 text-xs font-medium text-muted-foreground">
-        {section.label} · {section.items.length}
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {section.items.slice(0, 10).map((item) => (
-          <span className="inline-flex max-w-64 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground" key={item.id}>
-            <FileText aria-hidden className="size-3 shrink-0" />
-            <span className="truncate">{item.name}</span>
-          </span>
-        ))}
-        {section.items.length > 10 ? (
-          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-            +{section.items.length - 10}
-          </span>
-        ) : null}
       </div>
     </div>
   );
@@ -425,6 +258,71 @@ function StageButton({
   );
 }
 
+function pipelineRequestProgress({
+  loading,
+  mode,
+  runningStage,
+  status,
+}: {
+  loading: boolean;
+  mode: "tasks" | "script";
+  runningStage: StudyPipelineStage | null;
+  status: StudyPipelineStatusResponse | null;
+}) {
+  const outputName = mode === "script" ? "Script" : "Aufgaben";
+  if (runningStage) {
+    const stage = stageProgress(runningStage);
+    return {
+      percent: stage.percent,
+      stepLabel: stage.label,
+      title: `${outputName} werden erstellt`,
+      description: "Die Verarbeitung läuft im Hintergrund mit den Standard-Einstellungen.",
+    };
+  }
+  if (loading) {
+    return {
+      percent: 12,
+      stepLabel: "Status wird geprüft",
+      title: "Pipeline wird geprüft",
+      description: "Die App sucht nach bestehenden Läufen und Ergebnissen.",
+    };
+  }
+  if (!status) {
+    return {
+      percent: 0,
+      stepLabel: "Noch nicht gestartet",
+      title: `${outputName} noch nicht angefordert`,
+      description: "Starte die Verarbeitung mit den Standard-Einstellungen. Details bleiben im Pipeline-Inspector.",
+    };
+  }
+
+  const stage = stageProgress(status.stage);
+  const ready = status.stage === "curated";
+  return {
+    percent: stage.percent,
+    stepLabel: stage.label,
+    title: ready ? `${outputName} bereit` : `${outputName} in Vorbereitung`,
+    description: ready
+      ? "Die Pipeline hat einen fertigen Stand gemeldet. Lade die Ansicht erneut, falls sie noch nicht sichtbar ist."
+      : "Die Pipeline hat bereits einen Zwischenstand. Du kannst den aktuellen Stand im Inspector prüfen.",
+  };
+}
+
+function stageProgress(stage?: string | null) {
+  switch (stage) {
+    case "raw":
+      return { percent: 25, label: "Rohdaten geladen" };
+    case "inventory":
+      return { percent: 35, label: "Ressourcen klassifiziert" };
+    case "extracted":
+      return { percent: 65, label: "Texte extrahiert" };
+    case "curated":
+      return { percent: 100, label: "Ergebnis bereit" };
+    default:
+      return { percent: 8, label: "Wartet auf Start" };
+  }
+}
+
 export function buildStudyPipelinePreviewSections(status: StudyPipelineStatusResponse | null) {
   const sections = new Map<string, { id: string; name: string; items: Array<{ id: string; kind: string; name: string }> }>();
   for (const material of status?.materials ?? []) {
@@ -447,16 +345,45 @@ export function buildStudyPipelinePreviewSections(status: StudyPipelineStatusRes
   return [...sections.values()];
 }
 
+type InventorySection = {
+  id: string;
+  label: string;
+  items: CourseInventoryNode[];
+};
+
 export function buildInventorySections(inventory: CourseInventoryResponse | null) {
   if (!inventory) {
     return [];
   }
+  const assignmentSheets = inventory.taskGroups.map((group) => group.sheet);
+  const solutions = uniqueInventoryNodes(
+    inventory.taskGroups.flatMap((group) => [
+      ...(group.solution ? [group.solution] : []),
+      ...(group.solutionCandidates ?? []),
+    ]),
+  );
   return [
     { id: "lecture", label: "Vorlesungsmaterial", items: inventory.lectureMaterial },
+    { id: "assignments", label: "Aufgabenblätter", items: assignmentSheets },
+    { id: "solutions", label: "Lösungen", items: solutions },
     { id: "references", label: "Referenzen", items: inventory.references },
     { id: "interactions", label: "Interaktionen", items: inventory.interactions },
+    { id: "ignored", label: "Ignoriert", items: inventory.ignoredAllowed ?? [] },
     { id: "unknown", label: "Unbekannt", items: inventory.unknown },
   ].filter((section) => section.items.length > 0);
+}
+
+function uniqueInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[] {
+  const seen = new Set<string>();
+  const unique: CourseInventoryNode[] = [];
+  for (const node of nodes) {
+    if (seen.has(node.id)) {
+      continue;
+    }
+    seen.add(node.id);
+    unique.push(node);
+  }
+  return unique;
 }
 
 function markKind(

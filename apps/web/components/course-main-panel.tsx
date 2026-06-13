@@ -4,6 +4,7 @@ import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CourseHero } from "@/components/course-hero";
+import { CoursePipelineInspector } from "@/components/course-pipeline-inspector";
 import { MaterialsOutline, TaskOutline } from "@/components/course-study-outline";
 import { FileViewer } from "@/components/file-viewer";
 import { FormulaCollectionPanel } from "@/components/formula-collection-panel";
@@ -134,6 +135,21 @@ export function CourseMainPanel({
           onSignInWebexBrowser={onSignInWebexBrowser}
         />
       </section>
+    );
+  }
+
+  if (studyMode === "pipeline") {
+    return courseId ? (
+      <CoursePipelineInspector
+        course={course}
+        courseId={courseId}
+        materials={materials}
+        materialsLoading={materialsLoading}
+      />
+    ) : (
+      <CoursePanelShell>
+        <NoCourseSelected />
+      </CoursePanelShell>
     );
   }
 
