@@ -99,6 +99,16 @@ export function CourseMainPanel({
     onTaskViewChange?.(null);
   }, [courseId, onTaskViewChange]);
 
+  if (studyMode === "pipeline") {
+    return courseId ? (
+      <CoursePipelineInspector course={course ?? courseFallbackFromRoute(courseId)} courseId={courseId} />
+    ) : (
+      <CoursePanelShell>
+        <NoCourseSelected />
+      </CoursePanelShell>
+    );
+  }
+
   if (!course) {
     return (
       <CoursePanelShell>
@@ -135,16 +145,6 @@ export function CourseMainPanel({
           onSignInWebexBrowser={onSignInWebexBrowser}
         />
       </section>
-    );
-  }
-
-  if (studyMode === "pipeline") {
-    return courseId ? (
-      <CoursePipelineInspector course={course} courseId={courseId} />
-    ) : (
-      <CoursePanelShell>
-        <NoCourseSelected />
-      </CoursePanelShell>
     );
   }
 
@@ -234,6 +234,14 @@ export function CourseMainPanel({
       <NoCourseSelected />
     </CoursePanelShell>
   );
+}
+
+function courseFallbackFromRoute(courseId: string): Course {
+  return {
+    id: courseId,
+    fullName: `Course ${courseId}`,
+    shortName: courseId,
+  };
 }
 
 function CoursePanelShell({ children, course }: { children: ReactNode; course?: Course | null }) {
