@@ -3,49 +3,52 @@ import type { BlueprintProblem, TaskOutputRecord } from "@/components/course-pip
 
 export type LossDiagnosticSummary = {
   evidence: string[];
-  missingImages: number;
+  unresolvedElementMarkdown: string;
+  unresolvedElements: number;
   problems: BlueprintProblem[];
 };
 
 type SourceImage = {
   assetId?: string;
-  blockId: string;
+  blockId?: string;
   pageNumber: number;
   path?: string;
   resourceName: string;
 };
 
 export function buildTaskOutputLossDiagnostics({
+  courseId,
   outputs,
   sourceDocuments,
 }: {
+  courseId?: string;
   outputs: TaskOutputRecord[];
   sourceDocuments: Array<PDFDocumentStructure | null>;
 }): LossDiagnosticSummary {
   const sourceImages = sourceDocuments.flatMap((document) => sourceImagesFromDocument(document));
   if (sourceImages.length === 0 || outputs.length === 0) {
-    return { evidence: [], missingImages: 0, problems: [] };
+    return { evidence: [], unresolvedElementMarkdown: "", unresolvedElements: 0, problems: [] };
   }
 
   const outputMarkdown = outputs.map(outputMarkdownForTask).join("\n\n");
   const imageReferences = markdownImageReferences(outputMarkdown);
-  const missingImages = sourceImages.filter((image) => !imageIsReferenced(image, imageReferences));
-  const visibleMissingImages = missingImages.slice(0, 5);
-  const problems = visibleMissingImages.map((image) => ({
-    label: "Extracted image missing from output",
+  const unresolvedElements = sourceImages.filter((image) => !imageIsReferenced(image, imageReferences));
+  const visibleUnresolvedElements = unresolvedElements.slice(0, 5);
+  const problems = visibleUnresolvedElements.map((image) => ({
+    label: "Element accountability required",
     detail: [
       `Extraction saw ${image.assetId ?? image.blockId} on page ${image.pageNumber} in ${image.resourceName}.`,
       image.path ? `Asset path: ${image.path}.` : "No web asset path was attached to this extracted image.",
-      "The final task output does not reference it, so the loss likely happened in Codex/output curation.",
+      "The final task output does not reference it. Codex must assign a final outcome: used, ignored, unsupported, or failed.",
     ].join(" "),
-    severity: "warning" as const,
+    severity: "error" as const,
   }));
 
-  if (missingImages.length > visibleMissingImages.length) {
+  if (unresolvedElements.length > visibleUnresolvedElements.length) {
     problems.push({
-      label: "More extracted images missing",
-      detail: `${missingImages.length - visibleMissingImages.length} additional extracted image(s) are not referenced by the final task output.`,
-      severity: "warning",
+      label: "More elements require accountability",
+      detail: `${unresolvedElements.length - visibleUnresolvedElements.length} additional detected PDF element(s) need a final outcome.`,
+      severity: "error",
     });
   }
 
@@ -53,9 +56,10 @@ export function buildTaskOutputLossDiagnostics({
     evidence: [
       `${sourceImages.length} extracted source image block${sourceImages.length === 1 ? "" : "s"} checked`,
       `${imageReferences.length} final output image reference${imageReferences.length === 1 ? "" : "s"} found`,
-      `${missingImages.length} extracted image block${missingImages.length === 1 ? "" : "s"} not referenced downstream`,
+      `${unresolvedElements.length} detected PDF element${unresolvedElements.length === 1 ? "" : "s"} need a final outcome`,
     ],
-    missingImages: missingImages.length,
+    unresolvedElementMarkdown: unresolvedElementsMarkdown(unresolvedElements, courseId),
+    unresolvedElements: unresolvedElements.length,
     problems,
   };
 }
@@ -70,7 +74,7 @@ function outputMarkdownForTask(output: TaskOutputRecord): string {
 function sourceImagesFromDocument(document: PDFDocumentStructure | null): SourceImage[] {
   if (!document) return [];
   const assetsById = new Map(document.assets.map((asset) => [asset.id, asset]));
-  return document.pages.flatMap((page) =>
+  const imagesFromBlocks = document.pages.flatMap((page) =>
     page.blocks
       .filter((block) => block.type.toLowerCase() === "image")
       .map((block) => {
@@ -84,6 +88,31 @@ function sourceImagesFromDocument(document: PDFDocumentStructure | null): Source
         };
       }),
   );
+  const seenAssetIds = new Set(imagesFromBlocks.map((image) => image.assetId).filter(Boolean));
+  const diagnosticImages = (document.diagnostics.unusedImageAssets ?? [])
+    .filter((assetId) => !seenAssetIds.has(assetId))
+    .map((assetId) => {
+      const asset = assetsById.get(assetId);
+      return {
+        assetId,
+        blockId: assetId,
+        pageNumber: asset?.pageNumber ?? 0,
+        path: asset?.path,
+        resourceName: document.resource.name,
+      };
+    });
+  const looseEmbeddedImages = document.assets
+    .filter((asset) => isExtractedImageAsset(asset.kind, asset.role))
+    .filter((asset) => !seenAssetIds.has(asset.id))
+    .filter((asset) => !(document.diagnostics.unusedImageAssets ?? []).includes(asset.id))
+    .map((asset) => ({
+      assetId: asset.id,
+      blockId: asset.id,
+      pageNumber: asset.pageNumber ?? 0,
+      path: asset.path,
+      resourceName: document.resource.name,
+    }));
+  return [...imagesFromBlocks, ...diagnosticImages, ...looseEmbeddedImages];
 }
 
 function markdownImageReferences(markdown: string): string[] {
@@ -104,4 +133,35 @@ function normalizeReference(value: string | undefined): string {
   } catch {
     return raw.trim().toLowerCase();
   }
+}
+
+function unresolvedElementsMarkdown(images: SourceImage[], courseId: string | undefined): string {
+  if (images.length === 0) return "";
+  return [
+    "## Elements needing accountability",
+    ...images.map((image) => {
+      const label = `${image.assetId ?? image.blockId ?? "source image"}${image.pageNumber ? ` · page ${image.pageNumber}` : ""}`;
+      const url = image.path ? extractedAssetUrl(courseId, image.path) : "";
+      const imageLine = url ? `![${escapeMarkdownAlt(label)}](${url})` : `[image asset: ${label}]`;
+      return [
+        imageLine,
+        `Source: ${image.resourceName}`,
+        "Required outcome: used, ignored, unsupported, or failed.",
+      ].join("\n\n");
+    }),
+  ].join("\n\n");
+}
+
+function extractedAssetUrl(courseId: string | undefined, path: string): string {
+  if (!courseId || !path) return "";
+  return `/api/study-pipeline/courses/${encodeURIComponent(courseId)}/study-pipeline/extracted-asset?path=${encodeURIComponent(path)}`;
+}
+
+function escapeMarkdownAlt(value: string): string {
+  return value.replace(/[[\]]/g, "");
+}
+
+function isExtractedImageAsset(kind: string, role: string | undefined): boolean {
+  const value = `${kind} ${role ?? ""}`.toLowerCase();
+  return /embedded_image|extracted_image/.test(value);
 }

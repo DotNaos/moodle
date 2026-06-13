@@ -1,6 +1,5 @@
 export function preparePreviewMarkdown(rawPreview: string): { hiddenCount: number; markdown: string } {
-  const lines = rawPreview
-    .replace(/^---[\s\S]*?---\s*/u, "")
+  const lines = stripPreviewFrontmatter(rawPreview)
     .replace(/<!--[\s\S]*?-->/g, "")
     .split("\n");
   const kept: string[] = [];
@@ -30,10 +29,17 @@ export function preparePreviewMarkdown(rawPreview: string): { hiddenCount: numbe
   return { hiddenCount, markdown };
 }
 
+function stripPreviewFrontmatter(rawPreview: string): string {
+  return rawPreview
+    .replace(/^---\s*\n[\s\S]*?\n---\s*/u, "")
+    .replace(/^([^\n]+)\n---\s*\n[\s\S]*?\n---\s*/u, "$1\n");
+}
+
 function isPipelineTraceLine(line: string): boolean {
   return [
     /^Source task:/i,
     /^Source script:/i,
+    /^Source:/i,
     /^Solution status:/i,
     /^Solution page:/i,
     /^This is the versioned working copy/i,

@@ -6,6 +6,7 @@ import {
   Handle,
   Position,
   ReactFlow,
+  type Edge,
   type NodeProps,
 } from "@xyflow/react";
 import {
@@ -21,16 +22,22 @@ import {
   GitBranch,
   ImageOff,
   Layers,
-  Play,
+  Maximize2,
   RotateCw,
   Search,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -38,8 +45,10 @@ import {
   type BlueprintExtractionVariant,
   type BlueprintGraphNode,
   type BlueprintNode,
+  type BlueprintRunScope,
   type BlueprintNodeTone,
   type BlueprintPort,
+  type BlueprintRenderedField,
   type PipelineRunRecord,
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint-model";
@@ -50,7 +59,6 @@ import type {
 } from "@/components/study-pipeline-preview";
 import type { TaskViewResponse } from "@/components/task-study-panel";
 import { cn } from "@/lib/utils";
-import { preparePreviewMarkdown } from "@/components/course-pipeline-blueprint-preview";
 import {
   LiveStatePanel,
   NodeLiveIndicator,
@@ -60,6 +68,11 @@ import {
 import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course-pipeline-trace";
 import { SourceTracePanel } from "@/components/course-pipeline-trace-panel";
 import { LossTracePanel } from "@/components/course-pipeline-loss-panel";
+import { PipelineCableEdge } from "@/components/course-pipeline-blueprint-edge";
+import {
+  buildPipelineNodePreview,
+  type PipelineNodePreview,
+} from "@/components/course-pipeline-node-preview";
 
 export { buildBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
@@ -71,11 +84,14 @@ type CoursePipelineBlueprintProps = {
   status: StudyPipelineStatusResponse | null;
   taskView: TaskViewResponse | null;
   onRerunExtraction?: (engine: string) => void;
+  onSelectedScopeChange?: (scope: BlueprintRunScope | null) => void;
   onSelectRun?: (runId: string) => void;
   rerunningEngine?: string | null;
   selectingRunId?: string | null;
   unavailable?: {
     extractedDocuments?: string;
+    inventory?: string;
+    runs?: string;
     taskView?: string;
   };
 };
@@ -85,6 +101,10 @@ const nodeTypes = {
   frame: BlueprintGroupFrame,
 };
 
+const edgeTypes = {
+  pipeline: PipelineCableEdge,
+};
+
 export function CoursePipelineBlueprint({
   extractedDocuments,
   inventory,
@@ -92,14 +112,36 @@ export function CoursePipelineBlueprint({
   status,
   taskView,
   onRerunExtraction,
+  onSelectedScopeChange,
   onSelectRun,
   rerunningEngine,
   selectingRunId,
   unavailable,
 }: CoursePipelineBlueprintProps) {
+  const [edgeStyle, setEdgeStyle] = useState<"rounded" | "square">("rounded");
   const graph = useMemo(
     () => buildBlueprintGraph({ extractedDocuments, inventory, runs, status, taskView, unavailable }),
     [extractedDocuments, inventory, runs, status, taskView, unavailable],
+  );
+  const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
+  const visibleEdges = useMemo(
+    () => graph.edges.map((edge) => {
+      const stroke = edgeColor(edge, nodeById);
+      return {
+        ...edge,
+        label: undefined,
+        markerEnd: undefined,
+        style: {
+          ...edge.style,
+          stroke,
+          strokeLinecap: "round" as const,
+          strokeWidth: edge.style?.strokeWidth ?? 2.5,
+        },
+        data: { ...edge.data, renderStyle: edgeStyle },
+        type: "pipeline",
+      };
+    }),
+    [edgeStyle, graph.edges, nodeById],
   );
   const selectableNodes = useMemo(() => graph.nodes.filter(isBlueprintNode), [graph.nodes]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(selectableNodes[0]?.id ?? null);
@@ -108,6 +150,14 @@ export function CoursePipelineBlueprint({
     () => buildUpstreamTrace({ edges: graph.edges, nodes: graph.nodes, selectedNodeId: selectedNode?.id }),
     [graph.edges, graph.nodes, selectedNode?.id],
   );
+  const selectedRunScope = selectedNode?.data.runScope ?? null;
+  const selectedRunScopeKey = selectedRunScope
+    ? `${selectedRunScope.kind}:${selectedRunScope.label}:${selectedRunScope.resourceIds.join(",")}`
+    : "none";
+  useEffect(() => {
+    onSelectedScopeChange?.(selectedRunScope);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onSelectedScopeChange, selectedRunScopeKey]);
   const interactiveNodes = useMemo(
     () => graph.nodes.map((node) => ({
       ...node,
@@ -118,18 +168,23 @@ export function CoursePipelineBlueprint({
   );
 
   return (
-    <div className="grid min-h-[720px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="relative h-[640px] overflow-hidden rounded-3xl bg-secondary/45">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="relative h-[calc(100dvh-10.5rem)] min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
           <LegendPill kind="transform" label="1 -> 1 Transform" />
           <LegendPill kind="split" label="1 -> N Split" />
           <LegendPill kind="collect" label="N -> 1 Collect" />
         </div>
+        <div className="absolute right-4 top-4 z-10 flex rounded-full bg-background/90 p-1 shadow-sm shadow-black/10">
+          <EdgeStyleButton active={edgeStyle === "rounded"} label="Rund" onClick={() => setEdgeStyle("rounded")} />
+          <EdgeStyleButton active={edgeStyle === "square"} label="Eckig" onClick={() => setEdgeStyle("square")} />
+        </div>
         <ReactFlow
           className="pipeline-blueprint-flow"
           colorMode="light"
           defaultViewport={{ x: 20, y: -280, zoom: 0.72 }}
-          edges={graph.edges}
+          edges={visibleEdges}
+          edgeTypes={edgeTypes}
           maxZoom={1.4}
           minZoom={0.2}
           nodeTypes={nodeTypes}
@@ -145,7 +200,7 @@ export function CoursePipelineBlueprint({
         </ReactFlow>
       </div>
 
-      <aside className="min-h-[640px] rounded-3xl bg-secondary/45 px-4 py-4">
+      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4 lg:h-[calc(100dvh-10.5rem)] lg:overflow-auto">
         {selectedNode ? (
           <NodeInspector
             node={selectedNode}
@@ -185,8 +240,12 @@ function NodeInspector({
   const problems = data.problems ?? [];
   const lossProblems = problems.filter((problem) => problem.label.toLowerCase().includes("image"));
   const lossEvidence = (data.evidence ?? []).filter((item) => /image|asset/i.test(item));
-  const actions = inspectorActions(data);
   const extractionVariants = data.extractionVariants ?? [];
+  const config = data.config ?? [];
+  const evidence = data.evidence ?? [];
+  const artifacts = data.artifacts ?? [];
+  const metadata = data.meta ?? [];
+  const showExtractionActions = data.title === "Extraction Variants" && onRerunExtraction;
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -244,8 +303,8 @@ function NodeInspector({
         </InspectorSection>
       ) : null}
 
-      <InspectorSection icon={AlertCircle} title="Problems" tone={problems.length > 0 ? "warning" : "default"}>
-        {problems.length > 0 ? (
+      {problems.length > 0 ? (
+        <InspectorSection icon={AlertCircle} title="Problems" tone="warning">
           <div className="grid gap-2">
             {problems.map((problem) => (
               <div className="rounded-2xl bg-background/80 px-3 py-2" key={`${problem.label}:${problem.detail}`}>
@@ -254,75 +313,51 @@ function NodeInspector({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">No problems recorded for this node.</p>
-        )}
-      </InspectorSection>
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={ClipboardList} title="Config">
-        <KeyValuePanel items={data.config ?? []} emptyText="No engine or model config is attached to this node." />
-      </InspectorSection>
+      {showExtractionActions ? (
+        <InspectorSection icon={RotateCw} title="Run extraction">
+          <ExtractionActionButtons
+            onRerunExtraction={onRerunExtraction}
+            rerunningEngine={rerunningEngine}
+            variants={extractionVariants}
+          />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Search} title="Evidence">
-        <StringList items={data.evidence ?? []} emptyText="No extra evidence was recorded." />
-      </InspectorSection>
+      {evidence.length > 0 ? (
+        <InspectorSection icon={Search} title="Evidence">
+          <StringList items={evidence} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={FileText} title="Artifacts">
-        <StringList items={data.artifacts ?? []} emptyText="No artifacts are attached to this node." />
-      </InspectorSection>
+      {artifacts.length > 0 ? (
+        <InspectorSection icon={FileText} title="Artifacts">
+          <StringList items={artifacts} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Database} title="Metadata">
-        <KeyValuePanel items={data.meta} emptyText="No metadata is attached to this node." />
-      </InspectorSection>
+      {config.length > 0 ? (
+        <InspectorSection icon={ClipboardList} title="Config">
+          <KeyValuePanel items={config} />
+        </InspectorSection>
+      ) : null}
 
-      <InspectorSection icon={Play} title="Actions">
-        <div className="grid gap-2">
-          {data.title === "Extraction Variants" && onRerunExtraction ? (
-            <ExtractionActionButtons
-              onRerunExtraction={onRerunExtraction}
-              rerunningEngine={rerunningEngine}
-              variants={extractionVariants}
-            />
-          ) : (
-            <>
-              {actions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Button className="h-9 justify-start rounded-full" disabled key={action.label} type="button" variant="secondary">
-                    <Icon aria-hidden className="size-4" />
-                    {action.label}
-                  </Button>
-                );
-              })}
-              <p className="text-xs leading-5 text-muted-foreground">
-                Actions are shown here so the workflow is visible; backend execution buttons will be wired in a later goal.
-              </p>
-            </>
-          )}
-        </div>
-      </InspectorSection>
+      {metadata.length > 0 ? (
+        <InspectorSection icon={Database} title="Metadata">
+          <KeyValuePanel items={metadata} />
+        </InspectorSection>
+      ) : null}
     </div>
   );
 }
 
 function RenderedNodePreview({ node }: { node: BlueprintNode }) {
-  const rawPreview = node.data.outputPreview ?? "";
-  const { hiddenCount, markdown } = useMemo(() => preparePreviewMarkdown(rawPreview), [rawPreview]);
-  if (!markdown.trim()) {
-    return (
-      <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">
-        No direct output preview is stored for this node yet.
-      </p>
-    );
-  }
+  const preview = useMemo(() => buildPipelineNodePreview(node.data), [node.data]);
   return (
     <div className="max-h-[36rem] overflow-auto rounded-2xl bg-background/80 px-3 py-3">
-      {hiddenCount > 0 ? (
-        <p className="mb-3 rounded-2xl bg-secondary/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {hiddenCount} pipeline trace line{hiddenCount === 1 ? "" : "s"} hidden from this rendered preview.
-        </p>
-      ) : null}
-      <MarkdownRenderer className="space-y-3 break-words text-sm leading-6 text-foreground" text={markdown} />
+      <NodePreviewContent preview={preview} size="inspector" />
     </div>
   );
 }
@@ -414,10 +449,12 @@ function ExtractionActionButtons({
 
 function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
+  const preview = useMemo(() => buildPipelineNodePreview(data), [data]);
+  const [previewOpen, setPreviewOpen] = useState(false);
   return (
     <div
       className={cn(
-        "relative h-[178px] w-[240px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
+        "relative min-h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
         liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
@@ -434,52 +471,418 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <NodeLiveIndicator live={data.live} />
-      <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
-      {HANDLE_POSITIONS.map((top, index) => (
-        <Handle
-          className="opacity-0"
-          id={`in-${index}`}
-          key={`in-${index}`}
-          position={Position.Left}
-          style={{ top: `${top}%` }}
-          type="target"
-        />
-      ))}
-      <div className="flex items-start gap-3">
-        <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
-          <Icon aria-hidden className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
-          <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
+      <div className="relative z-10 h-full overflow-visible rounded-3xl px-4 py-3">
+        <NodeLiveIndicator live={data.live} />
+        <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
+        <div className="flex items-start gap-3">
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
+            <Icon aria-hidden className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
+            <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
+          </div>
         </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
+            {stepKindLabel(data.stepKind)}
+          </span>
+          <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
+        </div>
+        <ChannelRows inputs={data.inputs} outputs={data.outputs} />
+
+        <div className="mt-3 rounded-2xl bg-secondary/45 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
+            <div className="flex items-center gap-1">
+              {data.problems?.length ? (
+                <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                  {data.problems.length}
+                </span>
+              ) : null}
+              <button
+                aria-label="Open output preview"
+                className="grid size-6 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPreviewOpen(true);
+                }}
+                type="button"
+              >
+                <Maximize2 aria-hidden className="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[8.5rem] overflow-auto pr-1" onClick={(event) => event.stopPropagation()}>
+            <NodePreviewContent preview={preview} size="node" />
+          </div>
+        </div>
+        {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
-          {stepKindLabel(data.stepKind)}
-        </span>
-        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-        <span className="truncate rounded-full bg-secondary/60 px-2 py-1">in {data.inputs.length}</span>
-        <span className="truncate rounded-full bg-secondary/60 px-2 py-1 text-right">out {data.outputs.length}</span>
-      </div>
-      {HANDLE_POSITIONS.map((top, index) => (
-        <Handle
-          className="opacity-0"
-          id={`out-${index}`}
-          key={`out-${index}`}
-          position={Position.Right}
-          style={{ top: `${top}%` }}
-          type="source"
-        />
-      ))}
+      <NodePreviewDialog
+        onOpenChange={setPreviewOpen}
+        open={previewOpen}
+        preview={preview}
+        title={data.title}
+      />
     </div>
   );
 }
 
+function NodePreviewDialog({
+  onOpenChange,
+  open,
+  preview,
+  title,
+}: {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  preview: PipelineNodePreview;
+  title: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="flex h-[min(90dvh,920px)] w-[min(96vw,1200px)] max-w-none flex-col gap-0 overflow-hidden rounded-[1.75rem] border-0 p-0 shadow-2xl sm:max-w-[min(96vw,1200px)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DialogHeader className="border-b border-border/50 px-5 py-4 pr-14">
+          <DialogTitle className="truncate text-base">{title}</DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+          <NodePreviewContent preview={preview} size="modal" />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NodePreviewContent({
+  preview,
+  size,
+}: {
+  preview: PipelineNodePreview;
+  size: "inspector" | "modal" | "node";
+}) {
+  if (preview.kind === "mixed") {
+    return (
+      <div className={cn("grid", size === "node" ? "gap-2" : "gap-4")}>
+        <div className={cn("grid", size === "node" ? "gap-2" : "gap-3")}>
+          {preview.fields.map((field) => (
+            <RenderedPreviewField field={field} key={`${field.path}:${field.label}`} size={size} />
+          ))}
+        </div>
+        <div
+          className={cn(
+            "rounded-2xl bg-secondary/55",
+            size === "node" ? "px-2 py-1.5" : "px-4 py-3",
+          )}
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+            Raw data
+          </p>
+          <JsonPreviewText text={preview.jsonText} size={size} />
+        </div>
+      </div>
+    );
+  }
+
+  if (preview.kind === "json") {
+    return <JsonPreviewText text={preview.text} size={size} />;
+  }
+
+  return (
+    <MarkdownRenderer
+      className={cn(
+        "break-words text-foreground",
+        size === "node"
+          ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+          : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+      )}
+      text={size === "node" ? compactNodeMarkdownPreview(preview.text) : preview.text}
+    />
+  );
+}
+
+function RenderedPreviewField({
+  field,
+  size,
+}: {
+  field: BlueprintRenderedField;
+  size: "inspector" | "modal" | "node";
+}) {
+  return (
+    <section className={cn("rounded-2xl bg-background/80", size === "node" ? "px-2 py-1.5" : "px-4 py-3")}>
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="truncate text-[11px] font-semibold text-foreground/80">{field.label}</span>
+        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[9px] leading-4 text-muted-foreground">
+          {field.path}
+        </span>
+      </div>
+      {field.description ? (
+        <p className="mb-2 text-[11px] leading-4 text-muted-foreground">{field.description}</p>
+      ) : null}
+      {field.type === "markdown" ? (
+        <MarkdownRenderer
+          className={cn(
+            "break-words text-foreground",
+            size === "node"
+              ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+              : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+          )}
+          text={size === "node" ? compactNodeMarkdownPreview(field.value) : field.value}
+        />
+      ) : field.type === "json" ? (
+        <JsonPreviewText text={field.value} size={size} />
+      ) : (
+        <p className={cn("whitespace-pre-wrap break-words text-foreground/80", size === "node" ? "text-[11px] leading-4" : "text-sm leading-6")}>
+          {field.value}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function compactNodeMarkdownPreview(markdown: string): string {
+  const blocks = markdown.trim().split(/\n{2,}/).filter(Boolean);
+  const kept: string[] = [];
+  let hidden = 0;
+  for (const block of blocks) {
+    const image = block.match(/^!\[([^\]]*)]\(/);
+    const next = image ? `[image: ${image[1]?.trim() || "asset"}]` : block;
+    const nextLength = [...kept, next].join("\n\n").length;
+    if (kept.length >= 6 || nextLength > 700) {
+      hidden += 1;
+      continue;
+    }
+    kept.push(next);
+  }
+  if (hidden > 0) {
+    kept.push(`... ${hidden} more block${hidden === 1 ? "" : "s"}`);
+  }
+  return kept.join("\n\n");
+}
+
+function JsonPreviewText({
+  size,
+  text,
+}: {
+  size: "inspector" | "modal" | "node";
+  text: string;
+}) {
+  const displayText = size === "node" ? compactNodeJsonPreview(text) : text;
+  return (
+    <pre
+      className={cn(
+        "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
+        size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
+      )}
+    >
+      {displayText}
+    </pre>
+  );
+}
+
+function compactNodeJsonPreview(text: string): string {
+  const lines = text.split("\n");
+  const maxLines = 14;
+  const maxChars = 900;
+  let compact = lines.slice(0, maxLines).join("\n");
+  if (compact.length > maxChars) {
+    compact = `${compact.slice(0, maxChars).trimEnd()}\n...`;
+  }
+  const hiddenLines = lines.length - maxLines;
+  if (hiddenLines > 0) {
+    compact = `${compact}\n... ${hiddenLines} more line${hiddenLines === 1 ? "" : "s"}`;
+  }
+  return compact;
+}
+
+function HiddenItemsDisclosure({ items }: { items: string[] }) {
+  return (
+    <details
+      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-1.5 text-[11px] leading-4 text-foreground/80"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <summary className="cursor-pointer list-none truncate font-semibold text-foreground/75">
+        {items.length} more task group{items.length === 1 ? "" : "s"}
+      </summary>
+      <div className="mt-1 grid max-h-14 gap-1 overflow-auto pr-1">
+        {items.map((item) => (
+          <label className="flex min-w-0 items-center gap-1.5" key={item}>
+            <input className="size-3 accent-emerald-500" readOnly type="checkbox" />
+            <span className="truncate">{item}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;
+const CHANNEL_SLOTS_BY_COUNT: Record<number, number[]> = {
+  1: [2],
+  2: [1, 4],
+  3: [0, 2, 4],
+  4: [0, 2, 3, 5],
+  5: [0, 1, 2, 4, 5],
+  6: [0, 1, 2, 3, 4, 5],
+};
+
+function ChannelRows({ inputs, outputs }: { inputs: BlueprintPort[]; outputs: BlueprintPort[] }) {
+  const inputPorts = Array.from(portsBySlot(inputs).entries()).sort(([left], [right]) => left - right);
+  const outputPorts = Array.from(portsBySlot(outputs).entries()).sort(([left], [right]) => left - right);
+  const rowCount = Math.max(inputPorts.length, outputPorts.length);
+  if (rowCount === 0) return null;
+
+  return (
+    <div className="-mx-4 mt-3 border-y border-foreground/[0.04] bg-secondary/20 py-1">
+      {Array.from({ length: rowCount }, (_, rowIndex) => {
+        const input = inputPorts[rowIndex];
+        const output = outputPorts[rowIndex];
+        return (
+          <div
+            className="relative grid min-h-6 grid-cols-2 items-center gap-3 px-6 text-[10px] font-semibold leading-4 text-foreground/70"
+            key={`channel-row-${rowIndex}`}
+          >
+            {input ? <ChannelPortMarker direction="input" port={input[1]} slot={input[0]} /> : null}
+            {output ? <ChannelPortMarker direction="output" port={output[1]} slot={output[0]} /> : null}
+            {input ? <ChannelLabel direction="input" port={input[1]} /> : <span aria-hidden />}
+            {output ? <ChannelLabel direction="output" port={output[1]} /> : <span aria-hidden />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChannelLabel({
+  direction,
+  port,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+}) {
+  return (
+    <span
+      className={cn(
+        "relative min-w-0 truncate rounded-full px-2 py-0.5",
+        direction === "output" ? "justify-self-end text-right" : "justify-self-start",
+      )}
+      title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
+    >
+      {port.label}
+    </span>
+  );
+}
+
+function ChannelPortMarker({
+  direction,
+  port,
+  slot,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+  slot: number;
+}) {
+  const edgePosition = direction === "input"
+    ? { left: 0, transform: "translate(-50%, -50%)" }
+    : { right: 0, transform: "translate(50%, -50%)" };
+
+  return (
+    <>
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-[5px] border-background shadow-md shadow-black/25",
+          portColorClass(port),
+        )}
+        data-channel-marker="true"
+        style={edgePosition}
+      />
+      <Handle
+        className="pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0"
+        id={`${direction === "input" ? "in" : "out"}-${slot}`}
+        position={direction === "input" ? Position.Left : Position.Right}
+        style={edgePosition}
+        type={direction === "input" ? "target" : "source"}
+      />
+    </>
+  );
+}
+
+function portsBySlot(items: BlueprintPort[]): Map<number, BlueprintPort> {
+  const slots = CHANNEL_SLOTS_BY_COUNT[Math.min(6, Math.max(1, items.length))] ?? CHANNEL_SLOTS_BY_COUNT[1];
+  const map = new Map<number, BlueprintPort>();
+  items.slice(0, 6).forEach((item, index) => {
+    map.set(slots[index] ?? index, item);
+  });
+  return map;
+}
+
+function portColorClass(port: BlueprintPort): string {
+  const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
+  if (/missing|failed|problem|review/.test(value)) return "!bg-destructive";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "!bg-emerald-500";
+  if (/solution/.test(value)) return "!bg-rose-500";
+  if (/extract|ocr|active extraction/.test(value)) return "!bg-blue-500";
+  if (/script|section|block/.test(value)) return "!bg-violet-500";
+  if (/page/.test(value)) return "!bg-sky-500";
+  if (/pdf|file|resource|course/.test(value)) return "!bg-amber-500";
+  return "!bg-muted-foreground";
+}
+
+function portColorHex(port: BlueprintPort | null | undefined): string {
+  if (!port) return "#737373";
+  const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
+  if (/missing|failed|problem|review/.test(value)) return "#dc2626";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "#10b981";
+  if (/solution/.test(value)) return "#f43f5e";
+  if (/extract|ocr|active extraction/.test(value)) return "#3b82f6";
+  if (/script|section|block/.test(value)) return "#8b5cf6";
+  if (/page/.test(value)) return "#0ea5e9";
+  if (/pdf|file|resource|course/.test(value)) return "#f59e0b";
+  return "#737373";
+}
+
+function edgeColor(edge: Pick<Edge, "label" | "source" | "sourceHandle">, nodeById: Map<string, BlueprintGraphNode>): string {
+  const source = nodeById.get(edge.source);
+  if (source?.type !== "blueprint") return "#737373";
+  const semanticPort = source.data.outputs.find((port) => portMatchesEdgeLabel(port, edge.label));
+  if (semanticPort) return portColorHex(semanticPort);
+  const slot = Number(edge.sourceHandle?.replace("out-", ""));
+  if (Number.isFinite(slot)) {
+    return portColorHex(portForSlot(source.data.outputs, slot));
+  }
+  return portColorHex(source.data.outputs[0]);
+}
+
+function portForSlot(items: BlueprintPort[], slot: number): BlueprintPort | undefined {
+  const slotPorts = portsBySlot(items);
+  const exact = slotPorts.get(slot);
+  if (exact) return exact;
+  let nearest: { distance: number; port: BlueprintPort } | null = null;
+  for (const [candidateSlot, port] of slotPorts.entries()) {
+    const distance = Math.abs(candidateSlot - slot);
+    if (!nearest || distance < nearest.distance) nearest = { distance, port };
+  }
+  return nearest?.port ?? items[0];
+}
+
+function portMatchesEdgeLabel(port: BlueprintPort, label: Edge["label"]): boolean {
+  if (typeof label !== "string") return false;
+  const edgeLabel = label.toLowerCase();
+  const portLabel = port.label.toLowerCase();
+  if (edgeLabel.includes("task") && portLabel.includes("task")) return true;
+  if (edgeLabel.includes("script") && portLabel.includes("script")) return true;
+  if (edgeLabel.includes("review") && portLabel.includes("review")) return true;
+  if (edgeLabel.includes("sheet") && portLabel.includes("sheet")) return true;
+  if (edgeLabel.includes("solution") && portLabel.includes("solution")) return true;
+  if (edgeLabel.includes("pdf") && portLabel.includes("pdf")) return true;
+  if (edgeLabel.includes("publish") && /output|task|script/.test(portLabel)) return true;
+  return false;
+}
 
 function BlueprintGroupFrame({ data }: NodeProps<Extract<BlueprintGraphNode, { type: "frame" }>>) {
   const stage = data.frame?.variant === "stage";
@@ -508,6 +911,29 @@ function LegendPill({ kind, label }: { kind: "collect" | "split" | "transform"; 
     <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", stepKindBadgeClass(kind))}>
       {label}
     </span>
+  );
+}
+
+function EdgeStyleButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+        active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -567,10 +993,7 @@ function PortPanel({ items, title }: { items: BlueprintPort[]; title: string }) 
   );
 }
 
-function KeyValuePanel({ emptyText, items }: { emptyText: string; items: Array<{ label: string; value: string }> }) {
-  if (items.length === 0) {
-    return <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>;
-  }
+function KeyValuePanel({ items }: { items: Array<{ label: string; value: string }> }) {
   return (
     <div className="grid gap-2">
       {items.map((item) => (
@@ -583,10 +1006,7 @@ function KeyValuePanel({ emptyText, items }: { emptyText: string; items: Array<{
   );
 }
 
-function StringList({ emptyText, items }: { emptyText: string; items: string[] }) {
-  if (items.length === 0) {
-    return <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>;
-  }
+function StringList({ items }: { items: string[] }) {
   return (
     <div className="grid gap-2">
       {items.map((item) => (
@@ -596,33 +1016,6 @@ function StringList({ emptyText, items }: { emptyText: string; items: string[] }
       ))}
     </div>
   );
-}
-
-function inspectorActions(data: BlueprintNode["data"]) {
-  if (data.title === "Extraction Variants") {
-    return [
-      { icon: RotateCw, label: "Run another extraction" },
-      { icon: Search, label: "Compare variants" },
-      { icon: CheckCircle2, label: "Set active result" },
-    ];
-  }
-  if (data.title === "Codex Transform") {
-    return [
-      { icon: RotateCw, label: "Rerun Codex" },
-      { icon: Search, label: "Compare draft" },
-      { icon: CheckCircle2, label: "Validate output" },
-    ];
-  }
-  if (data.tone === "output" || data.subtitle.includes("website")) {
-    return [
-      { icon: Eye, label: "Open rendered output" },
-      { icon: CheckCircle2, label: "Validate output" },
-    ];
-  }
-  return [
-    { icon: Search, label: "Inspect source" },
-    { icon: RotateCw, label: "Rerun step" },
-  ];
 }
 
 function variantStatusBadge(status: BlueprintExtractionVariant["status"]): "default" | "destructive" | "outline" | "secondary" {

@@ -16,7 +16,7 @@ export function normalizeLiveStatus(status: string | undefined): BlueprintLiveSt
   if (normalized === "failed" || normalized === "error") return "failed";
   if (ACTIVE_STATUSES.has(normalized)) return normalized as "queued" | "running";
   if (WARNING_STATUSES.has(normalized)) return normalized as "stale" | "warning" | "needs_review";
-  if (SUCCESS_STATUSES.has(normalized)) return "succeeded";
+  if (SUCCESS_STATUSES.has(normalized) || normalized.endsWith("-ready")) return "succeeded";
   return "warning";
 }
 
