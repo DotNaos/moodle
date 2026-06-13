@@ -22,7 +22,8 @@ export function finalTaskOutputNodeData({
       upstreamProblems,
     });
   }
-  const needsReview = outputs.some((output) => output.status === "needs_review") || upstreamProblems.length > 0;
+  const validationProblems = outputs.flatMap((output) => validateWebsiteReadyMarkdown(output.promptMarkdown, output.title));
+  const needsReview = outputs.some((output) => output.status === "needs_review") || upstreamProblems.length > 0 || validationProblems.length > 0;
   return {
     title: outputs.length === 1 ? outputs[0]?.title ?? `Output ${index + 1}` : `${outputs.length} Task Outputs`,
     subtitle: "website task output",
@@ -30,14 +31,16 @@ export function finalTaskOutputNodeData({
     evidence: [
       `Source lane: ${group.title}`,
       `${outputs.length} task output${outputs.length === 1 ? "" : "s"} loaded`,
+      validationProblems.length > 0 ? `${validationProblems.length} website-ready validation problem${validationProblems.length === 1 ? "" : "s"}` : "Website-ready validation passed",
       ...outputs.map((output) => `${output.taskId}: ${output.status}`),
     ],
     inputs: [{ label: "task draft", detail: group.title }],
-    outputs: outputs.map((output) => ({ label: output.title, detail: output.taskId, state: output.status })),
+    outputs: outputs.map((output) => ({ label: output.title, detail: output.taskId, state: outputState(output.status, validationProblems.length) })),
     outputPreview: outputs.map((output) => `${output.title}\n${output.promptMarkdown || "No prompt markdown stored."}`).join("\n\n---\n\n"),
     problems: needsReview
       ? [
           ...upstreamProblems,
+          ...validationProblems,
           ...outputs
             .filter((output) => output.status === "needs_review")
             .map((output) => ({ label: "Output needs review", detail: `${output.title} is marked needs_review.`, severity: "warning" as const })),
@@ -50,6 +53,7 @@ export function finalTaskOutputNodeData({
       { label: "Output type", value: "task" },
       { label: "Count", value: String(outputs.length) },
       { label: "Source", value: outputs[0]?.sheetTitle ?? group.title },
+      { label: "Website validation", value: validationProblems.length > 0 ? `${validationProblems.length} problem${validationProblems.length === 1 ? "" : "s"}` : "passed" },
     ],
   };
 }
@@ -74,7 +78,8 @@ export function finalScriptOutputNodeData({
       upstreamProblems,
     });
   }
-  const needsReview = outputs.some((output) => output.status === "needs_review") || upstreamProblems.length > 0;
+  const validationProblems = outputs.flatMap((output) => validateWebsiteReadyMarkdown(`${output.title}\n${output.statusLabel}${output.sourcePath ? `\n${output.sourcePath}` : ""}`, output.title));
+  const needsReview = outputs.some((output) => output.status === "needs_review") || upstreamProblems.length > 0 || validationProblems.length > 0;
   return {
     title: outputs.length === 1 ? outputs[0]?.title ?? `Script Section ${index + 1}` : `${outputs.length} Script Sections`,
     subtitle: "website script output",
@@ -82,12 +87,13 @@ export function finalScriptOutputNodeData({
     evidence: [
       `Source lane: ${resource.name}`,
       `${outputs.length} script section${outputs.length === 1 ? "" : "s"} loaded`,
+      validationProblems.length > 0 ? `${validationProblems.length} website-ready validation problem${validationProblems.length === 1 ? "" : "s"}` : "Website-ready validation passed",
       ...outputs.map((output) => `${output.id}: ${output.statusLabel}`),
     ],
     inputs: [{ label: "script draft", detail: resource.name }],
-    outputs: outputs.map((output) => ({ label: output.title, detail: output.id, state: output.status })),
+    outputs: outputs.map((output) => ({ label: output.title, detail: output.id, state: outputState(output.status, validationProblems.length) })),
     outputPreview: outputs.map((output) => `${output.title}\n${output.statusLabel}${output.sourcePath ? `\n${output.sourcePath}` : ""}`).join("\n\n---\n\n"),
-    problems: needsReview ? upstreamProblems : undefined,
+    problems: needsReview ? [...upstreamProblems, ...validationProblems] : undefined,
     stepKind: "transform",
     tone: needsReview ? "warning" : "output",
     status: needsReview ? "needs_review" : "ready",
@@ -95,6 +101,47 @@ export function finalScriptOutputNodeData({
       { label: "Output type", value: "script" },
       { label: "Count", value: String(outputs.length) },
       { label: "Resource", value: resource.name },
+      { label: "Website validation", value: validationProblems.length > 0 ? `${validationProblems.length} problem${validationProblems.length === 1 ? "" : "s"}` : "passed" },
     ],
   };
+}
+
+function validateWebsiteReadyMarkdown(markdown: string | undefined, outputTitle: string): BlueprintProblem[] {
+  const text = markdown?.trim() ?? "";
+  const problems: BlueprintProblem[] = [];
+  if (!text) {
+    problems.push({ label: "Empty output", detail: `${outputTitle} has no renderable content.`, severity: "error" });
+    return problems;
+  }
+  if (/(^|\n)\s*(Source task|Solution status|Solution page|Original Sources)\s*:/i.test(text) || /<!--\s*source:/i.test(text)) {
+    problems.push({ label: "Pipeline artifact visible", detail: `${outputTitle} still contains source/debug lines that should not appear in website content.`, severity: "warning" });
+  }
+  if (/!\[[^\]]*]\(\s*\)/.test(text) || /!\[[^\]]*]\((?:missing|undefined|null|about:blank)[^)]*\)/i.test(text)) {
+    problems.push({ label: "Broken image reference", detail: `${outputTitle} contains an image without a usable asset URL.`, severity: "error" });
+  }
+  if (/!\[[^\]]*]\((?:\.\.\/|\.\/)?\.extracted\//i.test(text)) {
+    problems.push({ label: "Internal image path", detail: `${outputTitle} references an internal extraction path instead of a web asset.`, severity: "error" });
+  }
+  if (/[�]|(?:Ã.|Â.|â€|â€™|â€œ|â€\u009d)/.test(text)) {
+    problems.push({ label: "Encoding problem", detail: `${outputTitle} contains replacement or mojibake characters.`, severity: "warning" });
+  }
+  if (hasUnbalancedMathDelimiters(text)) {
+    problems.push({ label: "LaTeX delimiter problem", detail: `${outputTitle} has unbalanced math delimiters and may not render correctly.`, severity: "warning" });
+  }
+  return problems;
+}
+
+function hasUnbalancedMathDelimiters(text: string): boolean {
+  return countMatches(text, /\\\(/g) !== countMatches(text, /\\\)/g)
+    || countMatches(text, /\\\[/g) !== countMatches(text, /\\\]/g)
+    || countMatches(text, /\$\$/g) % 2 !== 0;
+}
+
+function countMatches(text: string, pattern: RegExp): number {
+  return text.match(pattern)?.length ?? 0;
+}
+
+function outputState(status: string, validationProblemCount: number): string {
+  if (validationProblemCount > 0) return "needs_review";
+  return status;
 }

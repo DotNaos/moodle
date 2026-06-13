@@ -471,4 +471,35 @@ describe("course pipeline blueprint graph", () => {
     expect(outputNode?.data.status).toBe("ready");
     expect(outputNode?.data.outputPreview).toContain("parallele Laufzeit");
   });
+
+  test("marks final outputs with website rendering problems as needs review", () => {
+    const brokenTaskView: TaskViewResponse = {
+      ...taskView,
+      sheets: taskView.sheets.map((sheet) => ({
+        ...sheet,
+        tasks: sheet.tasks.map((task) => ({
+          ...task,
+          promptMarkdown: [
+            "Source task: [extracted task](../.extracted/tasks/01.md)",
+            "## Aufgabe 1",
+            "Berechne \\(p Prozessoren.",
+            "![diagram](../.extracted/images/missing.png)",
+            "Kaputte Zeichen: Ã¼",
+          ].join("\n"),
+          status: "open",
+        })),
+      })),
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView: brokenTaskView });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    const problemLabels = outputNode?.data.problems?.map((problem) => problem.label) ?? [];
+
+    expect(outputNode?.data.status).toBe("needs_review");
+    expect(outputNode?.data.tone).toBe("warning");
+    expect(problemLabels).toContain("Pipeline artifact visible");
+    expect(problemLabels).toContain("Internal image path");
+    expect(problemLabels).toContain("Encoding problem");
+    expect(problemLabels).toContain("LaTeX delimiter problem");
+    expect(outputNode?.data.meta.find((item) => item.label === "Website validation")?.value).toBe("4 problems");
+  });
 });
