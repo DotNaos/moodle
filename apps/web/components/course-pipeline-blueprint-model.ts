@@ -40,6 +40,8 @@ export type PipelineRunRecord = {
     message: string;
     stage?: string;
   }>;
+  curationChecklist?: PipelineRunCurationChecklist;
+  elementDecisions?: PipelineRunElementDecision[];
   logs?: string[];
   artifactRefs?: Array<{
     id: string;
@@ -50,6 +52,36 @@ export type PipelineRunRecord = {
     pageNumber?: number;
     blockId?: string;
     metadata?: Record<string, unknown>;
+  }>;
+};
+
+export type PipelineRunElementDecision = {
+  id?: string;
+  sourceElementId?: string;
+  sourceArtifactId?: string;
+  sourceAssetId?: string;
+  sourcePageImageArtifactId?: string;
+  outputArtifactId?: string;
+  elementKind?: string;
+  outcome: string;
+  reason?: string;
+  decidedBy?: string;
+  confidence?: string;
+  pageNumber?: number;
+  createdAt?: string;
+};
+
+export type PipelineRunCurationChecklist = {
+  status: string;
+  checkedBy?: string;
+  checkedAt?: string;
+  renderPreviewArtifactId?: string;
+  items: Array<{
+    id: string;
+    label: string;
+    status: string;
+    evidenceArtifactId?: string;
+    reason?: string;
   }>;
 };
 

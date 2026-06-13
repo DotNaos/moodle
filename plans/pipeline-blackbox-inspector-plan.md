@@ -202,6 +202,89 @@ Nicht akzeptabel:
 - Output ohne Source Mapping
 - Codex-Inhalt ohne nachvollziehbare Quelle
 
+## PDF Element Accountability
+
+Die Pipeline muss eine vollstaendige Element-Accountability-Invariante
+erfuellen.
+
+Fuer jedes PDF `P` gibt es eine Menge erkannter sinnvoller Elemente:
+
+```text
+E(P) = { e_1, e_2, ..., e_n }
+```
+
+Ein Element kann Text, Bild, Figur, Tabelle, Formel, Diagramm, Chart,
+Beschriftung, Header, Footer oder ein anderer erkennbarer Bestandteil einer
+PDF-Seite sein.
+
+Fuer jedes erkannte Element muss am Ende der Pipeline genau eine explizite
+Verarbeitungsentscheidung existieren:
+
+```text
+for every e in E(P):
+  decision(e) in { used, ignored, unsupported, failed }
+```
+
+Damit gilt:
+
+```text
+Every detected PDF element is accounted for.
+```
+
+Kein erkanntes Element darf still verschwinden.
+
+Der Inspector muss fuer jedes Element beantworten koennen:
+
+- welche Art Element es ist
+- von welcher PDF, Seite und optional welchem Seitenbereich es kommt
+- ob es im finalen Output repraesentiert ist
+- wenn ja: wo im Output
+- wenn nein: warum es bewusst ignoriert wurde
+- wenn es nicht verarbeitet werden konnte: was fehlgeschlagen ist
+
+Extraction allein reicht nicht. Wenn ein Element extrahiert, auf Disk
+geschrieben, gecroppt, erkannt, geparsed oder konvertiert wurde, muss die
+Pipeline danach weiterhin speichern, was mit diesem Element passiert ist.
+
+Der Codex-/Curated-Step darf nur als erfolgreich gelten, wenn:
+
+- Page-Renders der PDF-Seiten fuer die visuelle Pruefung verfuegbar waren
+- Codex die Page-Renders und die extrahierten Elemente inspiziert hat
+- Codex das Aufgabenlayout so weit wie moeglich aus der PDF rekonstruiert hat
+- jedes erkannte Element ein Outcome hat: `used`, `ignored`, `unsupported` oder
+  `failed`
+- ignorierte Elemente eine Begruendung haben, z. B. Template-Logo,
+  dekorativer Header, Footer, Duplikat oder nicht aufgabenrelevant
+- ein gerenderter Website-Preview erzeugt und von Codex selbst geprueft wurde
+- Source-Mapping vom finalen Output zur PDF erhalten bleibt
+
+Wenn einer dieser Punkte fehlt, ist der Step `needs_review` oder `failed`, aber
+nicht `ready`.
+
+Im Graph wird das als Element-Accountability-Manifest sichtbar:
+
+```text
+PDF Page Render
+  -> Detected Elements[]
+  -> Codex Transform
+       checklist:
+         [x] page images reviewed
+         [x] extracted elements reviewed
+         [x] layout reconstructed
+         [x] rendered preview reviewed
+         [x] source mapping complete
+         [x] every element has final outcome
+       element decisions:
+         element:p1:logo      -> ignored      (template logo)
+         element:p1:task-text -> used         (output block #1)
+         element:p2:figure    -> needs_review (not yet mapped)
+  -> Final Output
+```
+
+`needs_review` ist kein finales Outcome. Es ist ein blockierender Zustand, bis
+ein Admin oder ein erneuter Codex-Run daraus `used`, `ignored`, `unsupported`
+oder `failed` macht.
+
 ## Acceptance Criteria
 
 ### AC 0: Pipeline produziert validierte Outputs
@@ -250,6 +333,10 @@ Nicht akzeptabel:
 - Leere oder schwache OCR-Ergebnisse werden markiert.
 - Ungenutzte Source-Sections werden sichtbar.
 - Codex-Entfernungen sind nachvollziehbar und begruendet.
+- Jedes erkannte PDF-Element hat ein finales Outcome.
+- Elemente ohne Outcome blockieren den Codex-/Curated-Step.
+- Bewusst ignorierte Elemente erscheinen als erklaerte Ignored-/Trash-Lane,
+  nicht als stiller Verlust.
 
 ### AC 6: Laufender Zustand ist sichtbar
 
@@ -292,6 +379,19 @@ Wenn bei einer Aufgabe ein Bild fehlt, muss der User sehen:
 - ob Codex es entfernt hat
 - welcher Step dafuer verantwortlich ist
 - ob ein anderer OCR/Extraction-Run das Bild behalten hat
+
+### AC 10: PDF Element Accountability funktioniert
+
+Fuer ein Aufgabenblatt mit Text, Logo, Figur und Formel muss der Admin sehen:
+
+- Text wurde im finalen Output verwendet
+- Logo wurde bewusst ignoriert, z. B. `ignored: template logo`
+- Figur wurde verwendet oder blockiert den Run als `needs_review`
+- Formel wurde verwendet, unsupported oder failed, aber nicht still geloescht
+- der Codex-Step zeigt die Pflicht-Checklist
+- der Codex-Step ist nur ready, wenn alle Checklist-Punkte abgehakt sind
+- der gerenderte Preview wurde erzeugt und geprueft
+- Elemente ohne finales Outcome verhindern `ready`
 
 ## Phasen / Goals
 

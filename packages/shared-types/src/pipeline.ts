@@ -122,11 +122,15 @@ export type PipelineArtifactKind =
   | "resource_pairing"
   | "pdf_file"
   | "page_image"
+  | "page_render"
   | "ocr_text"
   | "extracted_image"
   | "document_block"
   | "task_draft"
   | "script_draft"
+  | "element_accountability_manifest"
+  | "curation_checklist"
+  | "rendered_preview"
   | "published_task"
   | "published_script"
   | "review_item";
@@ -154,7 +158,9 @@ export type PipelineRun = {
   createdBy: string;
   status: PipelineStatus;
   artifacts: PipelineArtifactRef[];
+  curationChecklist?: PipelineCurationChecklist;
   diagnostics?: PipelineDiagnostic[];
+  elementDecisions?: PipelineElementDecision[];
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;
@@ -199,6 +205,12 @@ export type TraceAction =
   | "merged"
   | "moved"
   | "dropped"
+  | "discarded_template"
+  | "discarded_decorative"
+  | "discarded_duplicate"
+  | "ignored"
+  | "unsupported"
+  | "failed"
   | "unused_needs_review"
   | "generated"
   | "selected";
@@ -222,4 +234,69 @@ export type PipelineDiagnostic = {
   message: string;
   nodeId?: PipelineId;
   artifactId?: PipelineId;
+};
+
+export type PipelinePDFElementKind =
+  | "text"
+  | "image"
+  | "figure"
+  | "table"
+  | "formula"
+  | "chart"
+  | "diagram"
+  | "caption"
+  | "header"
+  | "footer"
+  | "unknown";
+
+export type PipelineElementDecisionOutcome =
+  | "used_in_output"
+  | "ignored"
+  | "unsupported"
+  | "failed"
+  | "needs_review";
+
+export type PipelineElementDecisionActor = "codex" | "admin" | "system";
+
+export type PipelineElementDecision = {
+  id: PipelineId;
+  sourceElementId: PipelineId;
+  sourceArtifactId?: PipelineId;
+  sourceAssetId?: PipelineId;
+  sourcePageImageArtifactId?: PipelineId;
+  outputArtifactId?: PipelineId;
+  elementKind: PipelinePDFElementKind;
+  outcome: PipelineElementDecisionOutcome;
+  reason: string;
+  decidedBy: PipelineElementDecisionActor;
+  confidence: PipelineConfidence;
+  pageNumber?: number;
+  createdAt: string;
+  metadata?: Record<string, string | number | boolean | null>;
+};
+
+export type PipelineCurationChecklistItemId =
+  | "page_images_reviewed"
+  | "extracted_elements_reviewed"
+  | "element_accountability_complete"
+  | "layout_reconstructed"
+  | "rendered_preview_reviewed"
+  | "source_mapping_complete";
+
+export type PipelineCurationChecklistItemStatus = "checked" | "missing" | "failed";
+
+export type PipelineCurationChecklistItem = {
+  id: PipelineCurationChecklistItemId;
+  label: string;
+  status: PipelineCurationChecklistItemStatus;
+  evidenceArtifactId?: PipelineId;
+  reason?: string;
+};
+
+export type PipelineCurationChecklist = {
+  status: "complete" | "incomplete" | "failed";
+  checkedBy: PipelineElementDecisionActor;
+  checkedAt: string;
+  renderPreviewArtifactId?: PipelineId;
+  items: PipelineCurationChecklistItem[];
 };

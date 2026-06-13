@@ -74,7 +74,7 @@ export function finalTaskOutputNodeData({
       { label: "Count", value: String(outputs.length) },
       { label: "Source", value: outputs[0]?.sheetTitle ?? group.title },
       { label: "Website validation", value: validationProblems.length > 0 ? `${validationProblems.length} problem${validationProblems.length === 1 ? "" : "s"}` : "passed" },
-      { label: "Missing source images", value: String(lossDiagnostics.missingImages) },
+      { label: "Unresolved elements", value: String(lossDiagnostics.unresolvedElements) },
     ],
   };
 }
@@ -160,8 +160,8 @@ function taskOutputBodyData({
       contentState: output.contentState ?? null,
     })),
     diagnostics: {
-      missingSourceImages: lossDiagnostics.missingImages,
-      missingSourceImagesMarkdown: lossDiagnostics.missingImageMarkdown,
+      unresolvedElements: lossDiagnostics.unresolvedElements,
+      unresolvedElementMarkdown: lossDiagnostics.unresolvedElementMarkdown,
     },
   };
 }
@@ -227,15 +227,15 @@ function taskOutputRenderedFields(
     }
     return fields;
   });
-  if (!lossDiagnostics.missingImageMarkdown.trim()) return outputFields;
+  if (!lossDiagnostics.unresolvedElementMarkdown.trim()) return outputFields;
   return [
     ...outputFields,
     {
-      description: "These images were extracted upstream but are not referenced by the final task markdown.",
-      label: "Missing extracted source images",
-      path: "diagnostics.missingSourceImagesMarkdown",
+      description: "These detected PDF elements still need a final used/ignored/unsupported/failed outcome.",
+      label: "Elements needing accountability",
+      path: "diagnostics.unresolvedElementMarkdown",
       type: "markdown",
-      value: lossDiagnostics.missingImageMarkdown,
+      value: lossDiagnostics.unresolvedElementMarkdown,
     },
   ];
 }

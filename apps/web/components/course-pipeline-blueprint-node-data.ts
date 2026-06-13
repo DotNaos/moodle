@@ -177,27 +177,31 @@ export function codexNodeData({
   run: PipelineRunRecord | null;
   subtitle: string;
 }): BlueprintNodeData {
+  const checklistProblems = codexCurationChecklistProblems(run, hasMaterializedOutput);
   if (!run) {
     if (hasMaterializedOutput) {
       return {
         title: "Codex Transform",
         subtitle: `${subtitle} · output loaded`,
-        detail: "Transforms selected extracted content into website-ready task or script drafts.",
+        detail: "Transforms selected extracted content into website-ready task or script drafts. Completion requires a mandatory element-accountability checklist.",
         evidence: [
           "Website output is already loaded from task-view.",
           "The immutable Codex run record was not exposed for this lane.",
+          "Mandatory element-accountability checklist cannot be verified without the run record.",
         ],
         inputs: [{ label: "active input bundle", detail: inputLabel }],
         bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
-        outputs: [{ label: outputLabel, state: "ready" }],
+        outputs: [{ label: outputLabel, state: "needs_review" }],
         outputPreview: outputPreview ?? "A website-ready draft is available downstream.",
         renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
+        problems: checklistProblems,
         stepKind: "transform",
-        tone: "output",
-        status: "ready",
+        tone: "warning",
+        status: "needs_review",
         meta: [
           { label: "Input", value: inputLabel },
           { label: "Run record", value: "not exposed" },
+          { label: "Curation checklist", value: "missing" },
         ],
       };
     }
@@ -211,32 +215,50 @@ export function codexNodeData({
       outputs: [{ label: outputLabel, state: "missing" }],
       outputPreview: outputPreview ?? "Codex has not produced a draft for this lane yet.",
       renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
-      problems: [{ label: "No Codex output", detail: "There is no final draft to validate or publish.", severity: "warning" }],
+      problems: [
+        { label: "No Codex output", detail: "There is no final draft to validate or publish.", severity: "warning" },
+        ...checklistProblems,
+      ],
       stepKind: "transform",
       tone: "warning",
       status: "missing",
       meta: [{ label: "Input", value: inputLabel }],
     };
   }
+  const problems = mergeProblems(runProblems(run), runDiagnosticProblems(run), checklistProblems);
+  const checklistStatus = run.curationChecklist?.status ?? "missing";
+  const hasBlockingChecklistProblem = checklistProblems.some((problem) => problem.severity === "error");
   return {
     title: "Codex Transform",
     subtitle: `${run.engine} · ${run.configHash}`,
-    detail: "Creates user-facing content from the selected input bundle. Removals, rewrites, and generated content must stay traceable.",
+    detail: "Creates user-facing content from the selected input bundle. Page images, detected PDF elements, removals, rewrites, and generated content must stay traceable.",
     artifacts: runArtifactSummary(run),
     config: runConfig(run),
-    evidence: [`Run ${run.id}`, `Engine ${run.engine}`, `${run.artifactRefs?.length ?? 0} artifact refs`, ...runLiveEvidence(run)],
+    evidence: [
+      `Run ${run.id}`,
+      `Engine ${run.engine}`,
+      `${run.artifactRefs?.length ?? 0} artifact refs`,
+      `Curation checklist: ${checklistStatus}`,
+      `${run.elementDecisions?.length ?? 0} element decision${run.elementDecisions?.length === 1 ? "" : "s"}`,
+      ...runLiveEvidence(run),
+    ],
     inputs: [{ label: "active input bundle", detail: inputLabel }],
     bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
     outputs: [{ label: outputLabel, state: run.status }],
     outputPreview: outputPreview ?? runPreview(run),
     renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
-    problems: mergeProblems(runProblems(run), runDiagnosticProblems(run)),
+    problems,
     stepKind: "transform",
-    tone: run.status === "failed" || run.status === "warning" ? "warning" : "run",
-    status: run.status,
+    tone: run.status === "failed" || run.status === "warning" || hasBlockingChecklistProblem ? "warning" : "run",
+    status: hasBlockingChecklistProblem && (run.status === "ok" || run.status === "succeeded") ? "needs_review" : run.status,
     active: activeRunIds.has(run.id),
     live: runLiveState(run),
-    meta: [...runMeta(run), ...runTimingMeta(run)],
+    meta: [
+      ...runMeta(run),
+      { label: "Curation checklist", value: checklistStatus },
+      { label: "Element decisions", value: String(run.elementDecisions?.length ?? 0) },
+      ...runTimingMeta(run),
+    ],
   };
 }
 
@@ -278,9 +300,99 @@ function codexBodyData({
           startedAt: run.startedAt ?? null,
           finishedAt: run.finishedAt ?? null,
           artifactRoot: run.artifactRoot,
+          curationChecklist: run.curationChecklist ?? null,
+          elementDecisions: run.elementDecisions ?? [],
         }
       : null,
   };
+}
+
+const REQUIRED_CODEX_CHECKLIST_ITEMS = new Set([
+  "page_images_reviewed",
+  "extracted_elements_reviewed",
+  "element_accountability_complete",
+  "layout_reconstructed",
+  "rendered_preview_reviewed",
+  "source_mapping_complete",
+]);
+
+const CHECKLIST_ITEMS_REQUIRING_EVIDENCE = new Set([
+  "page_images_reviewed",
+  "element_accountability_complete",
+  "rendered_preview_reviewed",
+]);
+
+function codexCurationChecklistProblems(
+  run: PipelineRunRecord | null,
+  hasMaterializedOutput: boolean,
+): BlueprintProblem[] {
+  if (!run) {
+    return hasMaterializedOutput
+      ? [{
+          label: "Mandatory curation checklist missing",
+          detail: "The output exists, but the Codex run did not expose the required element-accountability checklist. Page images, extracted elements, layout reconstruction, rendered preview, source mapping, and final element outcomes cannot be verified.",
+          severity: "error",
+        }]
+      : [];
+  }
+  const checklist = run.curationChecklist;
+  if (!checklist) {
+    return [{
+      label: "Mandatory curation checklist missing",
+      detail: "Codex curation must include a checklist proving that page renders, extracted PDF elements, element outcomes, layout reconstruction, rendered preview, and source mapping were reviewed.",
+      severity: "error",
+    }];
+  }
+  const problems: BlueprintProblem[] = [];
+  const itemsById = new Map(checklist.items.map((item) => [item.id, item]));
+  for (const requiredId of REQUIRED_CODEX_CHECKLIST_ITEMS) {
+    const item = itemsById.get(requiredId);
+    if (!item) {
+      problems.push({
+        label: "Checklist item missing",
+        detail: `Codex curation did not report the required checklist item ${requiredId}.`,
+        severity: "error",
+      });
+      continue;
+    }
+    if (item.status !== "checked") {
+      problems.push({
+        label: "Checklist item not completed",
+        detail: item.reason ? `${item.label}: ${item.reason}` : `${item.label} is ${item.status}.`,
+        severity: "error",
+      });
+    }
+    if (item.status === "checked" && CHECKLIST_ITEMS_REQUIRING_EVIDENCE.has(requiredId) && !item.evidenceArtifactId) {
+      problems.push({
+        label: "Checklist evidence missing",
+        detail: `${item.label} is checked, but no evidence artifact was attached.`,
+        severity: "error",
+      });
+    }
+  }
+  if (checklist.status !== "complete") {
+    problems.push({
+      label: "Curation checklist incomplete",
+      detail: `Codex reported checklist status ${checklist.status}. The curation step cannot be trusted as complete.`,
+      severity: "error",
+    });
+  }
+  if (!checklist.renderPreviewArtifactId) {
+    problems.push({
+      label: "Rendered preview artifact missing",
+      detail: "Codex must render the website output and attach the preview artifact before the curation step can complete.",
+      severity: "error",
+    });
+  }
+  const unresolvedElements = (run.elementDecisions ?? []).filter((decision) => decision.outcome === "needs_review");
+  if (unresolvedElements.length > 0) {
+    problems.push({
+      label: "Element decisions need review",
+      detail: `${unresolvedElements.length} detected PDF element${unresolvedElements.length === 1 ? "" : "s"} still need a used/ignored/unsupported/failed outcome.`,
+      severity: "error",
+    });
+  }
+  return problems;
 }
 
 function codexRenderedFields({

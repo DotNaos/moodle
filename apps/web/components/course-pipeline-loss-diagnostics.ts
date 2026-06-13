@@ -3,8 +3,8 @@ import type { BlueprintProblem, TaskOutputRecord } from "@/components/course-pip
 
 export type LossDiagnosticSummary = {
   evidence: string[];
-  missingImageMarkdown: string;
-  missingImages: number;
+  unresolvedElementMarkdown: string;
+  unresolvedElements: number;
   problems: BlueprintProblem[];
 };
 
@@ -27,28 +27,28 @@ export function buildTaskOutputLossDiagnostics({
 }): LossDiagnosticSummary {
   const sourceImages = sourceDocuments.flatMap((document) => sourceImagesFromDocument(document));
   if (sourceImages.length === 0 || outputs.length === 0) {
-    return { evidence: [], missingImageMarkdown: "", missingImages: 0, problems: [] };
+    return { evidence: [], unresolvedElementMarkdown: "", unresolvedElements: 0, problems: [] };
   }
 
   const outputMarkdown = outputs.map(outputMarkdownForTask).join("\n\n");
   const imageReferences = markdownImageReferences(outputMarkdown);
-  const missingImages = sourceImages.filter((image) => !imageIsReferenced(image, imageReferences));
-  const visibleMissingImages = missingImages.slice(0, 5);
-  const problems = visibleMissingImages.map((image) => ({
-    label: "Extracted image missing from output",
+  const unresolvedElements = sourceImages.filter((image) => !imageIsReferenced(image, imageReferences));
+  const visibleUnresolvedElements = unresolvedElements.slice(0, 5);
+  const problems = visibleUnresolvedElements.map((image) => ({
+    label: "Element accountability required",
     detail: [
       `Extraction saw ${image.assetId ?? image.blockId} on page ${image.pageNumber} in ${image.resourceName}.`,
       image.path ? `Asset path: ${image.path}.` : "No web asset path was attached to this extracted image.",
-      "The final task output does not reference it, so the loss likely happened in Codex/output curation.",
+      "The final task output does not reference it. Codex must assign a final outcome: used, ignored, unsupported, or failed.",
     ].join(" "),
-    severity: "warning" as const,
+    severity: "error" as const,
   }));
 
-  if (missingImages.length > visibleMissingImages.length) {
+  if (unresolvedElements.length > visibleUnresolvedElements.length) {
     problems.push({
-      label: "More extracted images missing",
-      detail: `${missingImages.length - visibleMissingImages.length} additional extracted image(s) are not referenced by the final task output.`,
-      severity: "warning",
+      label: "More elements require accountability",
+      detail: `${unresolvedElements.length - visibleUnresolvedElements.length} additional detected PDF element(s) need a final outcome.`,
+      severity: "error",
     });
   }
 
@@ -56,10 +56,10 @@ export function buildTaskOutputLossDiagnostics({
     evidence: [
       `${sourceImages.length} extracted source image block${sourceImages.length === 1 ? "" : "s"} checked`,
       `${imageReferences.length} final output image reference${imageReferences.length === 1 ? "" : "s"} found`,
-      `${missingImages.length} extracted image block${missingImages.length === 1 ? "" : "s"} not referenced downstream`,
+      `${unresolvedElements.length} detected PDF element${unresolvedElements.length === 1 ? "" : "s"} need a final outcome`,
     ],
-    missingImageMarkdown: missingImagesMarkdown(missingImages, courseId),
-    missingImages: missingImages.length,
+    unresolvedElementMarkdown: unresolvedElementsMarkdown(unresolvedElements, courseId),
+    unresolvedElements: unresolvedElements.length,
     problems,
   };
 }
@@ -135,10 +135,10 @@ function normalizeReference(value: string | undefined): string {
   }
 }
 
-function missingImagesMarkdown(images: SourceImage[], courseId: string | undefined): string {
+function unresolvedElementsMarkdown(images: SourceImage[], courseId: string | undefined): string {
   if (images.length === 0) return "";
   return [
-    "## Missing extracted source images",
+    "## Elements needing accountability",
     ...images.map((image) => {
       const label = `${image.assetId ?? image.blockId ?? "source image"}${image.pageNumber ? ` · page ${image.pageNumber}` : ""}`;
       const url = image.path ? extractedAssetUrl(courseId, image.path) : "";
@@ -146,6 +146,7 @@ function missingImagesMarkdown(images: SourceImage[], courseId: string | undefin
       return [
         imageLine,
         `Source: ${image.resourceName}`,
+        "Required outcome: used, ignored, unsupported, or failed.",
       ].join("\n\n");
     }),
   ].join("\n\n");

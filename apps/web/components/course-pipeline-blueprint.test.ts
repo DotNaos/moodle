@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildBlueprintGraph, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
+import { buildBlueprintGraph, type PipelineRunRecord, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
 import { codexNodeData } from "@/components/course-pipeline-blueprint-node-data";
 import { buildPipelineNodePreview } from "@/components/course-pipeline-node-preview";
 import { buildUpstreamTrace } from "@/components/course-pipeline-trace";
@@ -691,9 +691,94 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.fields[0]?.value).not.toContain("codex-improved");
     expect(preview.jsonText).toContain('"type": "codex_transform"');
     expect(preview.jsonText).toContain('"hasMaterializedOutput"');
+    expect(data.status).toBe("needs_review");
+    expect(data.problems?.map((problem) => problem.label)).toContain("Mandatory curation checklist missing");
     expect(preview.jsonText).not.toContain('"contentMarkdown"');
     expect(preview.jsonText).not.toContain("codex-improved");
     expect(preview.jsonText).not.toContain("FULL_CONTENT_MARKER_AFTER_400_CHARS");
+  });
+
+  test("requires Codex curation checklist and resolved element outcomes", () => {
+    const baseRun: PipelineRunRecord = {
+      artifactRoot: "study-pipeline/course-22584/run-curated",
+      artifactRefs: [{ id: "artifact-checklist", kind: "curation_checklist" }],
+      configHash: "config:codex:visual-review",
+      courseId: "22584",
+      createdAt: "2026-06-13T12:00:00Z",
+      createdBy: "system",
+      engine: "codex",
+      id: "run-codex-visual-review",
+      ownership: "shared",
+      resourceId: "947711",
+      sourceId: "22584",
+      stage: "codex_curate",
+      status: "succeeded",
+    };
+    const checklist = {
+      checkedAt: "2026-06-13T12:01:00Z",
+      checkedBy: "codex",
+      items: [
+        { evidenceArtifactId: "artifact-page-render", id: "page_images_reviewed", label: "Page images reviewed", status: "checked" },
+        { id: "extracted_elements_reviewed", label: "Extracted PDF elements reviewed", status: "checked" },
+        { evidenceArtifactId: "artifact-element-accountability", id: "element_accountability_complete", label: "Element accountability complete", status: "checked" },
+        { id: "layout_reconstructed", label: "Layout reconstructed", status: "checked" },
+        { evidenceArtifactId: "artifact-render-preview", id: "rendered_preview_reviewed", label: "Rendered preview reviewed", status: "checked" },
+        { id: "source_mapping_complete", label: "Source mapping complete", status: "checked" },
+      ],
+      renderPreviewArtifactId: "artifact-render-preview",
+      status: "complete",
+    };
+
+    const completeData = codexNodeData({
+      activeRunIds: new Set([baseRun.id]),
+      hasMaterializedOutput: true,
+      inputLabel: "Aufgabenblatt 1",
+      outputLabel: "task draft[]",
+      outputPreview: "## Aufgabe 1\n\nText",
+      run: {
+        ...baseRun,
+        curationChecklist: checklist,
+        elementDecisions: [{
+          createdAt: "2026-06-13T12:01:00Z",
+          decidedBy: "codex",
+          elementKind: "image",
+          id: "decision-logo",
+          outcome: "ignored",
+          reason: "FHGR logo belongs to the source template.",
+          sourceArtifactId: "image-logo",
+          sourceElementId: "element-logo",
+        }],
+      },
+      subtitle: "task transform",
+    });
+
+    const incompleteData = codexNodeData({
+      activeRunIds: new Set([baseRun.id]),
+      hasMaterializedOutput: true,
+      inputLabel: "Aufgabenblatt 1",
+      outputLabel: "task draft[]",
+      outputPreview: "## Aufgabe 1\n\nText",
+      run: {
+        ...baseRun,
+        curationChecklist: checklist,
+        elementDecisions: [{
+          createdAt: "2026-06-13T12:01:00Z",
+          decidedBy: "codex",
+          elementKind: "figure",
+          id: "decision-figure",
+          outcome: "needs_review",
+          reason: "Figure may be part of the task.",
+          sourceArtifactId: "image-figure",
+          sourceElementId: "element-figure",
+        }],
+      },
+      subtitle: "task transform",
+    });
+
+    expect(completeData.status).toBe("succeeded");
+    expect(completeData.problems).toBe(undefined);
+    expect(incompleteData.status).toBe("needs_review");
+    expect(incompleteData.problems?.map((problem) => problem.label)).toContain("Element decisions need review");
   });
 
   test("treats extracted documents as usable pipeline input even when run records are missing", () => {
@@ -737,15 +822,16 @@ describe("course pipeline blueprint graph", () => {
     expect(collectNode?.data.status).toBe("ready");
     expect(collectNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Sheet extraction missing");
     expect(collectNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Solution extraction missing");
-    expect(codexNode?.data.status).toBe("ready");
-    expect(codexNode?.data.tone).toBe("output");
+    expect(codexNode?.data.status).toBe("needs_review");
+    expect(codexNode?.data.tone).toBe("warning");
+    expect(codexNode?.data.problems?.map((problem) => problem.label)).toContain("Mandatory curation checklist missing");
     expect(selectedScriptNode?.data.status).not.toBe("missing");
   });
 
-  test("marks extracted images that disappeared from final task output", () => {
+  test("marks detected PDF elements that still need a final outcome", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
-    const problem = outputNode?.data.problems?.find((item) => item.label === "Extracted image missing from output");
+    const problem = outputNode?.data.problems?.find((item) => item.label === "Element accountability required");
 
     expect(outputNode?.data.status).toBe("needs_review");
     expect(problem?.detail).toContain("img-1");
@@ -753,10 +839,10 @@ describe("course pipeline blueprint graph", () => {
     expect(problem?.detail).toContain("Aufgabenblatt 01");
     expect(outputNode?.data.evidence).toContain("1 extracted source image block checked");
     expect(outputNode?.data.evidence).toContain("0 final output image references found");
-    expect(outputNode?.data.meta.find((item) => item.label === "Missing source images")?.value).toBe("1");
+    expect(outputNode?.data.meta.find((item) => item.label === "Unresolved elements")?.value).toBe("1");
   });
 
-  test("renders missing diagnostic image assets on final output nodes", () => {
+  test("renders detected visual elements needing accountability on final output nodes", () => {
     const extractedDocumentsWithDiagnosticAsset: ExtractedDocumentsResponse = {
       ...extractedDocuments,
       documents: extractedDocuments.documents.map((document) => {
@@ -780,14 +866,14 @@ describe("course pipeline blueprint graph", () => {
 
     const preview = buildPipelineNodePreview(outputNode.data);
 
-    expect(outputNode.data.problems?.map((problem) => problem.label)).toContain("Extracted image missing from output");
+    expect(outputNode.data.problems?.map((problem) => problem.label)).toContain("Element accountability required");
     expect(preview.kind).toBe("mixed");
     if (preview.kind !== "mixed") throw new Error("Expected mixed preview");
-    const missingImages = preview.fields.find((field) => field.path === "diagnostics.missingSourceImagesMarkdown");
-    expect(missingImages?.value).toContain("Missing extracted source images");
-    expect(missingImages?.value).toContain("/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=");
-    expect(missingImages?.value).toContain("%2Fassets%2Fimg-1.png");
-    expect(preview.jsonText).not.toContain("missingSourceImagesMarkdown");
+    const unresolvedElements = preview.fields.find((field) => field.path === "diagnostics.unresolvedElementMarkdown");
+    expect(unresolvedElements?.value).toContain("Elements needing accountability");
+    expect(unresolvedElements?.value).toContain("/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=");
+    expect(unresolvedElements?.value).toContain("%2Fassets%2Fimg-1.png");
+    expect(preview.jsonText).not.toContain("unresolvedElementMarkdown");
   });
 
   test("does not mark extracted images as lost when the final task references the asset", () => {
@@ -805,9 +891,9 @@ describe("course pipeline blueprint graph", () => {
     const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
     const problemLabels = outputNode?.data.problems?.map((problem) => problem.label) ?? [];
 
-    expect(problemLabels).not.toContain("Extracted image missing from output");
+    expect(problemLabels).not.toContain("Element accountability required");
     expect(outputNode?.data.evidence).toContain("1 final output image reference found");
-    expect(outputNode?.data.meta.find((item) => item.label === "Missing source images")?.value).toBe("0");
+    expect(outputNode?.data.meta.find((item) => item.label === "Unresolved elements")?.value).toBe("0");
   });
 
   test("traces a final task output back to its source documents", () => {
