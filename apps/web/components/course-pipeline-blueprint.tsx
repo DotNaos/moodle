@@ -60,6 +60,7 @@ import {
 import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course-pipeline-trace";
 import { SourceTracePanel } from "@/components/course-pipeline-trace-panel";
 import { LossTracePanel } from "@/components/course-pipeline-loss-panel";
+import { PipelineCableEdge } from "@/components/course-pipeline-blueprint-edge";
 
 export { buildBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
@@ -85,6 +86,10 @@ type CoursePipelineBlueprintProps = {
 const nodeTypes = {
   blueprint: BlueprintNodeCard,
   frame: BlueprintGroupFrame,
+};
+
+const edgeTypes = {
+  pipeline: PipelineCableEdge,
 };
 
 export function CoursePipelineBlueprint({
@@ -118,7 +123,8 @@ export function CoursePipelineBlueprint({
           strokeLinecap: "round" as const,
           strokeWidth: edge.style?.strokeWidth ?? 2.5,
         },
-        type: edgeStyle === "rounded" ? "default" : "step",
+        data: { ...edge.data, renderStyle: edgeStyle },
+        type: "pipeline",
       };
     }),
     [edgeStyle, graph.edges, nodeById],
@@ -156,6 +162,7 @@ export function CoursePipelineBlueprint({
           colorMode="light"
           defaultViewport={{ x: 20, y: -280, zoom: 0.72 }}
           edges={visibleEdges}
+          edgeTypes={edgeTypes}
           maxZoom={1.4}
           minZoom={0.2}
           nodeTypes={nodeTypes}
@@ -488,8 +495,30 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
             {preview || "No preview stored yet."}
           </p>
         </div>
+        {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
     </div>
+  );
+}
+
+function HiddenItemsDisclosure({ items }: { items: string[] }) {
+  return (
+    <details
+      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-1.5 text-[11px] leading-4 text-foreground/80"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <summary className="cursor-pointer list-none truncate font-semibold text-foreground/75">
+        {items.length} more task group{items.length === 1 ? "" : "s"}
+      </summary>
+      <div className="mt-1 grid max-h-14 gap-1 overflow-auto pr-1">
+        {items.map((item) => (
+          <label className="flex min-w-0 items-center gap-1.5" key={item}>
+            <input className="size-3 accent-emerald-500" readOnly type="checkbox" />
+            <span className="truncate">{item}</span>
+          </label>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -511,10 +540,7 @@ function BorderPorts({ direction, items }: { direction: "input" | "output"; item
         const top = HANDLE_POSITIONS[index] ?? HANDLE_POSITIONS[2];
         return (
           <div
-            className={cn(
-              "pointer-events-none absolute z-30 flex h-6 w-[9.75rem] items-center",
-              direction === "input" ? "left-0 pl-3" : "right-0 justify-end pr-3",
-            )}
+            className="pointer-events-none absolute inset-x-0 z-30 h-6"
             key={`${direction}-${index}`}
             style={{ top: `${top}%` }}
           >
@@ -532,8 +558,8 @@ function BorderPorts({ direction, items }: { direction: "input" | "output"; item
             />
             <span
               className={cn(
-                "block max-w-[7.75rem] truncate rounded-full bg-background/95 px-2 py-0.5 text-[10px] font-semibold leading-4 text-foreground/75 shadow-sm shadow-black/10",
-                direction === "output" ? "mr-1 text-right" : "ml-1",
+                "absolute top-1/2 block max-w-[8.25rem] -translate-y-1/2 truncate rounded-full bg-background/95 px-2 py-0.5 text-[10px] font-semibold leading-4 text-foreground/75 shadow-sm shadow-black/10",
+                direction === "input" ? "right-[calc(100%+0.5rem)] text-right" : "left-[calc(100%+0.5rem)]",
               )}
               title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
             >
@@ -570,6 +596,7 @@ function portColorClass(port: BlueprintPort): string {
   const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
   if (/missing|failed|problem|review/.test(value)) return "!bg-destructive";
   if (/published|website|output|ready|task draft|task/.test(value)) return "!bg-emerald-500";
+  if (/solution/.test(value)) return "!bg-rose-500";
   if (/extract|ocr|active extraction/.test(value)) return "!bg-blue-500";
   if (/script|section|block/.test(value)) return "!bg-violet-500";
   if (/page/.test(value)) return "!bg-sky-500";
@@ -582,6 +609,7 @@ function portColorHex(port: BlueprintPort | null | undefined): string {
   const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
   if (/missing|failed|problem|review/.test(value)) return "#dc2626";
   if (/published|website|output|ready|task draft|task/.test(value)) return "#10b981";
+  if (/solution/.test(value)) return "#f43f5e";
   if (/extract|ocr|active extraction/.test(value)) return "#3b82f6";
   if (/script|section|block/.test(value)) return "#8b5cf6";
   if (/page/.test(value)) return "#0ea5e9";

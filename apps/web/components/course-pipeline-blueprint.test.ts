@@ -397,7 +397,7 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.problems?.[0]?.label).toBe("Inventory missing");
   });
 
-  test("sorts repeated task groups naturally and collapses the middle", () => {
+  test("sorts repeated task groups naturally and keeps hidden groups inside the first lane", () => {
     const manyTaskGroups: CourseInventoryResponse = {
       ...inventory,
       summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
@@ -437,10 +437,14 @@ describe("course pipeline blueprint graph", () => {
     const titles = graph.nodes.map((node) => node.data.title);
 
     expect(titles).toContain("Aufgabenblatt 1");
-    expect(titles).toContain("Aufgabenblatt 12");
+    expect(titles).not.toContain("Aufgabenblatt 12");
     expect(titles).not.toContain("Aufgabenblatt 10");
-    expect(titles).toContain("2 ... 11 collapsed");
-    expect(titles.indexOf("Aufgabenblatt 1")).toBeLessThan(titles.indexOf("Aufgabenblatt 12"));
+    expect(titles).not.toContain("2 ... 11 collapsed");
+
+    const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
+    expect(firstTaskGroup?.data.hiddenItems).toHaveLength(11);
+    expect(firstTaskGroup?.data.hiddenItems?.[0]).toBe("Aufgabenblatt 2");
+    expect(firstTaskGroup?.data.hiddenItems?.at(-1)).toBe("Aufgabenblatt 12");
   });
 
   test("does not project global runs onto resource-specific extraction nodes", () => {

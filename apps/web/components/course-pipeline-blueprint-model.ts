@@ -117,6 +117,7 @@ export type BlueprintNodeData = {
   artifacts?: string[];
   config?: Array<{ label: string; value: string }>;
   evidence?: string[];
+  hiddenItems?: string[];
   inputs: BlueprintPort[];
   meta: Array<{ label: string; value: string }>;
   live?: BlueprintLiveState;
@@ -205,6 +206,7 @@ export function buildBlueprintGraph({
   const taskGroups = sortTaskGroups(derivedInventory?.taskGroups ?? []);
   const scriptResources = sortInventoryNodes(derivedInventory?.lectureMaterial ?? []);
   const visibleTaskGroups = visibleBoundaryItems(taskGroups, MAX_TASK_GROUPS);
+  const hiddenTaskGroups = hiddenBoundaryItems(taskGroups, MAX_TASK_GROUPS);
   const visibleScriptResources = scriptResources.slice(0, MAX_SCRIPT_GROUPS);
   const totalResources = status?.summary.totalResources ?? derivedInventory?.summary.totalResources ?? 0;
   const centerY = 760;
@@ -329,33 +331,9 @@ export function buildBlueprintGraph({
       outputLookup,
       runLookup,
       y: taskLaneStartY + index * taskLaneGap,
+      hiddenSiblingTitles: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => hiddenGroup.title) : undefined,
     });
   });
-
-  if (taskGroups.length > visibleTaskGroups.length) {
-    const hiddenGroups = hiddenBoundaryItems(taskGroups, MAX_TASK_GROUPS);
-    const hiddenCount = hiddenGroups.length;
-    const firstHidden = hiddenGroups[0];
-    const lastHidden = hiddenGroups.at(-1);
-    addNode(nodes, {
-      id: "task-groups-more",
-      position: { x: 860, y: centerY },
-      data: {
-        title: hiddenCount > 1 ? `${titleRange(firstHidden?.title, lastHidden?.title)} collapsed` : `${firstHidden?.title ?? hiddenCount} collapsed`,
-        subtitle: `${hiddenCount} hidden task group${hiddenCount === 1 ? "" : "s"}`,
-        detail: "The graph caps repeated lanes for readability. The Resources tab still contains every Moodle resource.",
-        evidence: ["Visible graph is intentionally capped"],
-        inputs: [{ label: "task groups[]" }],
-        outputs: [{ label: "collapsed lanes", detail: String(hiddenCount) }],
-        outputPreview: hiddenGroups.map((group) => group.title).join("\n"),
-        stepKind: "split",
-        tone: "resource",
-        status: "collapsed",
-        meta: [{ label: "Hidden groups", value: String(hiddenCount) }],
-      },
-    });
-    addEdge(edges, "resource-set", "task-groups-more", "more", { muted: true, sourceHandle: "out-0", targetHandle: "in-2" });
-  }
 
   if (visibleScriptResources.length > 0) {
     addFrame(nodes, {
@@ -649,30 +627,16 @@ function sortInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[]
 
 function visibleBoundaryItems<T>(items: T[], maxItems: number): T[] {
   if (items.length <= maxItems) return items;
-  const first = items[0];
-  const last = items.at(-1);
-  return first && last && first !== last ? [first, last] : items.slice(0, 1);
+  return items.slice(0, 1);
 }
 
 function hiddenBoundaryItems<T>(items: T[], maxItems: number): T[] {
   if (items.length <= maxItems) return [];
-  return items.slice(1, -1);
+  return items.slice(1);
 }
 
 function naturalCompare(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
-}
-
-function titleRange(first?: string, last?: string): string {
-  const firstNumber = extractTrailingNumber(first);
-  const lastNumber = extractTrailingNumber(last);
-  if (firstNumber && lastNumber) return `${firstNumber} ... ${lastNumber}`;
-  if (first && last) return `${first} ... ${last}`;
-  return first ?? last ?? "Middle items";
-}
-
-function extractTrailingNumber(value?: string): string | null {
-  return value?.match(/(\d+)(?!.*\d)/)?.[1] ?? null;
 }
 
 function frameData({
