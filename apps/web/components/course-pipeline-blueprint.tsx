@@ -556,15 +556,15 @@ function NodePreviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[88dvh] max-w-[min(96vw,980px)] flex-col gap-0 overflow-hidden rounded-[1.75rem] border-0 p-0 shadow-2xl"
+        className="flex h-[min(90dvh,920px)] w-[min(96vw,1200px)] max-w-none flex-col gap-0 overflow-hidden rounded-[1.75rem] border-0 p-0 shadow-2xl sm:max-w-[min(96vw,1200px)]"
         onClick={(event) => event.stopPropagation()}
       >
         <DialogHeader className="border-b border-border/50 px-5 py-4 pr-14">
           <DialogTitle className="truncate text-base">{title}</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-5">
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
           <MarkdownRenderer
-            className="space-y-4 break-words text-sm leading-6 text-foreground [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3"
+            className="max-w-none space-y-4 break-words text-sm leading-6 text-foreground [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3"
             text={markdown}
           />
         </div>
