@@ -19,6 +19,7 @@ import {
   CoursePipelineBlueprint,
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint";
+import { CoursePipelineRunComparison } from "@/components/course-pipeline-run-comparison";
 import { Spinner } from "@/components/ui/spinner";
 import {
   buildInventorySections,
@@ -29,7 +30,7 @@ import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
-type InspectorTab = "resources" | "buckets" | "runs" | "blueprint" | "review";
+type InspectorTab = "resources" | "buckets" | "runs" | "compare" | "blueprint" | "review";
 
 type CoursePipelineInspectorProps = {
   course: Course;
@@ -42,6 +43,7 @@ const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: "resources", label: "Resources" },
   { id: "buckets", label: "Buckets" },
   { id: "runs", label: "Runs" },
+  { id: "compare", label: "Compare" },
   { id: "blueprint", label: "Blueprint" },
   { id: "review", label: "Review" },
 ];
@@ -59,6 +61,7 @@ export function CoursePipelineInspector({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
+  const [rerunningEngine, setRerunningEngine] = useState<string | null>(null);
 
   const inventorySections = useMemo(() => buildInventorySections(inventory), [inventory]);
   useEffect(() => {
@@ -108,6 +111,24 @@ export function CoursePipelineInspector({
       setError(formatStudyPipelineError(selectError));
     } finally {
       setSelectingRunId(null);
+    }
+  }
+
+  async function rerunExtracted(engine: string) {
+    setRerunningEngine(engine);
+    setError(null);
+    try {
+      const response = await studyPipelinePost<StudyPipelineStatusResponse>(courseId, "/extracted", {
+        configHash: `config:extracted:${engine}:default`,
+        engine,
+      });
+      setStatus(response);
+      const nextRuns = await studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs");
+      setRuns(nextRuns);
+    } catch (rerunError) {
+      setError(formatStudyPipelineError(rerunError));
+    } finally {
+      setRerunningEngine(null);
     }
   }
 
@@ -172,6 +193,14 @@ export function CoursePipelineInspector({
               runs={runs}
               selectingRunId={selectingRunId}
               status={status}
+            />
+          ) : activeTab === "compare" ? (
+            <CoursePipelineRunComparison
+              onRerun={(engine) => void rerunExtracted(engine)}
+              onSelectRun={(runId) => void selectActiveRun(runId)}
+              rerunningEngine={rerunningEngine}
+              runs={runs}
+              selectingRunId={selectingRunId}
             />
           ) : activeTab === "blueprint" ? (
             <CoursePipelineBlueprint inventory={inventory} runs={runs} status={status} />

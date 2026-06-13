@@ -40,7 +40,16 @@ export type PipelineRunRecord = {
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;
-  artifactRefs?: Array<{ id: string; kind: string; uri?: string; storageKey?: string }>;
+  artifactRefs?: Array<{
+    id: string;
+    kind: string;
+    uri?: string;
+    storageKey?: string;
+    checksum?: string;
+    pageNumber?: number;
+    blockId?: string;
+    metadata?: Record<string, unknown>;
+  }>;
 };
 
 export type ActiveRunSelectionRecord = {
