@@ -80,6 +80,8 @@ type PipelineReviewResponse = {
   proposals: PipelineProposalRecord[];
 };
 
+type OptionalInspectorData = "inventory" | "runs" | "review";
+
 const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: "resources", label: "Resources" },
   { id: "buckets", label: "Buckets" },
@@ -100,6 +102,7 @@ export function CoursePipelineInspector({
   const [status, setStatus] = useState<StudyPipelineStatusResponse | null>(null);
   const [runs, setRuns] = useState<PipelineRunsResponse | null>(null);
   const [review, setReview] = useState<PipelineReviewResponse | null>(null);
+  const [unavailable, setUnavailable] = useState<Partial<Record<OptionalInspectorData, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
@@ -115,6 +118,7 @@ export function CoursePipelineInspector({
   async function loadInspectorData() {
     setLoading(true);
     setError(null);
+    setUnavailable({});
     try {
       const [statusResult, inventoryResult, runsResult, reviewResult] = await Promise.allSettled([
         studyPipelineRequest<StudyPipelineStatusResponse>(courseId, ""),
@@ -125,20 +129,30 @@ export function CoursePipelineInspector({
       if (statusResult.status === "fulfilled") {
         setStatus(statusResult.value);
       }
+      if (statusResult.status === "rejected") {
+        setStatus(null);
+        setError(formatStudyPipelineError(statusResult.reason));
+      }
+      const nextUnavailable: Partial<Record<OptionalInspectorData, string>> = {};
       if (inventoryResult.status === "fulfilled") {
         setInventory(inventoryResult.value);
+      } else {
+        setInventory(null);
+        nextUnavailable.inventory = formatStudyPipelineError(inventoryResult.reason);
       }
       if (runsResult.status === "fulfilled") {
         setRuns(runsResult.value);
+      } else {
+        setRuns(null);
+        nextUnavailable.runs = formatStudyPipelineError(runsResult.reason);
       }
       if (reviewResult.status === "fulfilled") {
         setReview(reviewResult.value);
+      } else {
+        setReview(null);
+        nextUnavailable.review = formatStudyPipelineError(reviewResult.reason);
       }
-      const settled = [statusResult, inventoryResult, runsResult, reviewResult] as const;
-      const failed = settled.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") {
-        setError(formatStudyPipelineError(failed.reason));
-      }
+      setUnavailable(nextUnavailable);
     } catch (loadError) {
       setError(formatStudyPipelineError(loadError));
     } finally {
@@ -243,11 +257,13 @@ export function CoursePipelineInspector({
           {activeTab === "resources" ? (
             <ResourcesTab
               inventory={inventory}
+              inventoryError={unavailable.inventory}
               loading={materialsLoading}
               materials={materials}
+              status={status}
             />
           ) : activeTab === "buckets" ? (
-            <BucketsTab sections={inventorySections} />
+            <BucketsTab inventoryError={unavailable.inventory} sections={inventorySections} />
           ) : activeTab === "runs" ? (
             <RunsTab
               loading={loading}
@@ -255,6 +271,7 @@ export function CoursePipelineInspector({
               runs={runs}
               selectingRunId={selectingRunId}
               status={status}
+              unavailableReason={unavailable.runs}
             />
           ) : activeTab === "compare" ? (
             <CoursePipelineRunComparison
@@ -272,6 +289,7 @@ export function CoursePipelineInspector({
               onSubmitProposal={(proposalId) => void submitProposal(proposalId)}
               review={review}
               submittingProposalId={submittingProposalId}
+              unavailableReason={unavailable.review}
             />
           )}
         </div>
@@ -282,12 +300,16 @@ export function CoursePipelineInspector({
 
 function ResourcesTab({
   inventory,
+  inventoryError,
   loading,
   materials,
+  status,
 }: {
   inventory: CourseInventoryResponse | null;
+  inventoryError?: string;
   loading: boolean;
   materials: Material[];
+  status: StudyPipelineStatusResponse | null;
 }) {
   const nodes = [
     ...(inventory?.lectureMaterial ?? []),
@@ -302,15 +324,33 @@ function ResourcesTab({
     ]) ?? []),
   ];
   const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  const statusMaterialsById = new Map((status?.materials ?? []).map((item) => [item.id, item] as const));
+  const displayMaterials: Material[] = materials.length > 0
+    ? materials
+    : (status?.materials ?? []).map((item) => ({
+      fileType: item.fileType,
+      id: item.id,
+      name: item.name,
+      sectionName: item.sectionName,
+      type: item.type || item.resourceType,
+    }));
 
-  if (loading && materials.length === 0) {
+  if (loading && displayMaterials.length === 0) {
     return <LoadingPanel label="Resources loading" />;
   }
 
   return (
     <div className="grid gap-2">
-      {materials.map((material) => {
+      {inventoryError ? (
+        <p className="rounded-3xl bg-secondary/45 px-4 py-3 text-sm text-muted-foreground">
+          Classification details are not available from the current Moodle services deployment.
+        </p>
+      ) : null}
+      {displayMaterials.map((material) => {
         const node = nodesById.get(material.id);
+        const statusMaterial = statusMaterialsById.get(material.id);
+        const bucket = node?.bucket ?? statusMaterial?.type ?? "not classified";
+        const confidence = node?.confidence ?? null;
         return (
           <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={material.id}>
             <div className="min-w-0">
@@ -321,13 +361,13 @@ function ResourcesTab({
               {node?.reason ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{node.reason}</p> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end">
-              <Badge>{node?.bucket ?? "not classified"}</Badge>
-              {node?.confidence ? <Badge variant="outline">{confidenceLabel(node.confidence)}</Badge> : null}
+              <Badge>{bucket}</Badge>
+              {confidence ? <Badge variant="outline">{confidenceLabel(confidence)}</Badge> : null}
             </div>
           </div>
         );
       })}
-      {materials.length === 0 ? (
+      {displayMaterials.length === 0 ? (
         <EmptyInspectorState
           icon={FileText}
           title="No resources loaded"
@@ -338,7 +378,22 @@ function ResourcesTab({
   );
 }
 
-function BucketsTab({ sections }: { sections: ReturnType<typeof buildInventorySections> }) {
+function BucketsTab({
+  inventoryError,
+  sections,
+}: {
+  inventoryError?: string;
+  sections: ReturnType<typeof buildInventorySections>;
+}) {
+  if (inventoryError) {
+    return (
+      <EmptyInspectorState
+        icon={Layers}
+        title="Inventory unavailable"
+        description="The current Moodle services deployment does not expose classification buckets yet."
+      />
+    );
+  }
   if (sections.length === 0) {
     return (
       <EmptyInspectorState
@@ -381,16 +436,27 @@ function RunsTab({
   runs,
   selectingRunId,
   status,
+  unavailableReason,
 }: {
   loading: boolean;
   onSelectRun: (runId: string) => void;
   runs: PipelineRunsResponse | null;
   selectingRunId: string | null;
   status: StudyPipelineStatusResponse | null;
+  unavailableReason?: string;
 }) {
   const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
   if (loading && !runs && !status) {
     return <LoadingPanel label="Runs loading" />;
+  }
+  if (unavailableReason) {
+    return (
+      <EmptyInspectorState
+        icon={RefreshCw}
+        title="Run history unavailable"
+        description="The current Moodle services deployment does not expose immutable run history yet."
+      />
+    );
   }
   if (!runs || runs.runs.length === 0) {
     return (
@@ -453,11 +519,13 @@ function ReviewTab({
   onSubmitProposal,
   review,
   submittingProposalId,
+  unavailableReason,
 }: {
   inventory: CourseInventoryResponse | null;
   onSubmitProposal: (proposalId: string) => void;
   review: PipelineReviewResponse | null;
   submittingProposalId: string | null;
+  unavailableReason?: string;
 }) {
   const reviewItems = [
     ...(inventory?.taskGroups.filter((group) => group.pairingStatus !== "paired").map((group) => ({
@@ -476,6 +544,16 @@ function ReviewTab({
 
   const feedback = review?.feedback ?? [];
   const proposals = review?.proposals ?? [];
+
+  if (unavailableReason && reviewItems.length === 0) {
+    return (
+      <EmptyInspectorState
+        icon={MessageSquareWarning}
+        title="Review queue unavailable"
+        description="The current Moodle services deployment does not expose feedback and proposal review yet."
+      />
+    );
+  }
 
   if (reviewItems.length === 0 && feedback.length === 0 && proposals.length === 0) {
     return (
