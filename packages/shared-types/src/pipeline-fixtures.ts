@@ -148,6 +148,122 @@ export const ocrComparisonRuns = [
   },
 ] satisfies PipelineRun[];
 
+export const codexCurationRunWithImageReview = {
+  id: "run:codex-curate:947711",
+  sourceId: highPerformanceComputingSource.id,
+  resourceId: "resource:moodle:947711",
+  fileHash: "sha256:aufgabenblatt-01",
+  stage: "codex_curate",
+  engine: "codex",
+  configHash: "config:codex-curate:layout-v1",
+  ownership: "shared",
+  createdBy: "system",
+  status: "needs_review",
+  createdAt: "2026-06-13T00:15:00.000Z",
+  artifacts: [
+    {
+      id: "artifact:page-render:947711:p1",
+      kind: "page_render",
+      pageNumber: 1,
+      storageKey: "courses/22584/runs/codex-curate-947711/pages/page-1.png",
+    },
+    {
+      id: "artifact:element-accountability:947711",
+      kind: "element_accountability_manifest",
+      storageKey: "courses/22584/runs/codex-curate-947711/element-accountability.json",
+    },
+    {
+      id: "artifact:curation-checklist:947711",
+      kind: "curation_checklist",
+      storageKey: "courses/22584/runs/codex-curate-947711/checklist.json",
+    },
+    {
+      id: "artifact:rendered-preview:947711",
+      kind: "rendered_preview",
+      storageKey: "courses/22584/runs/codex-curate-947711/preview.html",
+    },
+  ],
+  curationChecklist: {
+    status: "incomplete",
+    checkedBy: "codex",
+    checkedAt: "2026-06-13T00:16:00.000Z",
+    renderPreviewArtifactId: "artifact:rendered-preview:947711",
+    items: [
+      {
+        id: "page_images_reviewed",
+        label: "Rendered PDF page images were inspected",
+        status: "checked",
+        evidenceArtifactId: "artifact:page-render:947711:p1",
+      },
+      {
+        id: "extracted_elements_reviewed",
+        label: "Extracted PDF elements were inspected",
+        status: "checked",
+        evidenceArtifactId: "artifact:element-accountability:947711",
+      },
+      {
+        id: "element_accountability_complete",
+        label: "Every detected PDF element has a final outcome",
+        status: "failed",
+        evidenceArtifactId: "artifact:element-accountability:947711",
+        reason: "One extracted task figure still needs a final outcome.",
+      },
+      {
+        id: "layout_reconstructed",
+        label: "Task layout was reconstructed from the PDF",
+        status: "missing",
+      },
+      {
+        id: "rendered_preview_reviewed",
+        label: "Rendered website preview was opened and reviewed",
+        status: "checked",
+        evidenceArtifactId: "artifact:rendered-preview:947711",
+      },
+      {
+        id: "source_mapping_complete",
+        label: "Output source mapping is complete",
+        status: "checked",
+      },
+    ],
+  },
+  elementDecisions: [
+    {
+      id: "element-decision:947711:logo",
+      sourceElementId: "element:947711:p1:logo",
+      sourceArtifactId: "artifact:image:947711:p1:logo",
+      sourcePageImageArtifactId: "artifact:page-render:947711:p1",
+      elementKind: "image",
+      outcome: "ignored",
+      reason: "FHGR header logo belongs to the PDF template, not the exercise.",
+      decidedBy: "codex",
+      confidence: "high",
+      pageNumber: 1,
+      createdAt: "2026-06-13T00:16:00.000Z",
+    },
+    {
+      id: "element-decision:947711:task-figure",
+      sourceElementId: "element:947711:p2:figure",
+      sourceArtifactId: "artifact:image:947711:p2:figure",
+      sourcePageImageArtifactId: "artifact:page-render:947711:p1",
+      elementKind: "figure",
+      outcome: "needs_review",
+      reason: "The image might be part of the task statement and must be mapped before completion.",
+      decidedBy: "codex",
+      confidence: "low",
+      pageNumber: 2,
+      createdAt: "2026-06-13T00:16:00.000Z",
+    },
+  ],
+  diagnostics: [
+    {
+      level: "warning",
+      code: "curation_checklist_incomplete",
+      message: "Codex curation cannot be completed while detected PDF elements still need review.",
+      artifactId: "artifact:curation-checklist:947711",
+    },
+  ],
+} satisfies PipelineRun;
+
 export const activeOcrRunSelection = {
   sourceId: highPerformanceComputingSource.id,
   resourceId: "resource:moodle:947712",
@@ -192,7 +308,7 @@ export const droppedAndUnusedTraceEdges = [
     sourceNodeId: "node:block:947711:p1:logo",
     targetNodeId: "node:output:947711:task-1",
     stage: "codex_curate",
-    action: "dropped",
+    action: "discarded_template",
     status: "ok",
     reason: "decorative logo",
     runId: "run:codex-curate:947711",

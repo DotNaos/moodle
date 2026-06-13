@@ -140,12 +140,7 @@ export function CourseMainPanel({
 
   if (studyMode === "pipeline") {
     return courseId ? (
-      <CoursePipelineInspector
-        course={course}
-        courseId={courseId}
-        materials={materials}
-        materialsLoading={materialsLoading}
-      />
+      <CoursePipelineInspector course={course} courseId={courseId} />
     ) : (
       <CoursePanelShell>
         <NoCourseSelected />

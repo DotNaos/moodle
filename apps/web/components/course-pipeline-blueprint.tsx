@@ -4,127 +4,189 @@ import {
   Background,
   Controls,
   Handle,
-  MarkerType,
   Position,
   ReactFlow,
   type Edge,
-  type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { AlertCircle, CheckCircle2, Database, FileText, GitBranch, Layers, Search, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  ClipboardList,
+  Database,
+  Eye,
+  FileText,
+  GitCompareArrows,
+  GitBranch,
+  ImageOff,
+  Layers,
+  Maximize2,
+  RotateCw,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  buildBlueprintGraph,
+  type BlueprintExtractionVariant,
+  type BlueprintGraphNode,
+  type BlueprintNode,
+  type BlueprintRunScope,
+  type BlueprintNodeTone,
+  type BlueprintPort,
+  type BlueprintRenderedField,
+  type PipelineRunRecord,
+  type PipelineRunsResponse,
+} from "@/components/course-pipeline-blueprint-model";
+import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
 import type {
-  CourseInventoryNode,
   CourseInventoryResponse,
   StudyPipelineStatusResponse,
 } from "@/components/study-pipeline-preview";
+import type { TaskViewResponse } from "@/components/task-study-panel";
 import { cn } from "@/lib/utils";
+import {
+  LiveStatePanel,
+  NodeLiveIndicator,
+  PipelineStatusBadge,
+  liveNodeClass,
+} from "@/components/course-pipeline-live-ui";
+import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course-pipeline-trace";
+import { SourceTracePanel } from "@/components/course-pipeline-trace-panel";
+import { LossTracePanel } from "@/components/course-pipeline-loss-panel";
+import { PipelineCableEdge } from "@/components/course-pipeline-blueprint-edge";
+import {
+  buildPipelineNodePreview,
+  type PipelineNodePreview,
+} from "@/components/course-pipeline-node-preview";
 
-export type PipelineRunRecord = {
-  id: string;
-  sourceId: string;
-  courseId: string;
-  resourceId?: string;
-  fileHash?: string;
-  stage: string;
-  engine: string;
-  configHash: string;
-  ownership: "shared" | "user_owned" | string;
-  createdBy?: string;
-  status: string;
-  artifactRoot: string;
-  error?: string;
-  startedAt?: string;
-  finishedAt?: string;
-  createdAt: string;
-  artifactRefs?: Array<{
-    id: string;
-    kind: string;
-    uri?: string;
-    storageKey?: string;
-    checksum?: string;
-    pageNumber?: number;
-    blockId?: string;
-    metadata?: Record<string, unknown>;
-  }>;
-};
-
-export type ActiveRunSelectionRecord = {
-  sourceId: string;
-  resourceId?: string;
-  stage: string;
-  activeRunId: string;
-  selectedBy?: string;
-  selectedAt: string;
-  reason: string;
-};
-
-export type PipelineRunsResponse = {
-  courseId: string;
-  runs: PipelineRunRecord[];
-  activeSelections: ActiveRunSelectionRecord[];
-};
-
-type BlueprintNodeTone = "source" | "process" | "resource" | "run" | "output" | "warning";
-
-type BlueprintNodeData = {
-  title: string;
-  subtitle: string;
-  detail: string;
-  tone: BlueprintNodeTone;
-  status?: string;
-  active?: boolean;
-  artifacts?: string[];
-  evidence?: string[];
-  meta: Array<{ label: string; value: string }>;
-  onSelect?: (nodeId: string) => void;
-  outputPreview?: string;
-};
-
-type BlueprintNode = Node<BlueprintNodeData, "blueprint">;
-type BlueprintNodeInput = Omit<BlueprintNode, "type"> & { type?: "blueprint" };
+export { buildBlueprintGraph };
+export type { PipelineRunRecord, PipelineRunsResponse };
 
 type CoursePipelineBlueprintProps = {
+  extractedDocuments: ExtractedDocumentsResponse | null;
   inventory: CourseInventoryResponse | null;
   runs: PipelineRunsResponse | null;
   status: StudyPipelineStatusResponse | null;
+  taskView: TaskViewResponse | null;
+  onRerunExtraction?: (engine: string) => void;
+  onSelectedScopeChange?: (scope: BlueprintRunScope | null) => void;
+  onSelectRun?: (runId: string) => void;
+  rerunningEngine?: string | null;
+  selectingRunId?: string | null;
+  unavailable?: {
+    extractedDocuments?: string;
+    inventory?: string;
+    runs?: string;
+    taskView?: string;
+  };
 };
 
 const nodeTypes = {
   blueprint: BlueprintNodeCard,
+  frame: BlueprintGroupFrame,
 };
 
-const STAGE_LABELS: Record<string, string> = {
-  inventory: "Inventory",
-  raw: "Raw import",
-  extracted: "Extracted",
-  curated: "Codex curated",
+const edgeTypes = {
+  pipeline: PipelineCableEdge,
 };
 
-export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipelineBlueprintProps) {
-  const graph = useMemo(() => buildBlueprintGraph({ inventory, runs, status }), [inventory, runs, status]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(graph.nodes[0]?.id ?? null);
-  const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? graph.nodes[0];
+export function CoursePipelineBlueprint({
+  extractedDocuments,
+  inventory,
+  runs,
+  status,
+  taskView,
+  onRerunExtraction,
+  onSelectedScopeChange,
+  onSelectRun,
+  rerunningEngine,
+  selectingRunId,
+  unavailable,
+}: CoursePipelineBlueprintProps) {
+  const [edgeStyle, setEdgeStyle] = useState<"rounded" | "square">("rounded");
+  const graph = useMemo(
+    () => buildBlueprintGraph({ extractedDocuments, inventory, runs, status, taskView, unavailable }),
+    [extractedDocuments, inventory, runs, status, taskView, unavailable],
+  );
+  const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
+  const visibleEdges = useMemo(
+    () => graph.edges.map((edge) => {
+      const stroke = edgeColor(edge, nodeById);
+      return {
+        ...edge,
+        label: undefined,
+        markerEnd: undefined,
+        style: {
+          ...edge.style,
+          stroke,
+          strokeLinecap: "round" as const,
+          strokeWidth: edge.style?.strokeWidth ?? 2.5,
+        },
+        data: { ...edge.data, renderStyle: edgeStyle },
+        type: "pipeline",
+      };
+    }),
+    [edgeStyle, graph.edges, nodeById],
+  );
+  const selectableNodes = useMemo(() => graph.nodes.filter(isBlueprintNode), [graph.nodes]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(selectableNodes[0]?.id ?? null);
+  const selectedNode = selectableNodes.find((node) => node.id === selectedNodeId) ?? selectableNodes[0];
+  const selectedTrace = useMemo(
+    () => buildUpstreamTrace({ edges: graph.edges, nodes: graph.nodes, selectedNodeId: selectedNode?.id }),
+    [graph.edges, graph.nodes, selectedNode?.id],
+  );
+  const selectedRunScope = selectedNode?.data.runScope ?? null;
+  const selectedRunScopeKey = selectedRunScope
+    ? `${selectedRunScope.kind}:${selectedRunScope.label}:${selectedRunScope.resourceIds.join(",")}`
+    : "none";
+  useEffect(() => {
+    onSelectedScopeChange?.(selectedRunScope);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onSelectedScopeChange, selectedRunScopeKey]);
   const interactiveNodes = useMemo(
     () => graph.nodes.map((node) => ({
       ...node,
-      data: { ...node.data, onSelect: setSelectedNodeId },
+      data: node.type === "blueprint" ? { ...node.data, onSelect: setSelectedNodeId } : node.data,
       selected: node.id === selectedNode?.id,
     })),
     [graph.nodes, selectedNode?.id],
   );
 
   return (
-    <div className="grid min-h-[640px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="relative h-[calc(100dvh-10.5rem)] min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
+        <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
+          <LegendPill kind="transform" label="1 -> 1 Transform" />
+          <LegendPill kind="split" label="1 -> N Split" />
+          <LegendPill kind="collect" label="N -> 1 Collect" />
+        </div>
+        <div className="absolute right-4 top-4 z-10 flex rounded-full bg-background/90 p-1 shadow-sm shadow-black/10">
+          <EdgeStyleButton active={edgeStyle === "rounded"} label="Rund" onClick={() => setEdgeStyle("rounded")} />
+          <EdgeStyleButton active={edgeStyle === "square"} label="Eckig" onClick={() => setEdgeStyle("square")} />
+        </div>
         <ReactFlow
+          className="pipeline-blueprint-flow"
           colorMode="light"
-          defaultViewport={{ x: 28, y: -95, zoom: 0.85 }}
-          edges={graph.edges}
+          defaultViewport={{ x: 20, y: -280, zoom: 0.72 }}
+          edges={visibleEdges}
+          edgeTypes={edgeTypes}
           maxZoom={1.4}
-          minZoom={0.45}
+          minZoom={0.2}
           nodeTypes={nodeTypes}
           nodes={interactiveNodes}
           nodesConnectable={false}
@@ -138,66 +200,17 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
         </ReactFlow>
       </div>
 
-      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4">
+      <aside className="min-h-[560px] rounded-3xl bg-secondary/45 px-4 py-4 lg:h-[calc(100dvh-10.5rem)] lg:overflow-auto">
         {selectedNode ? (
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={selectedNode.data.tone === "warning" ? "destructive" : "secondary"}>
-                {selectedNode.data.tone}
-              </Badge>
-              {selectedNode.data.status ? <Badge variant="outline">{selectedNode.data.status}</Badge> : null}
-              {selectedNode.data.active ? <Badge>active</Badge> : null}
-            </div>
-            <h2 className="mt-4 text-lg font-semibold tracking-tight">{selectedNode.data.title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{selectedNode.data.subtitle}</p>
-            <p className="mt-4 text-sm leading-6 text-foreground/80">{selectedNode.data.detail}</p>
-
-            <div className="mt-5 rounded-2xl bg-background/70 px-3 py-3">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Output</p>
-              <p className="max-h-48 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
-                {selectedNode.data.outputPreview || "No direct output preview is stored for this node yet."}
-              </p>
-            </div>
-
-            <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Evidence</p>
-              {selectedNode.data.evidence?.length ? (
-                <div className="grid gap-2">
-                  {selectedNode.data.evidence.map((item) => (
-                    <p className="rounded-2xl bg-secondary/60 px-3 py-2 text-xs leading-5 text-foreground" key={item}>
-                      {item}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm leading-6 text-muted-foreground">No extra evidence was recorded.</p>
-              )}
-            </div>
-
-            <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Artifacts</p>
-              {selectedNode.data.artifacts?.length ? (
-                <div className="grid gap-2">
-                  {selectedNode.data.artifacts.map((artifact) => (
-                    <p className="break-words rounded-2xl bg-secondary/60 px-3 py-2 text-xs leading-5 text-foreground" key={artifact}>
-                      {artifact}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm leading-6 text-muted-foreground">No artifacts are attached to this node.</p>
-              )}
-            </div>
-
-            <div className="mt-5 grid gap-2">
-              {selectedNode.data.meta.map((item) => (
-                <div className="rounded-2xl bg-background/70 px-3 py-2" key={`${selectedNode.id}:${item.label}`}>
-                  <p className="text-[11px] text-muted-foreground">{item.label}</p>
-                  <p className="mt-0.5 break-words text-xs font-medium text-foreground">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <NodeInspector
+            node={selectedNode}
+            onRerunExtraction={onRerunExtraction}
+            onSelectRun={onSelectRun}
+            onSelectTraceNode={setSelectedNodeId}
+            rerunningEngine={rerunningEngine}
+            selectingRunId={selectingRunId}
+            trace={selectedTrace}
+          />
         ) : (
           <p className="text-sm text-muted-foreground">Select a node to inspect its pipeline evidence.</p>
         )}
@@ -206,13 +219,244 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
   );
 }
 
+function NodeInspector({
+  node,
+  onRerunExtraction,
+  onSelectRun,
+  onSelectTraceNode,
+  rerunningEngine,
+  selectingRunId,
+  trace,
+}: {
+  node: BlueprintNode;
+  onRerunExtraction?: (engine: string) => void;
+  onSelectRun?: (runId: string) => void;
+  onSelectTraceNode: (nodeId: string) => void;
+  rerunningEngine?: string | null;
+  selectingRunId?: string | null;
+  trace: BlueprintTraceStep[];
+}) {
+  const data = node.data;
+  const problems = data.problems ?? [];
+  const lossProblems = problems.filter((problem) => problem.label.toLowerCase().includes("image"));
+  const lossEvidence = (data.evidence ?? []).filter((item) => /image|asset/i.test(item));
+  const extractionVariants = data.extractionVariants ?? [];
+  const config = data.config ?? [];
+  const evidence = data.evidence ?? [];
+  const artifacts = data.artifacts ?? [];
+  const metadata = data.meta ?? [];
+  const showExtractionActions = data.title === "Extraction Variants" && onRerunExtraction;
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", stepKindBadgeClass(data.stepKind))}>
+          {stepKindLabel(data.stepKind)}
+        </span>
+        <Badge variant={data.tone === "warning" ? "destructive" : "secondary"}>{data.tone}</Badge>
+        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
+      </div>
+
+      <h2 className="mt-4 text-lg font-semibold tracking-tight">{data.title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{data.subtitle}</p>
+      <p className="mt-4 text-sm leading-6 text-foreground/80">{data.detail}</p>
+
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        <MetricTile label="Inputs" value={String(data.inputs.length)} />
+        <MetricTile label="Outputs" value={String(data.outputs.length)} />
+        <MetricTile label="Problems" value={String(problems.length)} />
+      </div>
+
+      <InspectorSection icon={ArrowRight} title="Flow">
+        <div className="grid gap-3">
+          <PortPanel items={data.inputs} title="Input" />
+          <PortPanel items={data.outputs} title="Output" />
+        </div>
+      </InspectorSection>
+
+      <InspectorSection icon={GitBranch} title="Source trace">
+        <SourceTracePanel onSelectNode={onSelectTraceNode} steps={trace} />
+      </InspectorSection>
+
+      {lossProblems.length > 0 ? (
+        <InspectorSection icon={ImageOff} title="Loss trace" tone="warning">
+          <LossTracePanel evidence={lossEvidence} problems={lossProblems} />
+        </InspectorSection>
+      ) : null}
+
+      {data.live ? (
+        <InspectorSection icon={Activity} title="Live state" tone={data.live.status === "failed" ? "warning" : "default"}>
+          <LiveStatePanel live={data.live} />
+        </InspectorSection>
+      ) : null}
+
+      <InspectorSection icon={Eye} title="Preview">
+        <RenderedNodePreview node={node} />
+      </InspectorSection>
+
+      {extractionVariants.length > 0 ? (
+        <InspectorSection icon={GitCompareArrows} title="Extraction variants">
+          <ExtractionVariantPanel
+            onSelectRun={onSelectRun}
+            selectingRunId={selectingRunId}
+            variants={extractionVariants}
+          />
+        </InspectorSection>
+      ) : null}
+
+      {problems.length > 0 ? (
+        <InspectorSection icon={AlertCircle} title="Problems" tone="warning">
+          <div className="grid gap-2">
+            {problems.map((problem) => (
+              <div className="rounded-2xl bg-background/80 px-3 py-2" key={`${problem.label}:${problem.detail}`}>
+                <p className="text-xs font-medium text-destructive">{problem.label}</p>
+                <p className="mt-1 text-xs leading-5 text-destructive/80">{problem.detail}</p>
+              </div>
+            ))}
+          </div>
+        </InspectorSection>
+      ) : null}
+
+      {showExtractionActions ? (
+        <InspectorSection icon={RotateCw} title="Run extraction">
+          <ExtractionActionButtons
+            onRerunExtraction={onRerunExtraction}
+            rerunningEngine={rerunningEngine}
+            variants={extractionVariants}
+          />
+        </InspectorSection>
+      ) : null}
+
+      {evidence.length > 0 ? (
+        <InspectorSection icon={Search} title="Evidence">
+          <StringList items={evidence} />
+        </InspectorSection>
+      ) : null}
+
+      {artifacts.length > 0 ? (
+        <InspectorSection icon={FileText} title="Artifacts">
+          <StringList items={artifacts} />
+        </InspectorSection>
+      ) : null}
+
+      {config.length > 0 ? (
+        <InspectorSection icon={ClipboardList} title="Config">
+          <KeyValuePanel items={config} />
+        </InspectorSection>
+      ) : null}
+
+      {metadata.length > 0 ? (
+        <InspectorSection icon={Database} title="Metadata">
+          <KeyValuePanel items={metadata} />
+        </InspectorSection>
+      ) : null}
+    </div>
+  );
+}
+
+function RenderedNodePreview({ node }: { node: BlueprintNode }) {
+  const preview = useMemo(() => buildPipelineNodePreview(node.data), [node.data]);
+  return (
+    <div className="max-h-[36rem] overflow-auto rounded-2xl bg-background/80 px-3 py-3">
+      <NodePreviewContent preview={preview} size="inspector" />
+    </div>
+  );
+}
+
+function ExtractionVariantPanel({
+  onSelectRun,
+  selectingRunId,
+  variants,
+}: {
+  onSelectRun?: (runId: string) => void;
+  selectingRunId?: string | null;
+  variants: BlueprintExtractionVariant[];
+}) {
+  return (
+    <div className="grid gap-2">
+      {variants.map((variant) => {
+        const selecting = selectingRunId === variant.runId;
+        return (
+          <div className="rounded-2xl bg-background/80 px-3 py-3" key={variant.engine}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{variant.engine}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{variant.configHash}</p>
+              </div>
+              <Badge variant={variantStatusBadge(variant.status)}>{variant.active ? "active" : variant.status}</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <MetricTile label="Chars" value={variant.chars === null ? "missing" : String(variant.chars)} />
+              <MetricTile label="Artifacts" value={String(variant.artifactCount)} />
+            </div>
+            {variant.preview ? (
+              <p className="mt-3 line-clamp-3 rounded-2xl bg-secondary/55 px-3 py-2 text-xs leading-5 text-foreground/80">
+                {variant.preview}
+              </p>
+            ) : null}
+            {variant.runId && onSelectRun ? (
+              <Button
+                className="mt-3 h-8 w-full justify-center rounded-full"
+                disabled={variant.active || selecting}
+                onClick={() => onSelectRun(variant.runId!)}
+                type="button"
+                variant={variant.active ? "secondary" : "default"}
+              >
+                {selecting ? <Spinner aria-hidden /> : <CheckCircle2 aria-hidden className="size-4" />}
+                {variant.active ? "Active output" : "Use this output"}
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExtractionActionButtons({
+  onRerunExtraction,
+  rerunningEngine,
+  variants,
+}: {
+  onRerunExtraction: (engine: string) => void;
+  rerunningEngine?: string | null;
+  variants: BlueprintExtractionVariant[];
+}) {
+  const engines = variants.length > 0 ? variants.map((variant) => variant.engine) : ["pdftotext", "docling", "marker"];
+  return (
+    <>
+      {engines.map((engine) => {
+        const running = rerunningEngine === engine;
+        return (
+          <Button
+            className="h-9 justify-start rounded-full"
+            disabled={Boolean(rerunningEngine)}
+            key={engine}
+            onClick={() => onRerunExtraction(engine)}
+            type="button"
+            variant="secondary"
+          >
+            {running ? <Spinner aria-hidden /> : <RotateCw aria-hidden className="size-4" />}
+            Run {engine}
+          </Button>
+        );
+      })}
+      <p className="text-xs leading-5 text-muted-foreground">
+        Runs create a new immutable extraction variant. Selecting a variant decides which output downstream steps use.
+      </p>
+    </>
+  );
+}
+
 function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
+  const preview = useMemo(() => buildPipelineNodePreview(data), [data]);
+  const [previewOpen, setPreviewOpen] = useState(false);
   return (
     <div
       className={cn(
-        "w-[220px] rounded-3xl bg-background px-4 py-3 shadow-sm transition-shadow",
-        selected ? "outline outline-2 outline-primary/60" : "shadow-black/5",
+        "relative min-h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
+        liveNodeClass(data.live),
+        selected ? "outline outline-2 outline-primary/60" : "",
       )}
       onClick={(event) => {
         event.stopPropagation();
@@ -227,345 +471,558 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <Handle className="opacity-0" position={Position.Left} type="target" />
-      <div className="flex items-start gap-3">
-        <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
-          <Icon aria-hidden className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{data.title}</p>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{data.subtitle}</p>
+      <div className="relative z-10 h-full overflow-visible rounded-3xl px-4 py-3">
+        <NodeLiveIndicator live={data.live} />
+        <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
+        <div className="flex items-start gap-3">
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
+            <Icon aria-hidden className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
+            <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
+          </div>
         </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
+            {stepKindLabel(data.stepKind)}
+          </span>
+          <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
+        </div>
+        <ChannelRows inputs={data.inputs} outputs={data.outputs} />
+
+        <div className="mt-3 rounded-2xl bg-secondary/45 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
+            <div className="flex items-center gap-1">
+              {data.problems?.length ? (
+                <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                  {data.problems.length}
+                </span>
+              ) : null}
+              <button
+                aria-label="Open output preview"
+                className="grid size-6 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPreviewOpen(true);
+                }}
+                type="button"
+              >
+                <Maximize2 aria-hidden className="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[8.5rem] overflow-auto pr-1" onClick={(event) => event.stopPropagation()}>
+            <NodePreviewContent preview={preview} size="node" />
+          </div>
+        </div>
+        {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {data.active ? <Badge>active</Badge> : null}
-        {data.status ? <Badge variant={data.status === "failed" ? "destructive" : "outline"}>{data.status}</Badge> : null}
-      </div>
-      <Handle className="opacity-0" position={Position.Right} type="source" />
+      <NodePreviewDialog
+        onOpenChange={setPreviewOpen}
+        open={previewOpen}
+        preview={preview}
+        title={data.title}
+      />
     </div>
   );
 }
 
-export function buildBlueprintGraph({
-  inventory,
-  runs,
-  status,
-}: CoursePipelineBlueprintProps): { nodes: BlueprintNode[]; edges: Edge[] } {
-  const nodes: BlueprintNode[] = [];
-  const edges: Edge[] = [];
-  const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
-  const latestRunsByStage = latestRuns(runs?.runs ?? []);
-  const taskGroups = inventory?.taskGroups ?? [];
-  const visibleTaskGroups = taskGroups.slice(0, 7);
-  const warnings = buildWarnings(inventory, runs);
+function NodePreviewDialog({
+  onOpenChange,
+  open,
+  preview,
+  title,
+}: {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  preview: PipelineNodePreview;
+  title: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="flex h-[min(90dvh,920px)] w-[min(96vw,1200px)] max-w-none flex-col gap-0 overflow-hidden rounded-[1.75rem] border-0 p-0 shadow-2xl sm:max-w-[min(96vw,1200px)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DialogHeader className="border-b border-border/50 px-5 py-4 pr-14">
+          <DialogTitle className="truncate text-base">{title}</DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+          <NodePreviewContent preview={preview} size="modal" />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  addNode(nodes, {
-    id: "course",
-    position: { x: 0, y: 180 },
-    data: {
-      title: "Moodle course",
-      subtitle: `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources`,
-      detail: "The course is the shared source. Every downstream pipeline run should map back to this input.",
-      evidence: [
-        "Initial source: Moodle course inventory",
-        `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources are available for classification`,
-      ],
-      outputPreview: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts currently visible downstream`,
-      tone: "source",
-      status: status?.status,
-      meta: [
-        { label: "Course ID", value: status?.courseId ?? inventory?.courseId ?? "unknown" },
-        { label: "Current stage", value: status?.stage || "not started" },
-      ],
-    },
-  });
-  addNode(nodes, {
-    id: "inventory",
-    position: { x: 280, y: 180 },
-    data: {
-      title: "Inventory",
-      subtitle: inventory ? `${inventory.summary.taskGroups} task groups` : "not loaded",
-      detail: "Classifies Moodle resources into task sheets, solutions, lecture material, interactions, references, and unknown items.",
-      evidence: inventory
-        ? [
-            `${inventory.summary.taskGroups} task groups`,
-            `${inventory.summary.lectureMaterial} lecture resources`,
-            `${inventory.summary.unknown} unknown resources`,
-          ]
-        : ["Inventory response is missing"],
-      outputPreview: inventory
-        ? `Task groups: ${inventory.summary.taskGroups}\nPaired: ${inventory.summary.pairedTaskGroups}\nMissing solutions: ${inventory.summary.missingSolutionGroups}`
-        : "",
-      tone: "process",
-      status: inventory ? "loaded" : "missing",
-      meta: inventory
-        ? [
-            { label: "Lecture material", value: String(inventory.summary.lectureMaterial) },
-            { label: "Task groups", value: String(inventory.summary.taskGroups) },
-            { label: "Unknown", value: String(inventory.summary.unknown) },
-          ]
-        : [{ label: "State", value: "No inventory response loaded yet." }],
-    },
-  });
-  addEdge(edges, "course", "inventory", "inventory");
-
-  const bucketNodes = [
-    { id: "bucket-tasks", title: "Task groups", count: taskGroups.length, y: 20 },
-    { id: "bucket-lecture", title: "Lecture material", count: inventory?.lectureMaterial.length ?? 0, y: 180 },
-    { id: "bucket-review", title: "Review inputs", count: warnings.length, y: 340 },
-  ];
-  for (const bucket of bucketNodes) {
-    addNode(nodes, {
-      id: bucket.id,
-      position: { x: 560, y: bucket.y },
-      data: {
-        title: bucket.title,
-        subtitle: `${bucket.count} item${bucket.count === 1 ? "" : "s"}`,
-        detail: "A classified bucket groups resources before extraction and curation decide what becomes user-facing content.",
-        evidence: [`${bucket.count} classified item${bucket.count === 1 ? "" : "s"}`],
-        outputPreview: bucket.id === "bucket-tasks"
-          ? taskGroups.slice(0, 5).map((group) => group.title).join("\n")
-          : bucket.id === "bucket-lecture"
-            ? (inventory?.lectureMaterial ?? []).slice(0, 5).map((item) => item.name).join("\n")
-            : warnings.slice(0, 5).map((item) => item.title).join("\n"),
-        tone: bucket.id === "bucket-review" ? "warning" : "resource",
-        status: bucket.count > 0 ? "has data" : "empty",
-        meta: [{ label: "Count", value: String(bucket.count) }],
-      },
-    });
-    addEdge(edges, "inventory", bucket.id, bucket.id === "bucket-review" ? "review" : "classified", {
-      muted: bucket.id === "bucket-review",
-    });
+function NodePreviewContent({
+  preview,
+  size,
+}: {
+  preview: PipelineNodePreview;
+  size: "inspector" | "modal" | "node";
+}) {
+  if (preview.kind === "mixed") {
+    return (
+      <div className={cn("grid", size === "node" ? "gap-2" : "gap-4")}>
+        <div className={cn("grid", size === "node" ? "gap-2" : "gap-3")}>
+          {preview.fields.map((field) => (
+            <RenderedPreviewField field={field} key={`${field.path}:${field.label}`} size={size} />
+          ))}
+        </div>
+        <div
+          className={cn(
+            "rounded-2xl bg-secondary/55",
+            size === "node" ? "px-2 py-1.5" : "px-4 py-3",
+          )}
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+            Raw data
+          </p>
+          <JsonPreviewText text={preview.jsonText} size={size} />
+        </div>
+      </div>
+    );
   }
 
-  visibleTaskGroups.forEach((group, index) => {
-    const nodeId = `task-group-${group.id}`;
-    addNode(nodes, {
-      id: nodeId,
-      position: { x: 740, y: index * 112 },
-      data: {
-        title: group.title,
-        subtitle: group.solution ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
-        detail: group.pairingReason || "Task group created from classified Moodle resources.",
-        evidence: [
-          `Sheet: ${group.sheet.name}`,
-          group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
-          `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
-        ],
-        outputPreview: `${group.title}\n${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
-        tone: group.solution ? "resource" : "warning",
-        status: group.pairingStatus,
-        meta: [
-          { label: "Sheet", value: group.sheet.name },
-          { label: "Solution", value: group.solution?.name ?? "missing" },
-          { label: "Confidence", value: group.pairingConfidence || "unknown" },
-        ],
-      },
-    });
-    addEdge(edges, "bucket-tasks", nodeId, "contains");
-  });
-
-  if (taskGroups.length > visibleTaskGroups.length) {
-    addNode(nodes, {
-      id: "task-groups-more",
-      position: { x: 740, y: visibleTaskGroups.length * 112 },
-      data: {
-        title: `${taskGroups.length - visibleTaskGroups.length} more task groups`,
-        subtitle: "hidden from graph",
-        detail: "The graph keeps the canvas readable. The Resources and Buckets tabs contain the complete list.",
-        evidence: ["Visible graph is intentionally capped for readability"],
-        outputPreview: taskGroups.slice(visibleTaskGroups.length).map((group) => group.title).join("\n"),
-        tone: "resource",
-        status: "collapsed",
-        meta: [{ label: "Hidden groups", value: String(taskGroups.length - visibleTaskGroups.length) }],
-      },
-    });
-    addEdge(edges, "bucket-tasks", "task-groups-more", "more", { muted: true });
+  if (preview.kind === "json") {
+    return <JsonPreviewText text={preview.text} size={size} />;
   }
 
-  const runStages = ["inventory", "raw", "extracted", "curated"];
-  runStages.forEach((stage, index) => {
-    const run = latestRunsByStage.get(stage);
-    const x = 1020 + index * 240;
-    addNode(nodes, {
-      id: `run-${stage}`,
-      position: { x, y: 180 },
-      data: {
-        title: STAGE_LABELS[stage] ?? stage,
-        subtitle: run ? `${run.engine} · ${run.configHash}` : "no stored run",
-        detail: run
-          ? `Latest ${stage} run recorded at ${formatDateTime(run.createdAt)}.`
-          : "This stage has no immutable run record yet.",
-        artifacts: run ? runArtifactSummary(run) : [],
-        evidence: run
-          ? [
-              `Run ${run.id}`,
-              `Engine ${run.engine}`,
-              `${run.artifactRefs?.length ?? 0} artifact refs`,
-            ]
-          : ["No immutable run record stored for this stage"],
-        outputPreview: run ? runPreview(run) : "",
-        tone: "run",
-        status: run?.status ?? (status?.stage === stage ? status.status : "missing"),
-        active: run ? activeRunIds.has(run.id) : false,
-        meta: run
-          ? [
-              { label: "Run ID", value: run.id },
-              { label: "Engine", value: run.engine },
-              { label: "Ownership", value: run.ownership },
-              { label: "Artifact root", value: run.artifactRoot || "none" },
-            ]
-          : [{ label: "State", value: "No run stored for this stage." }],
-      },
-    });
-    addEdge(edges, index === 0 ? "inventory" : `run-${runStages[index - 1]}`, `run-${stage}`, run?.status ?? "pending");
-  });
-
-  addNode(nodes, {
-    id: "outputs",
-    position: { x: 1980, y: 180 },
-    data: {
-      title: "Final outputs",
-      subtitle: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts`,
-      detail: "User-facing tasks, scripts, formulas, and source-linked content should only appear here if traceable upstream nodes exist.",
-      evidence: [
-        `${status?.summary.tasks ?? 0} published tasks`,
-        `${status?.summary.linkedSolutions ?? 0} linked solutions`,
-        `${status?.summary.missingSolutions ?? 0} missing solutions`,
-      ],
-      outputPreview: `Tasks: ${status?.summary.tasks ?? 0}\nScripts: ${status?.summary.scripts ?? 0}\nLinked solutions: ${status?.summary.linkedSolutions ?? 0}`,
-      tone: "output",
-      status: status?.stage === "curated" ? "ready" : "pending",
-      meta: [
-        { label: "Tasks", value: String(status?.summary.tasks ?? 0) },
-        { label: "Linked solutions", value: String(status?.summary.linkedSolutions ?? 0) },
-        { label: "Missing solutions", value: String(status?.summary.missingSolutions ?? 0) },
-      ],
-    },
-  });
-  addEdge(edges, "run-curated", "outputs", "publishes");
-
-  warnings.slice(0, 5).forEach((warning, index) => {
-    const nodeId = `warning-${index}`;
-    addNode(nodes, {
-      id: nodeId,
-      position: { x: 1020 + index * 230, y: 420 },
-      data: warning,
-    });
-    addEdge(edges, "bucket-review", nodeId, "review", { muted: true });
-  });
-
-  return { nodes, edges };
+  return (
+    <MarkdownRenderer
+      className={cn(
+        "break-words text-foreground",
+        size === "node"
+          ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+          : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+      )}
+      text={size === "node" ? compactNodeMarkdownPreview(preview.text) : preview.text}
+    />
+  );
 }
 
-function buildWarnings(
-  inventory: CourseInventoryResponse | null,
-  runs: PipelineRunsResponse | null,
-): Array<BlueprintNodeData & { sourceId: string }> {
-  const missingSolutions = inventory?.taskGroups
-    .filter((group) => group.pairingStatus !== "paired")
-    .map((group) => ({
-      sourceId: "bucket-review",
-      title: group.title,
-      subtitle: group.pairingStatus.replaceAll("_", " "),
-      detail: group.pairingReason || "This task group needs review before it can be trusted.",
-      tone: "warning" as const,
-      status: group.pairingStatus,
-      meta: [
-        { label: "Sheet", value: group.sheet.name },
-        { label: "Solution", value: group.solution?.name ?? "missing" },
-      ],
-    })) ?? [];
-  const unknownResources = inventory?.unknown.slice(0, 4).map((item) => warningFromInventoryNode(item)) ?? [];
-  const failedRuns = runs?.runs
-    .filter((run) => run.status === "failed")
-    .slice(0, 4)
-    .map((run) => ({
-      sourceId: `run-${run.stage}`,
-      title: `${STAGE_LABELS[run.stage] ?? run.stage} failed`,
-      subtitle: run.engine,
-      detail: run.error || "The run failed without a recorded error message.",
-      tone: "warning" as const,
-      status: "failed",
-      meta: [
-        { label: "Run ID", value: run.id },
-        { label: "Created", value: formatDateTime(run.createdAt) },
-      ],
-    })) ?? [];
-
-  return [...missingSolutions, ...unknownResources, ...failedRuns];
+function RenderedPreviewField({
+  field,
+  size,
+}: {
+  field: BlueprintRenderedField;
+  size: "inspector" | "modal" | "node";
+}) {
+  return (
+    <section className={cn("rounded-2xl bg-background/80", size === "node" ? "px-2 py-1.5" : "px-4 py-3")}>
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="truncate text-[11px] font-semibold text-foreground/80">{field.label}</span>
+        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[9px] leading-4 text-muted-foreground">
+          {field.path}
+        </span>
+      </div>
+      {field.description ? (
+        <p className="mb-2 text-[11px] leading-4 text-muted-foreground">{field.description}</p>
+      ) : null}
+      {field.type === "markdown" ? (
+        <MarkdownRenderer
+          className={cn(
+            "break-words text-foreground",
+            size === "node"
+              ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+              : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+          )}
+          text={size === "node" ? compactNodeMarkdownPreview(field.value) : field.value}
+        />
+      ) : field.type === "json" ? (
+        <JsonPreviewText text={field.value} size={size} />
+      ) : (
+        <p className={cn("whitespace-pre-wrap break-words text-foreground/80", size === "node" ? "text-[11px] leading-4" : "text-sm leading-6")}>
+          {field.value}
+        </p>
+      )}
+    </section>
+  );
 }
 
-function warningFromInventoryNode(item: CourseInventoryNode): BlueprintNodeData & { sourceId: string } {
-  return {
-    sourceId: "bucket-review",
-    title: item.name,
-    subtitle: "unknown resource",
-    detail: item.reason || "No confident bucket matched this resource.",
-    tone: "warning",
-    status: item.confidence ? `${item.confidence} confidence` : "unknown",
-    meta: [
-      { label: "Resource ID", value: item.id },
-      { label: "Section", value: item.sectionName || "unknown section" },
-    ],
-  };
-}
-
-function latestRuns(runs: PipelineRunRecord[]): Map<string, PipelineRunRecord> {
-  const result = new Map<string, PipelineRunRecord>();
-  for (const run of runs) {
-    const existing = result.get(run.stage);
-    if (!existing || new Date(run.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
-      result.set(run.stage, run);
+function compactNodeMarkdownPreview(markdown: string): string {
+  const blocks = markdown.trim().split(/\n{2,}/).filter(Boolean);
+  const kept: string[] = [];
+  let hidden = 0;
+  for (const block of blocks) {
+    const image = block.match(/^!\[([^\]]*)]\(/);
+    const next = image ? `[image: ${image[1]?.trim() || "asset"}]` : block;
+    const nextLength = [...kept, next].join("\n\n").length;
+    if (kept.length >= 6 || nextLength > 700) {
+      hidden += 1;
+      continue;
     }
+    kept.push(next);
   }
-  return result;
-}
-
-function addNode(nodes: BlueprintNode[], node: BlueprintNodeInput) {
-  nodes.push({ ...node, type: "blueprint" });
-}
-
-function addEdge(edges: Edge[], source: string, target: string, label: string, options?: { muted?: boolean }) {
-  edges.push({
-    id: `${source}->${target}`,
-    source,
-    target,
-    label,
-    markerEnd: { color: options?.muted ? "#a3a3a3" : "#737373", type: MarkerType.ArrowClosed },
-    style: {
-      stroke: options?.muted ? "#a3a3a3" : label === "failed" ? "#dc2626" : "#737373",
-      strokeDasharray: options?.muted ? "4 6" : undefined,
-      strokeWidth: options?.muted ? 1.5 : 2,
-    },
-    type: "smoothstep",
-  });
-}
-
-function runPreview(run: PipelineRunRecord): string {
-  for (const ref of run.artifactRefs ?? []) {
-    if (typeof ref.metadata?.preview === "string" && ref.metadata.preview) return ref.metadata.preview;
-    if (typeof ref.metadata?.textPreview === "string" && ref.metadata.textPreview) return ref.metadata.textPreview;
+  if (hidden > 0) {
+    kept.push(`... ${hidden} more block${hidden === 1 ? "" : "s"}`);
   }
-  if (run.error) return run.error;
-  return `${run.stage} ${run.status}\nEngine: ${run.engine}\nArtifact root: ${run.artifactRoot || "none"}`;
+  return kept.join("\n\n");
 }
 
-function runArtifactSummary(run: PipelineRunRecord): string[] {
-  return (run.artifactRefs ?? []).slice(0, 12).map((ref) => {
-    const parts = [
-      ref.kind,
-      ref.pageNumber ? `page ${ref.pageNumber}` : "",
-      ref.blockId ? `block ${ref.blockId}` : "",
-      ref.storageKey || ref.uri || "",
-      ref.checksum ? `checksum ${shortValue(ref.checksum)}` : "",
-    ].filter(Boolean);
-    return `${ref.id}: ${parts.join(" · ")}`;
+function JsonPreviewText({
+  size,
+  text,
+}: {
+  size: "inspector" | "modal" | "node";
+  text: string;
+}) {
+  const displayText = size === "node" ? compactNodeJsonPreview(text) : text;
+  return (
+    <pre
+      className={cn(
+        "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
+        size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
+      )}
+    >
+      {displayText}
+    </pre>
+  );
+}
+
+function compactNodeJsonPreview(text: string): string {
+  const lines = text.split("\n");
+  const maxLines = 14;
+  const maxChars = 900;
+  let compact = lines.slice(0, maxLines).join("\n");
+  if (compact.length > maxChars) {
+    compact = `${compact.slice(0, maxChars).trimEnd()}\n...`;
+  }
+  const hiddenLines = lines.length - maxLines;
+  if (hiddenLines > 0) {
+    compact = `${compact}\n... ${hiddenLines} more line${hiddenLines === 1 ? "" : "s"}`;
+  }
+  return compact;
+}
+
+function HiddenItemsDisclosure({ items }: { items: string[] }) {
+  return (
+    <details
+      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-1.5 text-[11px] leading-4 text-foreground/80"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <summary className="cursor-pointer list-none truncate font-semibold text-foreground/75">
+        {items.length} more task group{items.length === 1 ? "" : "s"}
+      </summary>
+      <div className="mt-1 grid max-h-14 gap-1 overflow-auto pr-1">
+        {items.map((item) => (
+          <label className="flex min-w-0 items-center gap-1.5" key={item}>
+            <input className="size-3 accent-emerald-500" readOnly type="checkbox" />
+            <span className="truncate">{item}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;
+const CHANNEL_SLOTS_BY_COUNT: Record<number, number[]> = {
+  1: [2],
+  2: [1, 4],
+  3: [0, 2, 4],
+  4: [0, 2, 3, 5],
+  5: [0, 1, 2, 4, 5],
+  6: [0, 1, 2, 3, 4, 5],
+};
+
+function ChannelRows({ inputs, outputs }: { inputs: BlueprintPort[]; outputs: BlueprintPort[] }) {
+  const inputPorts = Array.from(portsBySlot(inputs).entries()).sort(([left], [right]) => left - right);
+  const outputPorts = Array.from(portsBySlot(outputs).entries()).sort(([left], [right]) => left - right);
+  const rowCount = Math.max(inputPorts.length, outputPorts.length);
+  if (rowCount === 0) return null;
+
+  return (
+    <div className="-mx-4 mt-3 border-y border-foreground/[0.04] bg-secondary/20 py-1">
+      {Array.from({ length: rowCount }, (_, rowIndex) => {
+        const input = inputPorts[rowIndex];
+        const output = outputPorts[rowIndex];
+        return (
+          <div
+            className="relative grid min-h-6 grid-cols-2 items-center gap-3 px-6 text-[10px] font-semibold leading-4 text-foreground/70"
+            key={`channel-row-${rowIndex}`}
+          >
+            {input ? <ChannelPortMarker direction="input" port={input[1]} slot={input[0]} /> : null}
+            {output ? <ChannelPortMarker direction="output" port={output[1]} slot={output[0]} /> : null}
+            {input ? <ChannelLabel direction="input" port={input[1]} /> : <span aria-hidden />}
+            {output ? <ChannelLabel direction="output" port={output[1]} /> : <span aria-hidden />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChannelLabel({
+  direction,
+  port,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+}) {
+  return (
+    <span
+      className={cn(
+        "relative min-w-0 truncate rounded-full px-2 py-0.5",
+        direction === "output" ? "justify-self-end text-right" : "justify-self-start",
+      )}
+      title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
+    >
+      {port.label}
+    </span>
+  );
+}
+
+function ChannelPortMarker({
+  direction,
+  port,
+  slot,
+}: {
+  direction: "input" | "output";
+  port: BlueprintPort;
+  slot: number;
+}) {
+  const edgePosition = direction === "input"
+    ? { left: 0, transform: "translate(-50%, -50%)" }
+    : { right: 0, transform: "translate(50%, -50%)" };
+
+  return (
+    <>
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-[5px] border-background shadow-md shadow-black/25",
+          portColorClass(port),
+        )}
+        data-channel-marker="true"
+        style={edgePosition}
+      />
+      <Handle
+        className="pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0"
+        id={`${direction === "input" ? "in" : "out"}-${slot}`}
+        position={direction === "input" ? Position.Left : Position.Right}
+        style={edgePosition}
+        type={direction === "input" ? "target" : "source"}
+      />
+    </>
+  );
+}
+
+function portsBySlot(items: BlueprintPort[]): Map<number, BlueprintPort> {
+  const slots = CHANNEL_SLOTS_BY_COUNT[Math.min(6, Math.max(1, items.length))] ?? CHANNEL_SLOTS_BY_COUNT[1];
+  const map = new Map<number, BlueprintPort>();
+  items.slice(0, 6).forEach((item, index) => {
+    map.set(slots[index] ?? index, item);
   });
+  return map;
 }
 
-function shortValue(value: string) {
-  return value.length > 18 ? `${value.slice(0, 18)}...` : value;
+function portColorClass(port: BlueprintPort): string {
+  const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
+  if (/missing|failed|problem|review/.test(value)) return "!bg-destructive";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "!bg-emerald-500";
+  if (/solution/.test(value)) return "!bg-rose-500";
+  if (/extract|ocr|active extraction/.test(value)) return "!bg-blue-500";
+  if (/script|section|block/.test(value)) return "!bg-violet-500";
+  if (/page/.test(value)) return "!bg-sky-500";
+  if (/pdf|file|resource|course/.test(value)) return "!bg-amber-500";
+  return "!bg-muted-foreground";
+}
+
+function portColorHex(port: BlueprintPort | null | undefined): string {
+  if (!port) return "#737373";
+  const value = `${port.label} ${port.detail ?? ""} ${port.state ?? ""}`.toLowerCase();
+  if (/missing|failed|problem|review/.test(value)) return "#dc2626";
+  if (/published|website|output|ready|task draft|task/.test(value)) return "#10b981";
+  if (/solution/.test(value)) return "#f43f5e";
+  if (/extract|ocr|active extraction/.test(value)) return "#3b82f6";
+  if (/script|section|block/.test(value)) return "#8b5cf6";
+  if (/page/.test(value)) return "#0ea5e9";
+  if (/pdf|file|resource|course/.test(value)) return "#f59e0b";
+  return "#737373";
+}
+
+function edgeColor(edge: Pick<Edge, "label" | "source" | "sourceHandle">, nodeById: Map<string, BlueprintGraphNode>): string {
+  const source = nodeById.get(edge.source);
+  if (source?.type !== "blueprint") return "#737373";
+  const semanticPort = source.data.outputs.find((port) => portMatchesEdgeLabel(port, edge.label));
+  if (semanticPort) return portColorHex(semanticPort);
+  const slot = Number(edge.sourceHandle?.replace("out-", ""));
+  if (Number.isFinite(slot)) {
+    return portColorHex(portForSlot(source.data.outputs, slot));
+  }
+  return portColorHex(source.data.outputs[0]);
+}
+
+function portForSlot(items: BlueprintPort[], slot: number): BlueprintPort | undefined {
+  const slotPorts = portsBySlot(items);
+  const exact = slotPorts.get(slot);
+  if (exact) return exact;
+  let nearest: { distance: number; port: BlueprintPort } | null = null;
+  for (const [candidateSlot, port] of slotPorts.entries()) {
+    const distance = Math.abs(candidateSlot - slot);
+    if (!nearest || distance < nearest.distance) nearest = { distance, port };
+  }
+  return nearest?.port ?? items[0];
+}
+
+function portMatchesEdgeLabel(port: BlueprintPort, label: Edge["label"]): boolean {
+  if (typeof label !== "string") return false;
+  const edgeLabel = label.toLowerCase();
+  const portLabel = port.label.toLowerCase();
+  if (edgeLabel.includes("task") && portLabel.includes("task")) return true;
+  if (edgeLabel.includes("script") && portLabel.includes("script")) return true;
+  if (edgeLabel.includes("review") && portLabel.includes("review")) return true;
+  if (edgeLabel.includes("sheet") && portLabel.includes("sheet")) return true;
+  if (edgeLabel.includes("solution") && portLabel.includes("solution")) return true;
+  if (edgeLabel.includes("pdf") && portLabel.includes("pdf")) return true;
+  if (edgeLabel.includes("publish") && /output|task|script/.test(portLabel)) return true;
+  return false;
+}
+
+function BlueprintGroupFrame({ data }: NodeProps<Extract<BlueprintGraphNode, { type: "frame" }>>) {
+  const stage = data.frame?.variant === "stage";
+  return (
+    <div
+      className={cn(
+        "pointer-events-none border-0",
+        stage
+          ? "rounded-[24px] bg-background/40 ring-1 ring-foreground/[0.04]"
+          : "rounded-[28px] bg-foreground/[0.035] shadow-inner",
+      )}
+      style={{ height: data.frame?.height ?? 240, width: data.frame?.width ?? 480 }}
+    >
+      <div className={cn("flex items-center justify-between", stage ? "px-4 py-4" : "px-5 py-3")}>
+        <p className={cn("font-semibold", stage ? "text-[13px] text-foreground/55" : "text-sm text-foreground/70")}>
+          {data.title}
+        </p>
+        <p className={cn("font-medium text-muted-foreground", stage ? "text-[11px]" : "text-xs")}>{data.subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function LegendPill({ kind, label }: { kind: "collect" | "split" | "transform"; label: string }) {
+  return (
+    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", stepKindBadgeClass(kind))}>
+      {label}
+    </span>
+  );
+}
+
+function EdgeStyleButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+        active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function isBlueprintNode(node: BlueprintGraphNode): node is BlueprintNode {
+  return node.type === "blueprint";
+}
+
+function InspectorSection({
+  children,
+  icon: Icon,
+  title,
+  tone = "default",
+}: {
+  children: ReactNode;
+  icon: LucideIcon;
+  title: string;
+  tone?: "default" | "warning";
+}) {
+  return (
+    <section className={cn("mt-4 rounded-3xl px-3 py-3", tone === "warning" ? "bg-destructive/10" : "bg-background/50")}>
+      <div className="mb-3 flex items-center gap-2">
+        <span className={cn("grid size-7 place-items-center rounded-full", tone === "warning" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground")}>
+          <Icon aria-hidden className="size-3.5" />
+        </span>
+        <h3 className={cn("text-sm font-semibold", tone === "warning" ? "text-destructive" : "text-foreground")}>{title}</h3>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-background/70 px-3 py-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function PortPanel({ items, title }: { items: BlueprintPort[]; title: string }) {
+  return (
+    <div className="rounded-2xl bg-background/70 px-3 py-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="grid gap-2">
+        {items.map((item) => (
+          <div className="rounded-2xl bg-secondary/60 px-3 py-2" key={`${title}:${item.label}:${item.detail ?? ""}`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-xs font-medium text-foreground">{item.label}</p>
+              {item.state ? <Badge variant={item.state === "missing" || item.state === "failed" ? "destructive" : "outline"}>{item.state}</Badge> : null}
+            </div>
+            {item.detail ? <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{item.detail}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KeyValuePanel({ items }: { items: Array<{ label: string; value: string }> }) {
+  return (
+    <div className="grid gap-2">
+      {items.map((item) => (
+        <div className="rounded-2xl bg-background/70 px-3 py-2" key={`${item.label}:${item.value}`}>
+          <p className="text-[11px] text-muted-foreground">{item.label}</p>
+          <p className="mt-0.5 break-words text-xs font-medium text-foreground">{item.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StringList({ items }: { items: string[] }) {
+  return (
+    <div className="grid gap-2">
+      {items.map((item) => (
+        <p className="break-words rounded-2xl bg-background/70 px-3 py-2 text-xs leading-5 text-foreground" key={item}>
+          {item}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function variantStatusBadge(status: BlueprintExtractionVariant["status"]): "default" | "destructive" | "outline" | "secondary" {
+  if (status === "active" || status === "ok") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "missing") return "outline";
+  return "secondary";
 }
 
 function nodeIcon(tone: BlueprintNodeTone) {
@@ -587,15 +1044,20 @@ function nodeToneClass(tone: BlueprintNodeTone): string {
   return "bg-secondary text-muted-foreground";
 }
 
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value || "unknown time";
-  }
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-  });
+function stepKindBadgeClass(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "bg-teal-500/10 text-teal-800";
+  if (kind === "split") return "bg-amber-500/15 text-amber-800";
+  return "bg-zinc-500/10 text-zinc-800";
+}
+
+function stepKindStripeClass(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "bg-teal-500/70";
+  if (kind === "split") return "bg-amber-500/80";
+  return "bg-zinc-500/55";
+}
+
+function stepKindLabel(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "N -> 1";
+  if (kind === "split") return "1 -> N";
+  return "1 -> 1";
 }

@@ -3,6 +3,18 @@
 @import "shadcn/tailwind.css";
 @import "@xyflow/react/dist/style.css";
 
+.pipeline-blueprint-flow .react-flow__container {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.pipeline-blueprint-flow .react-flow__node {
+  position: absolute !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
