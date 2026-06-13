@@ -118,6 +118,15 @@ type CodexReasoningOption = {
   description?: string;
 };
 
+const PIPELINE_FEEDBACK_OPTIONS = [
+  { id: "task_missing", label: "Aufgabe fehlt" },
+  { id: "image_missing", label: "Bild fehlt" },
+  { id: "solution_wrong", label: "Lösung stimmt nicht" },
+  { id: "ocr_bad", label: "Text falsch erkannt" },
+  { id: "task_confusing", label: "Aufgabe unklar" },
+  { id: "other", label: "Etwas anderes" },
+] as const;
+
 type RefineStreamEvent = {
   type?: string;
   message?: string;
@@ -172,6 +181,10 @@ export function TaskStudyPanel({
   const [runningStage, setRunningStage] = useState<StudyPipelineStage | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<(typeof PIPELINE_FEEDBACK_OPTIONS)[number]["id"]>("task_confusing");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [refiningTarget, setRefiningTarget] = useState<string | null>(null);
   const [refineModels, setRefineModels] = useState<CodexModelOption[]>([]);
   const [selectedRefineModel, setSelectedRefineModel] = useState("");
@@ -594,6 +607,35 @@ export function TaskStudyPanel({
     }
   }
 
+  async function submitPipelineFeedback() {
+    if (!courseId || submittingFeedback) {
+      return;
+    }
+    const targetID = selectedTask?.taskId ?? selectedSheet?.resourceId ?? courseId;
+    const targetKind = selectedTask ? "task" : selectedSheet ? "assignment_sheet" : "course";
+    setSubmittingFeedback(true);
+    setError(null);
+    try {
+      await studyPipelineRequest(`/courses/${encodeURIComponent(courseId)}/study-pipeline/feedback`, {
+        method: "POST",
+        body: JSON.stringify({
+          feedbackType,
+          message: feedbackMessage.trim(),
+          targetId: targetID,
+          targetKind,
+        }),
+      });
+      setFeedbackDialogOpen(false);
+      setFeedbackMessage("");
+      setFeedbackType("task_confusing");
+      setMessage("Problem wurde im Pipeline Review erfasst.");
+    } catch (feedbackError) {
+      setError(getErrorMessage(feedbackError));
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }
+
   async function refreshCodexModelCatalog(signal?: AbortSignal) {
     try {
       const response = await fetch("/api/codex/auth", {
@@ -734,6 +776,10 @@ export function TaskStudyPanel({
         </DropdownMenuItem>
       ) : null}
       {hasPdfActions ? <DropdownMenuSeparator /> : null}
+      <DropdownMenuItem onSelect={() => setFeedbackDialogOpen(true)}>
+        <AlertCircle aria-hidden />
+        Problem melden
+      </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => window.location.assign(coursePipelineHref)}>
         <Gauge aria-hidden />
         Pipeline-Status anzeigen
@@ -1144,6 +1190,50 @@ export function TaskStudyPanel({
           </main>
         </div>
       )}
+      <Dialog open={feedbackDialogOpen} onOpenChange={setFeedbackDialogOpen}>
+        <DialogContent className="max-w-[min(92vw,520px)] rounded-[1.75rem] border-0 p-5 shadow-xl">
+          <DialogTitle>Problem melden</DialogTitle>
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {PIPELINE_FEEDBACK_OPTIONS.map((option) => (
+                <button
+                  className={cn(
+                    "min-h-9 rounded-full px-3 text-sm font-medium transition-colors",
+                    feedbackType === option.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-muted-foreground hover:text-foreground",
+                  )}
+                  key={option.id}
+                  onClick={() => setFeedbackType(option.id)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              className="min-h-28 w-full resize-none rounded-[1.5rem] border-0 bg-secondary px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+              onChange={(event) => setFeedbackMessage(event.target.value)}
+              placeholder="Kurz beschreiben, was fehlt oder falsch ist."
+              value={feedbackMessage}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                disabled={submittingFeedback}
+                onClick={() => setFeedbackDialogOpen(false)}
+                type="button"
+                variant="secondary"
+              >
+                Abbrechen
+              </Button>
+              <Button disabled={submittingFeedback} onClick={() => void submitPipelineFeedback()} type="button">
+                {submittingFeedback ? <Spinner aria-hidden /> : <AlertCircle aria-hidden />}
+                Senden
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(previewResourceId)}
         onOpenChange={(open) => {

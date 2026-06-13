@@ -8,8 +8,11 @@ import {
   GitBranch,
   Layers,
   Loader2,
+  MessageSquareWarning,
   RotateCcw,
   RefreshCw,
+  Send,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -39,6 +42,44 @@ type CoursePipelineInspectorProps = {
   materialsLoading: boolean;
 };
 
+type PipelineFeedbackRecord = {
+  id: string;
+  courseId: string;
+  targetId: string;
+  targetKind: string;
+  feedbackType: string;
+  message: string;
+  sourceRunId?: string;
+  sourceArtifactId?: string;
+  status: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PipelineProposalRecord = {
+  id: string;
+  courseId: string;
+  targetId: string;
+  targetKind: string;
+  title: string;
+  contentPreview: string;
+  sourceRunId?: string;
+  sourceArtifactId?: string;
+  model?: string;
+  status: string;
+  createdBy?: string;
+  submittedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PipelineReviewResponse = {
+  courseId: string;
+  feedback: PipelineFeedbackRecord[];
+  proposals: PipelineProposalRecord[];
+};
+
 const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: "resources", label: "Resources" },
   { id: "buckets", label: "Buckets" },
@@ -58,10 +99,12 @@ export function CoursePipelineInspector({
   const [inventory, setInventory] = useState<CourseInventoryResponse | null>(null);
   const [status, setStatus] = useState<StudyPipelineStatusResponse | null>(null);
   const [runs, setRuns] = useState<PipelineRunsResponse | null>(null);
+  const [review, setReview] = useState<PipelineReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
   const [rerunningEngine, setRerunningEngine] = useState<string | null>(null);
+  const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
 
   const inventorySections = useMemo(() => buildInventorySections(inventory), [inventory]);
   useEffect(() => {
@@ -73,10 +116,11 @@ export function CoursePipelineInspector({
     setLoading(true);
     setError(null);
     try {
-      const [statusResult, inventoryResult, runsResult] = await Promise.allSettled([
+      const [statusResult, inventoryResult, runsResult, reviewResult] = await Promise.allSettled([
         studyPipelineRequest<StudyPipelineStatusResponse>(courseId, ""),
         studyPipelineRequest<CourseInventoryResponse>(courseId, "/inventory"),
         studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs"),
+        studyPipelineRequest<PipelineReviewResponse>(courseId, "/review"),
       ]);
       if (statusResult.status === "fulfilled") {
         setStatus(statusResult.value);
@@ -87,7 +131,11 @@ export function CoursePipelineInspector({
       if (runsResult.status === "fulfilled") {
         setRuns(runsResult.value);
       }
-      const failed = [statusResult, inventoryResult, runsResult].find((result) => result.status === "rejected");
+      if (reviewResult.status === "fulfilled") {
+        setReview(reviewResult.value);
+      }
+      const settled = [statusResult, inventoryResult, runsResult, reviewResult] as const;
+      const failed = settled.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") {
         setError(formatStudyPipelineError(failed.reason));
       }
@@ -129,6 +177,20 @@ export function CoursePipelineInspector({
       setError(formatStudyPipelineError(rerunError));
     } finally {
       setRerunningEngine(null);
+    }
+  }
+
+  async function submitProposal(proposalId: string) {
+    setSubmittingProposalId(proposalId);
+    setError(null);
+    try {
+      await studyPipelinePost(courseId, `/proposals/${encodeURIComponent(proposalId)}/submit`, {});
+      const nextReview = await studyPipelineRequest<PipelineReviewResponse>(courseId, "/review");
+      setReview(nextReview);
+    } catch (submitError) {
+      setError(formatStudyPipelineError(submitError));
+    } finally {
+      setSubmittingProposalId(null);
     }
   }
 
@@ -205,7 +267,12 @@ export function CoursePipelineInspector({
           ) : activeTab === "blueprint" ? (
             <CoursePipelineBlueprint inventory={inventory} runs={runs} status={status} />
           ) : (
-            <ReviewTab inventory={inventory} />
+            <ReviewTab
+              inventory={inventory}
+              onSubmitProposal={(proposalId) => void submitProposal(proposalId)}
+              review={review}
+              submittingProposalId={submittingProposalId}
+            />
           )}
         </div>
       </div>
@@ -383,8 +450,14 @@ function RunsTab({
 
 function ReviewTab({
   inventory,
+  onSubmitProposal,
+  review,
+  submittingProposalId,
 }: {
   inventory: CourseInventoryResponse | null;
+  onSubmitProposal: (proposalId: string) => void;
+  review: PipelineReviewResponse | null;
+  submittingProposalId: string | null;
 }) {
   const reviewItems = [
     ...(inventory?.taskGroups.filter((group) => group.pairingStatus !== "paired").map((group) => ({
@@ -401,31 +474,127 @@ function ReviewTab({
     })) ?? []),
   ];
 
-  if (reviewItems.length === 0) {
+  const feedback = review?.feedback ?? [];
+  const proposals = review?.proposals ?? [];
+
+  if (reviewItems.length === 0 && feedback.length === 0 && proposals.length === 0) {
     return (
       <EmptyInspectorState
         icon={CheckCircle2}
         title="No review items"
-        description="Missing solutions, ambiguous pairs, and unknown resources will appear here."
+        description="Missing solutions, ambiguous pairs, unknown resources, user feedback, and submitted proposals will appear here."
       />
     );
   }
 
   return (
-    <div className="grid gap-2">
-      {reviewItems.map((item) => (
-        <div className="rounded-3xl bg-secondary/45 px-4 py-3" key={item.id}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-foreground">{item.title}</p>
-              <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.detail}</p>
+    <div className="grid gap-4">
+      {feedback.length > 0 ? (
+        <section className="grid gap-2">
+          <ReviewSectionTitle icon={MessageSquareWarning} title="User feedback" />
+          {feedback.map((item) => (
+            <div className="rounded-3xl bg-secondary/45 px-4 py-3" key={item.id}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {feedbackTypeLabel(item.feedbackType)} · {item.targetKind} {item.targetId}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">
+                    {item.message || "No extra note provided."}
+                  </p>
+                  <p className="mt-2 text-[11px] text-muted-foreground/80">{formatDateTime(item.createdAt)}</p>
+                </div>
+                <Badge variant={item.status === "open" ? "destructive" : "secondary"}>{item.status}</Badge>
+              </div>
             </div>
-            <Badge variant="destructive">{item.state}</Badge>
-          </div>
-        </div>
-      ))}
+          ))}
+        </section>
+      ) : null}
+
+      {proposals.length > 0 ? (
+        <section className="grid gap-2">
+          <ReviewSectionTitle icon={Sparkles} title="Codex proposals" />
+          {proposals.map((proposal) => (
+            <div className="grid gap-3 rounded-3xl bg-secondary/45 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]" key={proposal.id}>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{proposal.title}</p>
+                  <Badge variant={proposal.status === "submitted_for_review" ? "default" : "secondary"}>
+                    {proposal.status === "submitted_for_review" ? "submitted" : proposal.status}
+                  </Badge>
+                </div>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {proposal.targetKind} {proposal.targetId}
+                  {proposal.model ? ` · ${proposal.model}` : ""}
+                  {" · "}
+                  {formatDateTime(proposal.createdAt)}
+                </p>
+                {proposal.contentPreview ? (
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">{proposal.contentPreview}</p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 md:justify-end">
+                {proposal.status === "private" ? (
+                  <Button
+                    disabled={submittingProposalId === proposal.id}
+                    onClick={() => onSubmitProposal(proposal.id)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {submittingProposalId === proposal.id ? <Spinner aria-hidden /> : <Send aria-hidden />}
+                    Zur Review
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {reviewItems.length > 0 ? (
+        <section className="grid gap-2">
+          <ReviewSectionTitle icon={FileQuestion} title="Pipeline review" />
+          {reviewItems.map((item) => (
+            <div className="rounded-3xl bg-secondary/45 px-4 py-3" key={item.id}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{item.title}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.detail}</p>
+                </div>
+                <Badge variant="destructive">{item.state}</Badge>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function ReviewSectionTitle({ icon: Icon, title }: { icon: typeof FileQuestion; title: string }) {
+  return (
+    <div className="flex items-center gap-2 px-1 text-sm font-semibold text-foreground">
+      <Icon aria-hidden className="size-4 text-muted-foreground" />
+      {title}
+    </div>
+  );
+}
+
+function feedbackTypeLabel(type: string): string {
+  switch (type) {
+    case "task_missing":
+      return "Task missing";
+    case "image_missing":
+      return "Image missing";
+    case "solution_wrong":
+      return "Solution wrong";
+    case "ocr_bad":
+      return "OCR bad";
+    case "task_confusing":
+      return "Task confusing";
+    default:
+      return "Other";
+  }
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
