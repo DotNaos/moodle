@@ -221,6 +221,7 @@ export function addTaskGroupLane({
     id: outputId,
     position: { x: PIPELINE_X.output, y },
     data: finalTaskOutputNodeData({
+      courseId: extractedLookup.response?.courseId,
       group,
       index,
       outputs: taskOutputs,

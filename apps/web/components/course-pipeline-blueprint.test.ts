@@ -756,6 +756,40 @@ describe("course pipeline blueprint graph", () => {
     expect(outputNode?.data.meta.find((item) => item.label === "Missing source images")?.value).toBe("1");
   });
 
+  test("renders missing diagnostic image assets on final output nodes", () => {
+    const extractedDocumentsWithDiagnosticAsset: ExtractedDocumentsResponse = {
+      ...extractedDocuments,
+      documents: extractedDocuments.documents.map((document) => {
+        if (document.id !== "document-947711") return document;
+        return {
+          ...document,
+          pages: document.pages.map((page) => ({
+            ...page,
+            blocks: page.blocks.filter((block) => block.assetId !== "img-1"),
+          })),
+          diagnostics: {
+            ...document.diagnostics,
+            unusedImageAssets: ["img-1"],
+          },
+        };
+      }),
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments: extractedDocumentsWithDiagnosticAsset, inventory, runs: resourceRuns, status, taskView });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    if (!outputNode || outputNode.type !== "blueprint") throw new Error("Output node missing");
+
+    const preview = buildPipelineNodePreview(outputNode.data);
+
+    expect(outputNode.data.problems?.map((problem) => problem.label)).toContain("Extracted image missing from output");
+    expect(preview.kind).toBe("mixed");
+    if (preview.kind !== "mixed") throw new Error("Expected mixed preview");
+    const missingImages = preview.fields.find((field) => field.path === "diagnostics.missingSourceImagesMarkdown");
+    expect(missingImages?.value).toContain("Missing extracted source images");
+    expect(missingImages?.value).toContain("/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=");
+    expect(missingImages?.value).toContain("%2Fassets%2Fimg-1.png");
+    expect(preview.jsonText).not.toContain("missingSourceImagesMarkdown");
+  });
+
   test("does not mark extracted images as lost when the final task references the asset", () => {
     const taskViewWithImage: TaskViewResponse = {
       ...taskView,

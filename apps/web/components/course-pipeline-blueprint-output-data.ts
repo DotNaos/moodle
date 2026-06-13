@@ -11,12 +11,14 @@ import type {
 import type { PDFDocumentStructure } from "@/components/extracted-document-inspector";
 
 export function finalTaskOutputNodeData({
+  courseId,
   group,
   index,
   outputs,
   sourceDocuments,
   upstreamProblems,
 }: {
+  courseId?: string;
   group: CourseInventoryTaskGroup;
   index: number;
   outputs: TaskOutputRecord[];
@@ -33,7 +35,7 @@ export function finalTaskOutputNodeData({
     });
   }
   const validationProblems = outputs.flatMap((output) => validateWebsiteReadyMarkdown(output.promptMarkdown, output.title));
-  const lossDiagnostics = buildTaskOutputLossDiagnostics({ outputs, sourceDocuments: sourceDocuments ?? [] });
+  const lossDiagnostics = buildTaskOutputLossDiagnostics({ courseId, outputs, sourceDocuments: sourceDocuments ?? [] });
   const needsReview = outputs.some((output) => output.status === "needs_review")
     || upstreamProblems.length > 0
     || validationProblems.length > 0
@@ -50,7 +52,7 @@ export function finalTaskOutputNodeData({
       ...outputs.map((output) => `${output.taskId}: ${output.status}`),
     ],
     inputs: [{ label: "task draft", detail: group.title }],
-    bodyData: taskOutputBodyData({ group, outputs }),
+    bodyData: taskOutputBodyData({ group, lossDiagnostics, outputs }),
     outputs: outputs.map((output) => ({ label: output.title, detail: output.taskId, state: outputState(output.status, validationProblems.length) })),
     outputPreview: outputs.map((output) => `${output.title}\n${output.promptMarkdown || "No prompt markdown stored."}`).join("\n\n---\n\n"),
     problems: needsReview
@@ -66,7 +68,7 @@ export function finalTaskOutputNodeData({
     stepKind: "transform",
     tone: needsReview ? "warning" : "output",
     status: needsReview ? "needs_review" : "ready",
-    renderedFields: taskOutputRenderedFields(outputs),
+    renderedFields: taskOutputRenderedFields(outputs, lossDiagnostics),
     meta: [
       { label: "Output type", value: "task" },
       { label: "Count", value: String(outputs.length) },
@@ -129,9 +131,11 @@ export function finalScriptOutputNodeData({
 
 function taskOutputBodyData({
   group,
+  lossDiagnostics,
   outputs,
 }: {
   group: CourseInventoryTaskGroup;
+  lossDiagnostics: ReturnType<typeof buildTaskOutputLossDiagnostics>;
   outputs: TaskOutputRecord[];
 }) {
   return {
@@ -155,6 +159,10 @@ function taskOutputBodyData({
       parts: output.parts,
       contentState: output.contentState ?? null,
     })),
+    diagnostics: {
+      missingSourceImages: lossDiagnostics.missingImages,
+      missingSourceImagesMarkdown: lossDiagnostics.missingImageMarkdown,
+    },
   };
 }
 
@@ -185,8 +193,11 @@ function scriptOutputBodyData({
   };
 }
 
-function taskOutputRenderedFields(outputs: TaskOutputRecord[]): BlueprintRenderedField[] {
-  return outputs.flatMap((output, outputIndex) => {
+function taskOutputRenderedFields(
+  outputs: TaskOutputRecord[],
+  lossDiagnostics: ReturnType<typeof buildTaskOutputLossDiagnostics>,
+): BlueprintRenderedField[] {
+  const outputFields = outputs.flatMap((output, outputIndex) => {
     const fields: BlueprintRenderedField[] = [];
     if (output.promptMarkdown.trim()) {
       fields.push({
@@ -216,6 +227,17 @@ function taskOutputRenderedFields(outputs: TaskOutputRecord[]): BlueprintRendere
     }
     return fields;
   });
+  if (!lossDiagnostics.missingImageMarkdown.trim()) return outputFields;
+  return [
+    ...outputFields,
+    {
+      description: "These images were extracted upstream but are not referenced by the final task markdown.",
+      label: "Missing extracted source images",
+      path: "diagnostics.missingSourceImagesMarkdown",
+      type: "markdown",
+      value: lossDiagnostics.missingImageMarkdown,
+    },
+  ];
 }
 
 function scriptOutputRenderedFields(outputs: ScriptOutputRecord[]): BlueprintRenderedField[] {
