@@ -77,10 +77,6 @@ export function CoursePipelineInspector({
         studyPipelineRequest<CourseInventoryResponse>(courseId, "/inventory"),
         studyPipelineRequest<PipelineRunsResponse>(courseId, "/runs"),
       ]);
-      const [extractedDocumentsResult, taskViewResult] = await Promise.allSettled([
-        studyPipelineRequest<ExtractedDocumentsResponse>(courseId, "/extracted-documents"),
-        loadTaskViewForInspector(courseId),
-      ]);
 
       if (statusResult.status === "fulfilled") {
         setStatus(statusResult.value);
@@ -102,28 +98,42 @@ export function CoursePipelineInspector({
         setRuns(null);
         nextUnavailable.runs = formatStudyPipelineError(runsResult.reason);
       }
-      if (extractedDocumentsResult.status === "fulfilled") {
-        setExtractedDocuments(extractedDocumentsResult.value);
-      } else {
-        setExtractedDocuments(null);
-        nextUnavailable.extractedDocuments = formatStudyPipelineError(extractedDocumentsResult.reason);
-      }
-      if (taskViewResult.status === "fulfilled") {
-        setTaskView(taskViewResult.value);
-      } else {
-        setTaskView(null);
-        nextUnavailable.taskView = formatStudyPipelineError(taskViewResult.reason);
-      }
       setUnavailable(nextUnavailable);
-    } catch (loadError) {
-      if (!options?.silent) {
-        setError(formatStudyPipelineError(loadError));
-      }
-    } finally {
       if (!options?.silent) {
         setLoading(false);
       }
+
+      void loadOptionalInspectorData({ baseUnavailable: nextUnavailable });
+    } catch (loadError) {
+      if (!options?.silent) {
+        setError(formatStudyPipelineError(loadError));
+        setLoading(false);
+      }
     }
+  }
+
+  async function loadOptionalInspectorData(options?: { baseUnavailable?: Partial<Record<OptionalInspectorData, string>> }) {
+    const [extractedDocumentsResult, taskViewResult] = await Promise.allSettled([
+      studyPipelineRequest<ExtractedDocumentsResponse>(courseId, "/extracted-documents"),
+      loadTaskViewForInspector(courseId),
+    ]);
+
+    const nextUnavailable = { ...(options?.baseUnavailable ?? {}) };
+    if (extractedDocumentsResult.status === "fulfilled") {
+      setExtractedDocuments(extractedDocumentsResult.value);
+      delete nextUnavailable.extractedDocuments;
+    } else {
+      setExtractedDocuments(null);
+      nextUnavailable.extractedDocuments = formatStudyPipelineError(extractedDocumentsResult.reason);
+    }
+    if (taskViewResult.status === "fulfilled") {
+      setTaskView(taskViewResult.value);
+      delete nextUnavailable.taskView;
+    } else {
+      setTaskView(null);
+      nextUnavailable.taskView = formatStudyPipelineError(taskViewResult.reason);
+    }
+    setUnavailable(nextUnavailable);
   }
 
   async function selectActiveRun(runId: string) {
@@ -260,15 +270,15 @@ async function studyPipelinePost<T>(courseId: string, suffix: string, body: unkn
 
 async function loadTaskViewForInspector(courseId: string): Promise<TaskViewResponse> {
   const query = "includeScript=1";
-  const bundleResponse = await fetch(`/api/study-bundles/courses/${encodeURIComponent(courseId)}/task-view?${query}`, {
-    cache: "no-store",
-  });
-  if (bundleResponse.ok) {
-    return await bundleResponse.json() as TaskViewResponse;
-  }
   try {
     return await studyPipelineRequest<TaskViewResponse>(courseId, `/task-view?${query}`);
   } catch (pipelineError) {
+    const bundleResponse = await fetch(`/api/study-bundles/courses/${encodeURIComponent(courseId)}/task-view?${query}`, {
+      cache: "no-store",
+    });
+    if (bundleResponse.ok) {
+      return await bundleResponse.json() as TaskViewResponse;
+    }
     if (![400, 404].includes(bundleResponse.status)) {
       const payload = await bundleResponse.json().catch(() => null) as { error?: string } | null;
       throw new Error(payload?.error ?? formatStudyPipelineError(pipelineError));

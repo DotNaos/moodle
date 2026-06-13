@@ -157,6 +157,7 @@ export function extractionNodeData({
 
 export function codexNodeData({
   activeRunIds,
+  hasMaterializedOutput = false,
   inputLabel,
   outputLabel,
   outputPreview,
@@ -164,6 +165,7 @@ export function codexNodeData({
   subtitle,
 }: {
   activeRunIds: Set<string>;
+  hasMaterializedOutput?: boolean;
   inputLabel: string;
   outputLabel: string;
   outputPreview?: string;
@@ -171,6 +173,27 @@ export function codexNodeData({
   subtitle: string;
 }): BlueprintNodeData {
   if (!run) {
+    if (hasMaterializedOutput) {
+      return {
+        title: "Codex Transform",
+        subtitle: `${subtitle} · output loaded`,
+        detail: "Transforms selected extracted content into website-ready task or script drafts.",
+        evidence: [
+          "Website output is already loaded from task-view.",
+          "The immutable Codex run record was not exposed for this lane.",
+        ],
+        inputs: [{ label: "active input bundle", detail: inputLabel }],
+        outputs: [{ label: outputLabel, state: "ready" }],
+        outputPreview: outputPreview ?? "A website-ready draft is available downstream.",
+        stepKind: "transform",
+        tone: "output",
+        status: "ready",
+        meta: [
+          { label: "Input", value: inputLabel },
+          { label: "Run record", value: "not exposed" },
+        ],
+      };
+    }
     return {
       title: "Codex Transform",
       subtitle,
@@ -266,17 +289,32 @@ export function collectProblems(
   group: CourseInventoryTaskGroup,
   sheetRun: PipelineRunRecord | null,
   solutionRun: PipelineRunRecord | null,
+  documents?: {
+    sheetDocument?: PDFDocumentStructure | null;
+    solutionDocument?: PDFDocumentStructure | null;
+  },
 ): BlueprintProblem[] {
   const problems: BlueprintProblem[] = [];
-  if (!sheetRun) {
+  const sheetAvailable = hasUsableExtraction(sheetRun, documents?.sheetDocument);
+  const solutionAvailable = hasUsableExtraction(solutionRun, documents?.solutionDocument);
+  if (!sheetAvailable) {
     problems.push({ label: "Sheet extraction missing", detail: "The assignment sheet has no extraction output.", severity: "warning" });
   }
   if (!group.solution) {
     problems.push({ label: "Solution missing", detail: "No solution PDF was paired with this assignment sheet.", severity: "warning" });
-  } else if (!solutionRun) {
+  } else if (!solutionAvailable) {
     problems.push({ label: "Solution extraction missing", detail: "The solution PDF exists, but no extraction output is stored.", severity: "warning" });
   }
   return problems;
+}
+
+function hasUsableExtraction(
+  run: PipelineRunRecord | null,
+  document: PDFDocumentStructure | null | undefined,
+): boolean {
+  if (run && run.status !== "failed") return true;
+  if (document && document.status !== "failed") return true;
+  return false;
 }
 
 function runProblems(run: PipelineRunRecord): BlueprintProblem[] | undefined {

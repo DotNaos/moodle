@@ -553,6 +553,52 @@ describe("course pipeline blueprint graph", () => {
     expect(outputNode?.data.outputPreview).toContain("parallele Laufzeit");
   });
 
+  test("treats extracted documents as usable pipeline input even when run records are missing", () => {
+    const extractedDocumentsWithScript: ExtractedDocumentsResponse = {
+      ...extractedDocuments,
+      documents: [
+        ...extractedDocuments.documents,
+        {
+          assets: [],
+          diagnostics: {},
+          engine: "docling",
+          id: "document-947700",
+          pages: [
+            {
+              blocks: [{ id: "script-heading", pageNumber: 1, text: "Einführung", type: "heading" }],
+              id: "script-page-1",
+              pageNumber: 1,
+            },
+          ],
+          resource: {
+            id: "resource:moodle:947700",
+            name: "Teil 01 Skript",
+            type: "pdf",
+          },
+          runId: "run-extracted-script-01",
+          status: "succeeded",
+        },
+      ],
+      summary: {
+        ...extractedDocuments.summary,
+        totalBlocks: extractedDocuments.summary.totalBlocks + 1,
+        totalDocuments: extractedDocuments.summary.totalDocuments + 1,
+        totalPages: extractedDocuments.summary.totalPages + 1,
+      },
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments: extractedDocumentsWithScript, inventory, runs: null, status, taskView });
+    const collectNode = graph.nodes.find((node) => node.id === "task-group-sheet-01-collect");
+    const codexNode = graph.nodes.find((node) => node.id === "task-group-sheet-01-codex");
+    const selectedScriptNode = graph.nodes.find((node) => node.id === "script-947700-selected");
+
+    expect(collectNode?.data.status).toBe("ready");
+    expect(collectNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Sheet extraction missing");
+    expect(collectNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Solution extraction missing");
+    expect(codexNode?.data.status).toBe("ready");
+    expect(codexNode?.data.tone).toBe("output");
+    expect(selectedScriptNode?.data.status).not.toBe("missing");
+  });
+
   test("marks extracted images that disappeared from final task output", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");

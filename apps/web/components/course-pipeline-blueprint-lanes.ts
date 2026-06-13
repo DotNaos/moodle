@@ -78,6 +78,7 @@ export function addTaskGroupLane({
   const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
   const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
   const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
+  const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
 
   addNode(nodes, {
     id: groupId,
@@ -168,19 +169,19 @@ export function addTaskGroupLane({
       subtitle: paired ? "sheet + solution" : "sheet only",
       detail: "Combines assignment and solution extractions into one Codex input bundle.",
       evidence: [
-        `Sheet extraction: ${sheetRun ? sheetRun.status : "missing"}`,
-        `Solution extraction: ${solutionRun ? solutionRun.status : group.solution ? "missing" : "not available"}`,
+        `Sheet extraction: ${sheetRun ? sheetRun.status : sheetDocument ? `${sheetDocument.status} document` : "missing"}`,
+        `Solution extraction: ${solutionRun ? solutionRun.status : solutionDocument ? `${solutionDocument.status} document` : group.solution ? "missing" : "not available"}`,
       ],
       inputs: [
-        { label: "sheet extraction", detail: group.sheet.name, state: sheetRun?.status ?? "missing" },
-        { label: "solution extraction", detail: group.solution?.name ?? "missing", state: solutionRun?.status ?? "missing" },
+        { label: "sheet extraction", detail: group.sheet.name, state: sheetRun?.status ?? sheetDocument?.status ?? "missing" },
+        { label: "solution extraction", detail: group.solution?.name ?? "missing", state: solutionRun?.status ?? solutionDocument?.status ?? "missing" },
       ],
       outputPreview: `Codex input bundle\nSheet: ${group.sheet.name}\nSolution: ${group.solution?.name ?? "missing"}`,
       outputs: [{ label: "task input bundle", detail: group.title }],
-      problems: collectProblems(group, sheetRun, solutionRun),
+      problems: collectIssues,
       stepKind: "collect",
-      tone: collectProblems(group, sheetRun, solutionRun).length > 0 ? "warning" : "process",
-      status: collectProblems(group, sheetRun, solutionRun).length > 0 ? "needs_review" : "ready",
+      tone: collectIssues.length > 0 ? "warning" : "process",
+      status: collectIssues.length > 0 ? "needs_review" : "ready",
       meta: [
         { label: "Input count", value: group.solution ? "2" : "1" },
         { label: "Output", value: "Codex task input bundle" },
@@ -204,6 +205,7 @@ export function addTaskGroupLane({
       outputPreview: taskOutputs.length > 0
         ? taskOutputs.map((task) => `${task.title}\n${task.promptMarkdown.slice(0, 400)}`).join("\n\n")
         : undefined,
+      hasMaterializedOutput: taskOutputs.length > 0,
       run: codexRun,
       subtitle: "task transform",
     }),
@@ -218,7 +220,7 @@ export function addTaskGroupLane({
       index,
       outputs: taskOutputs,
       sourceDocuments: [sheetDocument, solutionDocument],
-      upstreamProblems: collectProblems(group, sheetRun, solutionRun),
+      upstreamProblems: collectIssues,
     }),
   });
   addEdge(edges, codexId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
@@ -254,8 +256,10 @@ export function addScriptLane({
   const codexId = `${baseId}-codex`;
   const outputId = `${baseId}-output`;
   const extractionRun = findLatestRun(runLookup, resource.id, ["extracted", "extract_text", "extract_pages"]);
+  const extractedDocument = findExtractedDocument(extractedLookup, resource.id);
   const codexRun = findLatestRun(runLookup, resource.id, ["curated", "codex_curate"]);
   const scriptOutputs = findScriptOutputs(outputLookup, resource.id);
+  const selectedExtractionReady = Boolean((extractionRun && extractionRun.status !== "failed") || (extractedDocument && extractedDocument.status !== "failed"));
 
   addNode(nodes, {
     id: baseId,
@@ -287,7 +291,7 @@ export function addScriptLane({
     edges,
     extractionId,
     extractionRun,
-    extractedDocument: findExtractedDocument(extractedLookup, resource.id),
+    extractedDocument,
     nodes,
     pagesId,
     pdfId,
@@ -306,22 +310,31 @@ export function addScriptLane({
     position: { x: PIPELINE_X.collect, y },
     data: {
       title: "Selected Extraction",
-      subtitle: extractionRun ? extractionRun.engine : "missing",
+      subtitle: extractionRun ? extractionRun.engine : extractedDocument ? `${extractedDocument.engine} document` : "missing",
       detail: "The active extraction becomes the input for script curation.",
-      artifacts: extractionRun ? runArtifactSummary(extractionRun) : [],
+      artifacts: extractionRun ? runArtifactSummary(extractionRun) : extractedDocument ? [`document:${extractedDocument.id} · run ${extractedDocument.runId}`] : [],
       config: extractionRun ? runConfig(extractionRun) : [],
-      evidence: extractionRun ? [`Run ${extractionRun.id}`] : ["No selected extraction run recorded"],
+      evidence: extractionRun
+        ? [`Run ${extractionRun.id}`]
+        : extractedDocument
+          ? [`Document ${extractedDocument.id}`, `Run ${extractedDocument.runId}`, `${extractedDocument.pages.length} pages`]
+          : ["No selected extraction run recorded"],
       inputs: [{ label: "extraction variants", detail: resource.name }],
-      outputs: [{ label: "active extraction", detail: extractionRun?.engine ?? "missing" }],
+      outputs: [{ label: "active extraction", detail: extractionRun?.engine ?? extractedDocument?.engine ?? "missing", state: extractionRun?.status ?? extractedDocument?.status ?? "missing" }],
       outputPreview: extractionRun
         ? runPreview(extractionRun)
+        : extractedDocument
+          ? `${resource.name}\n${extractedDocument.pages.length} page(s), ${extractedDocument.pages.reduce((sum, page) => sum + page.blocks.length, 0)} block(s).`
         : `No active extraction is selected for ${resource.name}.\nRun an extraction engine before Codex can build script sections.`,
-      problems: extractionRun ? undefined : [{ label: "No active extraction", detail: "The script source has not produced a selected extraction.", severity: "warning" }],
+      problems: selectedExtractionReady ? undefined : [{ label: "No active extraction", detail: "The script source has not produced a selected extraction.", severity: "warning" }],
       stepKind: "transform",
-      tone: extractionRun ? "run" : "warning",
-      status: extractionRun?.status ?? "missing",
+      tone: selectedExtractionReady ? "run" : "warning",
+      status: extractionRun?.status ?? extractedDocument?.status ?? "missing",
       active: extractionRun ? activeRunIds.has(extractionRun.id) : false,
-      meta: extractionRun ? runMeta(extractionRun) : [{ label: "Resource", value: resource.name }],
+      meta: extractionRun ? runMeta(extractionRun) : [
+        { label: "Resource", value: resource.name },
+        { label: "Document", value: extractedDocument?.id ?? "missing" },
+      ],
     },
   });
   addEdge(edges, extractionId, selectedId, "select", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
@@ -336,6 +349,7 @@ export function addScriptLane({
       outputPreview: scriptOutputs.length > 0
         ? scriptOutputs.map((section) => `${section.title}\n${section.statusLabel}`).join("\n\n")
         : undefined,
+      hasMaterializedOutput: scriptOutputs.length > 0,
       run: codexRun,
       subtitle: "script transform",
     }),
@@ -345,7 +359,12 @@ export function addScriptLane({
   addNode(nodes, {
     id: outputId,
     position: { x: PIPELINE_X.output, y },
-    data: finalScriptOutputNodeData({ index, outputs: scriptOutputs, resource, upstreamProblems: extractionRun ? [] : [{ label: "Extraction missing", detail: "No extraction is available for this script resource.", severity: "warning" }] }),
+    data: finalScriptOutputNodeData({
+      index,
+      outputs: scriptOutputs,
+      resource,
+      upstreamProblems: selectedExtractionReady ? [] : [{ label: "Extraction missing", detail: "No extraction is available for this script resource.", severity: "warning" }],
+    }),
   });
   addEdge(edges, codexId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
 }

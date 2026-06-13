@@ -233,7 +233,7 @@ export function buildBlueprintGraph({
         taskView ? `${outputLookup.totalTasks} task outputs and ${outputLookup.totalScriptSections} script sections loaded` : `Task view missing${unavailable?.taskView ? `: ${unavailable.taskView}` : ""}`,
       ],
       inputs: [{ label: "course_id", detail: status?.courseId ?? inventory?.courseId ?? "unknown" }],
-      outputPreview: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts currently visible downstream\n${outputLookup.totalTasks} validated task output(s) loaded\n${outputLookup.totalScriptSections} script section output(s) loaded`,
+      outputPreview: `${outputLookup.totalTasks} task output(s) loaded\n${outputLookup.totalScriptSections} script section output(s) loaded\n${totalResources} Moodle resource(s) traced from the course input`,
       outputs: [{ label: "course source", detail: `${totalResources} resources` }],
       stepKind: "transform",
       tone: "source",
