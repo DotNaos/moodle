@@ -22,6 +22,7 @@ import {
   CoursePipelineBlueprint,
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint";
+import { hasPipelineLiveWork } from "@/components/course-pipeline-progress";
 import { CoursePipelineRunComparison } from "@/components/course-pipeline-run-comparison";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
 import { Spinner } from "@/components/ui/spinner";
@@ -130,15 +131,34 @@ export function CoursePipelineInspector({
   const [moderatingId, setModeratingId] = useState<string | null>(null);
 
   const inventorySections = useMemo(() => buildInventorySections(inventory), [inventory]);
+  const liveWork = useMemo(
+    () => hasPipelineLiveWork({
+      actionIds: [selectingRunId, publishingRunId, rerunningEngine, submittingProposalId, moderatingId],
+      runs,
+      status,
+    }),
+    [moderatingId, publishingRunId, rerunningEngine, runs, selectingRunId, status, submittingProposalId],
+  );
   useEffect(() => {
     void loadInspectorData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
-  async function loadInspectorData() {
-    setLoading(true);
-    setError(null);
-    setUnavailable({});
+  useEffect(() => {
+    if (!liveWork) return;
+    const timer = window.setInterval(() => {
+      void loadInspectorData({ silent: true });
+    }, 3500);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, liveWork]);
+
+  async function loadInspectorData(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setLoading(true);
+      setError(null);
+      setUnavailable({});
+    }
     try {
       const [statusResult, inventoryResult, runsResult, reviewResult] = await Promise.allSettled([
         studyPipelineRequest<StudyPipelineStatusResponse>(courseId, ""),
@@ -190,9 +210,13 @@ export function CoursePipelineInspector({
       }
       setUnavailable(nextUnavailable);
     } catch (loadError) {
-      setError(formatStudyPipelineError(loadError));
+      if (!options?.silent) {
+        setError(formatStudyPipelineError(loadError));
+      }
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -335,10 +359,18 @@ export function CoursePipelineInspector({
                 Course-level inspection surface for Moodle resources, classification, runs, blueprint, and review state.
               </p>
             </div>
-            <Button disabled={loading} onClick={() => void loadInspectorData()} type="button" variant="secondary">
-              {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
-              Refresh
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {liveWork ? (
+                <Badge className="rounded-full">
+                  <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  Live refresh
+                </Badge>
+              ) : null}
+              <Button disabled={loading} onClick={() => void loadInspectorData()} type="button" variant="secondary">
+                {loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
+                Refresh
+              </Button>
+            </div>
           </header>
 
           <div className="flex gap-1 overflow-x-auto rounded-full bg-secondary p-1">

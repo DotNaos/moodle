@@ -14,6 +14,7 @@ import {
   buildRunLookup,
   buildWarnings,
 } from "@/components/course-pipeline-blueprint-lanes";
+import { courseLiveState } from "@/components/course-pipeline-live-state";
 
 export type PipelineRunRecord = {
   id: string;
@@ -32,6 +33,14 @@ export type PipelineRunRecord = {
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;
+  diagnostics?: Array<{
+    code?: string;
+    createdAt?: string;
+    level: "error" | "info" | "warning" | string;
+    message: string;
+    stage?: string;
+  }>;
+  logs?: string[];
   artifactRefs?: Array<{
     id: string;
     kind: string;
@@ -87,6 +96,16 @@ export type BlueprintExtractionVariant = {
   status: "active" | "failed" | "missing" | "ok" | "stale" | "weak";
 };
 
+export type BlueprintLiveState = {
+  status: "failed" | "queued" | "running" | "stale" | "succeeded" | "warning" | "needs_review";
+  label: string;
+  detail?: string;
+  runId?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  current?: boolean;
+};
+
 export type BlueprintNodeData = {
   title: string;
   subtitle: string;
@@ -100,6 +119,7 @@ export type BlueprintNodeData = {
   evidence?: string[];
   inputs: BlueprintPort[];
   meta: Array<{ label: string; value: string }>;
+  live?: BlueprintLiveState;
   onSelect?: (nodeId: string) => void;
   outputPreview?: string;
   outputs: BlueprintPort[];
@@ -216,6 +236,7 @@ export function buildBlueprintGraph({
       stepKind: "transform",
       tone: "source",
       status: status?.status ?? "not_started",
+      live: courseLiveState(status),
       meta: [
         { label: "Course ID", value: status?.courseId ?? derivedInventory?.courseId ?? "unknown" },
         { label: "Current stage", value: status?.stage || "not started" },

@@ -9,6 +9,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   CheckCircle2,
@@ -48,6 +49,13 @@ import type {
 } from "@/components/study-pipeline-preview";
 import type { TaskViewResponse } from "@/components/task-study-panel";
 import { cn } from "@/lib/utils";
+import { preparePreviewMarkdown } from "@/components/course-pipeline-blueprint-preview";
+import {
+  LiveStatePanel,
+  NodeLiveIndicator,
+  PipelineStatusBadge,
+  liveNodeClass,
+} from "@/components/course-pipeline-live-ui";
 
 export { buildBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
@@ -170,8 +178,7 @@ function NodeInspector({
           {stepKindLabel(data.stepKind)}
         </span>
         <Badge variant={data.tone === "warning" ? "destructive" : "secondary"}>{data.tone}</Badge>
-        {data.status ? <Badge variant={data.status === "failed" ? "destructive" : "outline"}>{data.status}</Badge> : null}
-        {data.active ? <Badge>active</Badge> : null}
+        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
       </div>
 
       <h2 className="mt-4 text-lg font-semibold tracking-tight">{data.title}</h2>
@@ -190,6 +197,12 @@ function NodeInspector({
           <PortPanel items={data.outputs} title="Output" />
         </div>
       </InspectorSection>
+
+      {data.live ? (
+        <InspectorSection icon={Activity} title="Live state" tone={data.live.status === "failed" ? "warning" : "default"}>
+          <LiveStatePanel live={data.live} />
+        </InspectorSection>
+      ) : null}
 
       <InspectorSection icon={Eye} title="Preview">
         <RenderedNodePreview node={node} />
@@ -379,6 +392,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
     <div
       className={cn(
         "relative h-[178px] w-[240px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
+        liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
       onClick={(event) => {
@@ -394,6 +408,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
+      <NodeLiveIndicator live={data.live} />
       <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
       {HANDLE_POSITIONS.map((top, index) => (
         <Handle
@@ -418,8 +433,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
           {stepKindLabel(data.stepKind)}
         </span>
-        {data.active ? <Badge>active</Badge> : null}
-        {data.status ? <Badge variant={data.status === "failed" ? "destructive" : "outline"}>{data.status}</Badge> : null}
+        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
         <span className="truncate rounded-full bg-secondary/60 px-2 py-1">in {data.inputs.length}</span>
@@ -583,75 +597,6 @@ function inspectorActions(data: BlueprintNode["data"]) {
     { icon: Search, label: "Inspect source" },
     { icon: RotateCw, label: "Rerun step" },
   ];
-}
-
-function preparePreviewMarkdown(rawPreview: string): { hiddenCount: number; markdown: string } {
-  const lines = rawPreview
-    .replace(/^---[\s\S]*?---\s*/u, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .split("\n");
-  const kept: string[] = [];
-  let hiddenCount = 0;
-  let skippingOriginalSources = false;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^#{1,4}\s+Original Sources$/i.test(trimmed)) {
-      skippingOriginalSources = true;
-      hiddenCount += 1;
-      continue;
-    }
-    if (skippingOriginalSources) {
-      hiddenCount += trimmed ? 1 : 0;
-      continue;
-    }
-    if (isPipelineTraceLine(trimmed)) {
-      hiddenCount += 1;
-      continue;
-    }
-    kept.push(line);
-  }
-  const withoutDuplicateTitle = removeDuplicateLeadingTitle(kept.join("\n"));
-  const markdown = normalizePreviewMarkdown(withoutDuplicateTitle)
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { hiddenCount, markdown };
-}
-
-function isPipelineTraceLine(line: string): boolean {
-  return [
-    /^Source task:/i,
-    /^Source script:/i,
-    /^Solution status:/i,
-    /^Solution page:/i,
-    /^This is the versioned working copy/i,
-    /^#{1,4}\s+Task Text$/i,
-  ].some((pattern) => pattern.test(line));
-}
-
-function removeDuplicateLeadingTitle(markdown: string): string {
-  const lines = markdown.split("\n");
-  const first = lines[0]?.trim();
-  const second = lines[1]?.trim();
-  if (first && second) {
-    const headingText = second.replace(/^#{1,6}\s+/, "").trim();
-    if (headingText && first.toLowerCase() === headingText.toLowerCase()) {
-      return lines.slice(1).join("\n");
-    }
-  }
-  return markdown;
-}
-
-function normalizePreviewMarkdown(markdown: string): string {
-  return markdown
-    .replace(/^``([a-zA-Z0-9_-]*)\s*$/gm, "```$1")
-    .replace(/^```pseud\no\n/gm, "```pseudo\n")
-    .replace(/([^\n])\n?(```[a-zA-Z0-9_-]*\n)/g, "$1\n\n$2")
-    .replace(/(\n```\n)([^\n])/g, "$1\n$2")
-    .replace(/([^\n])(\s*#{1,4}\s+)/g, "$1\n\n$2")
-    .replace(/^(#{1,4}\s+.+)\n(?!\n)/gm, "$1\n\n")
-    .replace(/([^\n])(<figure\b)/g, "$1\n\n$2")
-    .replace(/(<\/figure>)([^\n])/g, "$1\n\n$2")
-    .replace(/```([a-zA-Z0-9_-]+)([^\n`])/g, "```$1\n$2");
 }
 
 function variantStatusBadge(status: BlueprintExtractionVariant["status"]): "default" | "destructive" | "outline" | "secondary" {

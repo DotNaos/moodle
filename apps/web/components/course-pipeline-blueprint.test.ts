@@ -465,6 +465,74 @@ describe("course pipeline blueprint graph", () => {
     expect(variants.find((variant) => variant.engine === "marker")?.status).toBe("missing");
   });
 
+  test("shows live running extraction work on the affected resource node", () => {
+    const runningRuns: PipelineRunsResponse = {
+      ...resourceRuns,
+      runs: [
+        ...resourceRuns.runs,
+        {
+          artifactRefs: [],
+          artifactRoot: "study-pipeline/course-22584/run-extracted-sheet-01-running",
+          configHash: "config:extracted:marker:default",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:10:00Z",
+          engine: "marker",
+          id: "run-extracted-sheet-01-running",
+          logs: ["rendering page previews"],
+          ownership: "shared",
+          resourceId: "resource:moodle:947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "extracted",
+          startedAt: "2026-06-13T07:09:30Z",
+          status: "running",
+        },
+      ],
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: runningRuns, status, taskView });
+    const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");
+
+    expect(sheetExtraction?.data.status).toBe("running");
+    expect(sheetExtraction?.data.live?.status).toBe("running");
+    expect(sheetExtraction?.data.live?.current).toBe(true);
+    expect(sheetExtraction?.data.evidence).toContain("log: rendering page previews");
+    expect(sheetExtraction?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("No artifacts");
+  });
+
+  test("attaches failed run diagnostics to the affected node", () => {
+    const failedRuns: PipelineRunsResponse = {
+      ...resourceRuns,
+      runs: [
+        ...resourceRuns.runs,
+        {
+          artifactRefs: [],
+          artifactRoot: "study-pipeline/course-22584/run-extracted-sheet-01-failed",
+          configHash: "config:extracted:docling:default",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:11:00Z",
+          diagnostics: [{ code: "ocr.page_failed", level: "error", message: "Page 2 could not be parsed." }],
+          engine: "docling",
+          error: "Extraction failed after page parsing.",
+          id: "run-extracted-sheet-01-failed",
+          ownership: "shared",
+          resourceId: "resource:moodle:947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "extracted",
+          startedAt: "2026-06-13T07:10:30Z",
+          status: "failed",
+        },
+      ],
+    };
+    const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: failedRuns, status, taskView });
+    const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");
+    const problemLabels = sheetExtraction?.data.problems?.map((problem) => problem.label) ?? [];
+
+    expect(sheetExtraction?.data.status).toBe("failed");
+    expect(sheetExtraction?.data.live?.status).toBe("failed");
+    expect(problemLabels).toContain("Run failed");
+    expect(problemLabels).toContain("Run diagnostic");
+    expect(sheetExtraction?.data.evidence).toContain("error: Page 2 could not be parsed.");
+  });
+
   test("uses real extracted documents and task-view outputs when available", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const pageNode = graph.nodes.find((node) =>

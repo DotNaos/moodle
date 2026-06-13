@@ -13,6 +13,13 @@ import {
   runMeta,
   runPreview,
 } from "@/components/course-pipeline-blueprint-run-utils";
+import {
+  isLiveStatus,
+  runDiagnosticProblems,
+  runLiveEvidence,
+  runLiveState,
+  runTimingMeta,
+} from "@/components/course-pipeline-live-state";
 
 export function materializedStepNode({
   count,
@@ -131,18 +138,20 @@ export function extractionNodeData({
       `Run ${run.id}`,
       `Engine ${run.engine}`,
       `${run.artifactRefs?.length ?? 0} artifact refs`,
+      ...runLiveEvidence(run),
       ...(document ? [`Extracted document ${document.id}`, `${document.pages.length} pages`, `${document.assets.length} assets`] : ["No extracted document payload loaded"]),
     ],
     extractionVariants: variants,
     inputs: [{ label: "sections[]", detail: resource.name }],
     outputs: [{ label: "extracted document", detail: run.engine, state: run.status }],
     outputPreview: document ? extractedDocumentPreview(document) : runPreview(run),
-    problems: mergeProblems(runProblems(run), documentProblems),
+    problems: mergeProblems(runProblems(run), runDiagnosticProblems(run), documentProblems),
     stepKind: "split",
-    tone: run.status === "failed" ? "warning" : "run",
+    tone: run.status === "failed" || run.status === "warning" ? "warning" : "run",
     status: run.status,
     active: activeRunIds.has(run.id),
-    meta: runMeta(run),
+    live: runLiveState(run),
+    meta: [...runMeta(run), ...runTimingMeta(run)],
   };
 }
 
@@ -183,16 +192,17 @@ export function codexNodeData({
     detail: "Creates user-facing content from the selected input bundle. Removals, rewrites, and generated content must stay traceable.",
     artifacts: runArtifactSummary(run),
     config: runConfig(run),
-    evidence: [`Run ${run.id}`, `Engine ${run.engine}`, `${run.artifactRefs?.length ?? 0} artifact refs`],
+    evidence: [`Run ${run.id}`, `Engine ${run.engine}`, `${run.artifactRefs?.length ?? 0} artifact refs`, ...runLiveEvidence(run)],
     inputs: [{ label: "active input bundle", detail: inputLabel }],
     outputs: [{ label: outputLabel, state: run.status }],
     outputPreview: outputPreview ?? runPreview(run),
-    problems: runProblems(run),
+    problems: mergeProblems(runProblems(run), runDiagnosticProblems(run)),
     stepKind: "transform",
-    tone: run.status === "failed" ? "warning" : "run",
+    tone: run.status === "failed" || run.status === "warning" ? "warning" : "run",
     status: run.status,
     active: activeRunIds.has(run.id),
-    meta: runMeta(run),
+    live: runLiveState(run),
+    meta: [...runMeta(run), ...runTimingMeta(run)],
   };
 }
 
@@ -274,7 +284,7 @@ function runProblems(run: PipelineRunRecord): BlueprintProblem[] | undefined {
   if (run.status === "failed") {
     problems.push({ label: "Run failed", detail: run.error || "The run failed without a stored error.", severity: "error" });
   }
-  if ((run.artifactRefs?.length ?? 0) === 0) {
+  if ((run.artifactRefs?.length ?? 0) === 0 && !isLiveStatus(run.status)) {
     problems.push({ label: "No artifacts", detail: "The run did not store any artifact references.", severity: "warning" });
   }
   return problems.length > 0 ? problems : undefined;
