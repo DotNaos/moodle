@@ -1,0 +1,459 @@
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
+
+import type {
+  CourseInventoryNode,
+  CourseInventoryResponse,
+  StudyPipelineStatusResponse,
+} from "@/components/study-pipeline-preview";
+import {
+  addReviewLane,
+  addScriptLane,
+  addTaskGroupLane,
+  buildRunLookup,
+  buildWarnings,
+} from "@/components/course-pipeline-blueprint-lanes";
+
+export type PipelineRunRecord = {
+  id: string;
+  sourceId: string;
+  courseId: string;
+  resourceId?: string;
+  fileHash?: string;
+  stage: string;
+  engine: string;
+  configHash: string;
+  ownership: "shared" | "user_owned" | string;
+  createdBy?: string;
+  status: string;
+  artifactRoot: string;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+  artifactRefs?: Array<{
+    id: string;
+    kind: string;
+    uri?: string;
+    storageKey?: string;
+    checksum?: string;
+    pageNumber?: number;
+    blockId?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+};
+
+export type ActiveRunSelectionRecord = {
+  sourceId: string;
+  resourceId?: string;
+  stage: string;
+  activeRunId: string;
+  selectedBy?: string;
+  selectedAt: string;
+  reason: string;
+};
+
+export type PipelineRunsResponse = {
+  courseId: string;
+  runs: PipelineRunRecord[];
+  activeSelections: ActiveRunSelectionRecord[];
+};
+
+export type BlueprintNodeTone = "source" | "process" | "resource" | "run" | "output" | "warning";
+export type BlueprintStepKind = "transform" | "split" | "collect";
+export type BlueprintProblemSeverity = "warning" | "error";
+
+export type BlueprintProblem = {
+  label: string;
+  detail: string;
+  severity: BlueprintProblemSeverity;
+};
+
+export type BlueprintPort = {
+  label: string;
+  detail?: string;
+  state?: string;
+};
+
+export type BlueprintNodeData = {
+  title: string;
+  subtitle: string;
+  detail: string;
+  tone: BlueprintNodeTone;
+  stepKind: BlueprintStepKind;
+  status?: string;
+  active?: boolean;
+  artifacts?: string[];
+  config?: Array<{ label: string; value: string }>;
+  evidence?: string[];
+  inputs: BlueprintPort[];
+  meta: Array<{ label: string; value: string }>;
+  onSelect?: (nodeId: string) => void;
+  outputPreview?: string;
+  outputs: BlueprintPort[];
+  problems?: BlueprintProblem[];
+  frame?: {
+    height: number;
+    width: number;
+  };
+};
+
+export type BlueprintNode = Node<BlueprintNodeData, "blueprint">;
+export type BlueprintFrameNode = Node<BlueprintNodeData, "frame">;
+export type BlueprintGraphNode = BlueprintNode | BlueprintFrameNode;
+type BlueprintNodeInput = Omit<BlueprintNode, "type"> & { type?: "blueprint" };
+type BlueprintFrameInput = Omit<BlueprintFrameNode, "type"> & { type?: "frame" };
+
+type CoursePipelineBlueprintModelInput = {
+  inventory: CourseInventoryResponse | null;
+  runs: PipelineRunsResponse | null;
+  status: StudyPipelineStatusResponse | null;
+};
+
+const MAX_TASK_GROUPS = 4;
+const MAX_SCRIPT_GROUPS = 3;
+
+const STAGE_LABELS: Record<string, string> = {
+  inventory: "Inventory",
+  raw: "Raw import",
+  extracted: "Extracted",
+  curated: "Codex curated",
+  extract_text: "Text extraction",
+  codex_curate: "Codex transform",
+};
+
+export function buildBlueprintGraph({
+  inventory,
+  runs,
+  status,
+}: CoursePipelineBlueprintModelInput): { nodes: BlueprintGraphNode[]; edges: Edge[] } {
+  const nodes: BlueprintGraphNode[] = [];
+  const edges: Edge[] = [];
+  const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
+  const runLookup = buildRunLookup(runs?.runs ?? []);
+  const derivedInventory = inventory ?? inventoryFromStatus(status);
+  const usingDerivedInventory = !inventory && Boolean(derivedInventory);
+  const taskGroups = sortTaskGroups(derivedInventory?.taskGroups ?? []);
+  const scriptResources = sortInventoryNodes(derivedInventory?.lectureMaterial ?? []);
+  const visibleTaskGroups = visibleBoundaryItems(taskGroups, MAX_TASK_GROUPS);
+  const visibleScriptResources = scriptResources.slice(0, MAX_SCRIPT_GROUPS);
+  const totalResources = status?.summary.totalResources ?? derivedInventory?.summary.totalResources ?? 0;
+  const centerY = 760;
+  const taskLaneGap = 540;
+  const taskLaneStartY = centerY - ((Math.max(visibleTaskGroups.length, 1) - 1) * taskLaneGap) / 2;
+  const scriptLaneY = taskLaneStartY + Math.max(visibleTaskGroups.length, 1) * taskLaneGap + 160;
+
+  addNode(nodes, {
+    id: "course",
+    position: { x: 0, y: centerY },
+    data: {
+      title: "Course",
+      subtitle: `${totalResources} resources`,
+      detail: "The Moodle course is the only initial input. Every generated task or script section must trace back to this source.",
+      evidence: ["Initial input: Moodle course id", `${totalResources} Moodle resources reported`],
+      inputs: [{ label: "course_id", detail: status?.courseId ?? inventory?.courseId ?? "unknown" }],
+      outputPreview: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts currently visible downstream`,
+      outputs: [{ label: "course source", detail: `${totalResources} resources` }],
+      stepKind: "transform",
+      tone: "source",
+      status: status?.status ?? "not_started",
+      meta: [
+        { label: "Course ID", value: status?.courseId ?? derivedInventory?.courseId ?? "unknown" },
+        { label: "Current stage", value: status?.stage || "not started" },
+      ],
+    },
+  });
+
+  addNode(nodes, {
+    id: "resource-set",
+    position: { x: 320, y: centerY },
+    data: {
+      title: "Resource Set",
+      subtitle: `${totalResources} resources`,
+      detail: "Loads and normalizes the Moodle resource list before any task or script content is generated.",
+      evidence: derivedInventory
+        ? [
+            `${derivedInventory.summary.taskGroups} task groups`,
+            `${derivedInventory.summary.lectureMaterial} lecture resources`,
+            `${derivedInventory.summary.unknown} unknown resources`,
+            usingDerivedInventory ? "Inventory endpoint unavailable; graph derived from pipeline status materials." : "Inventory endpoint available.",
+          ]
+        : ["Inventory response is missing"],
+      inputs: [{ label: "course source", detail: "Moodle course resources" }],
+      outputPreview: inventory
+        ? `Task groups: ${inventory.summary.taskGroups}\nLecture resources: ${inventory.summary.lectureMaterial}\nUnknown: ${inventory.summary.unknown}`
+        : derivedInventory
+          ? `Task groups: ${derivedInventory.summary.taskGroups}\nLecture resources: ${derivedInventory.summary.lectureMaterial}\nUnknown: ${derivedInventory.summary.unknown}\nSource: derived from status`
+          : "No inventory response loaded yet.",
+      outputs: [
+        { label: "task groups[]", detail: String(derivedInventory?.summary.taskGroups ?? 0) },
+        { label: "script groups[]", detail: String(derivedInventory?.summary.lectureMaterial ?? 0) },
+        { label: "review items[]", detail: String(buildWarnings(derivedInventory, runs).length) },
+      ],
+      problems: inventory || derivedInventory
+        ? usingDerivedInventory
+          ? [{ label: "Inventory endpoint missing", detail: "The graph is using pipeline status materials as a fallback.", severity: "warning" }]
+          : undefined
+        : [{ label: "Inventory missing", detail: "The resource classification response is not available.", severity: "warning" }],
+      stepKind: "split",
+      tone: "process",
+      status: inventory ? "loaded" : derivedInventory ? "derived" : "missing",
+      meta: derivedInventory
+        ? [
+            { label: "Task groups", value: String(derivedInventory.summary.taskGroups) },
+            { label: "Lecture material", value: String(derivedInventory.summary.lectureMaterial) },
+            { label: "Unknown", value: String(derivedInventory.summary.unknown) },
+            { label: "Source", value: usingDerivedInventory ? "status fallback" : "inventory" },
+          ]
+        : [{ label: "State", value: "No inventory response loaded yet." }],
+    },
+  });
+  addEdge(edges, "course", "resource-set", "1 -> 1", { edgeType: "straight" });
+
+  addFrame(nodes, {
+    id: "task-groups-frame",
+    position: { x: 610, y: taskLaneStartY - 52 },
+    data: frameData({
+      height: Math.max(visibleTaskGroups.length, 1) * taskLaneGap - 160,
+      subtitle: `${taskGroups.length} task groups`,
+      title: "Task groups[]",
+      width: 2830,
+    }),
+  });
+
+  visibleTaskGroups.forEach((group, index) => {
+    addTaskGroupLane({ activeRunIds, edges, group, index, nodes, runLookup, y: taskLaneStartY + index * taskLaneGap });
+  });
+
+  if (taskGroups.length > visibleTaskGroups.length) {
+    const hiddenGroups = hiddenBoundaryItems(taskGroups, MAX_TASK_GROUPS);
+    const hiddenCount = hiddenGroups.length;
+    const firstHidden = hiddenGroups[0];
+    const lastHidden = hiddenGroups.at(-1);
+    addNode(nodes, {
+      id: "task-groups-more",
+      position: { x: 680, y: centerY },
+      data: {
+        title: hiddenCount > 1 ? `${titleRange(firstHidden?.title, lastHidden?.title)} collapsed` : `${firstHidden?.title ?? hiddenCount} collapsed`,
+        subtitle: `${hiddenCount} hidden task group${hiddenCount === 1 ? "" : "s"}`,
+        detail: "The graph caps repeated lanes for readability. The Resources tab still contains every Moodle resource.",
+        evidence: ["Visible graph is intentionally capped"],
+        inputs: [{ label: "task groups[]" }],
+        outputs: [{ label: "collapsed lanes", detail: String(hiddenCount) }],
+        outputPreview: hiddenGroups.map((group) => group.title).join("\n"),
+        stepKind: "split",
+        tone: "resource",
+        status: "collapsed",
+        meta: [{ label: "Hidden groups", value: String(hiddenCount) }],
+      },
+    });
+    addEdge(edges, "resource-set", "task-groups-more", "more", { muted: true });
+  }
+
+  if (visibleScriptResources.length > 0) {
+    addFrame(nodes, {
+      id: "script-groups-frame",
+      position: { x: 610, y: scriptLaneY - 52 },
+      data: frameData({
+        height: Math.max(visibleScriptResources.length, 1) * 320 - 16,
+        subtitle: `${scriptResources.length} script resources`,
+        title: "Script groups[]",
+        width: 2830,
+      }),
+    });
+  }
+
+  visibleScriptResources.forEach((resource, index) => {
+    addScriptLane({
+      activeRunIds,
+      edges,
+      index,
+      nodes,
+      resource,
+      runLookup,
+      y: scriptLaneY + index * 320,
+    });
+  });
+
+  addReviewLane({ edges, inventory: derivedInventory, nodes, runs, y: scriptLaneY + visibleScriptResources.length * 320 + 96 });
+
+  return { nodes, edges };
+}
+
+function addNode(nodes: BlueprintGraphNode[], node: BlueprintNodeInput) {
+  nodes.push({ ...node, type: "blueprint" });
+}
+
+function addFrame(nodes: BlueprintGraphNode[], node: BlueprintFrameInput) {
+  nodes.push({ ...node, selectable: false, type: "frame", zIndex: -1 });
+}
+
+function addEdge(
+  edges: Edge[],
+  source: string,
+  target: string,
+  label: string,
+  options?: { edgeType?: Edge["type"]; muted?: boolean },
+) {
+  const color = options?.muted ? "#a3a3a3" : label === "failed" ? "#dc2626" : "#525252";
+  edges.push({
+    id: `${source}->${target}`,
+    labelBgPadding: [8, 4],
+    labelBgStyle: { fill: "#ffffff", fillOpacity: 0.9 },
+    labelStyle: { fill: options?.muted ? "#737373" : "#404040", fontSize: 11, fontWeight: 600 },
+    markerEnd: { color, type: MarkerType.ArrowClosed },
+    source,
+    style: {
+      stroke: color,
+      strokeDasharray: options?.muted ? "4 6" : undefined,
+      strokeWidth: options?.muted ? 1.5 : 2.25,
+    },
+    target,
+    type: options?.edgeType ?? "smoothstep",
+  });
+}
+
+function inventoryFromStatus(status: StudyPipelineStatusResponse | null): CourseInventoryResponse | null {
+  if (!status) return null;
+
+  const nodes = status.materials.map(materialToInventoryNode);
+  const taskNodes = nodes.filter((node) => node.role === "sheet");
+  const solutionNodes = nodes.filter((node) => node.role === "solution");
+  const lectureMaterial = nodes.filter((node) => node.bucket === "lecture_material");
+  const unknown = nodes.filter((node) => node.bucket === "unknown");
+  const solutionsByKey = new Map(solutionNodes.map((node) => [pairingKey(node.name), node] as const));
+  const taskGroups = taskNodes.map((sheet) => {
+    const solution = solutionsByKey.get(pairingKey(sheet.name));
+    return {
+      id: `derived:${sheet.id}`,
+      pairingConfidence: solution ? "medium" : "low",
+      pairingReason: solution
+        ? "Derived from pipeline status material names because inventory was unavailable."
+        : "No matching solution material was visible in pipeline status.",
+      pairingStatus: solution ? "paired" as const : "missing_solution" as const,
+      sheet,
+      solution,
+      title: sheet.name,
+    };
+  });
+
+  return {
+    artifactRoot: undefined,
+    courseId: status.courseId,
+    generatedAt: status.createdAt,
+    interactions: [],
+    lectureMaterial,
+    references: [],
+    summary: {
+      ambiguousTaskGroups: 0,
+      ignoredAllowed: 0,
+      interactions: 0,
+      lectureMaterial: lectureMaterial.length,
+      missingSolutionGroups: taskGroups.filter((group) => !group.solution).length,
+      pairedTaskGroups: taskGroups.filter((group) => Boolean(group.solution)).length,
+      references: 0,
+      taskGroups: taskGroups.length,
+      totalResources: status.summary.totalResources,
+      unknown: unknown.length,
+    },
+    taskGroups,
+    unknown,
+  };
+}
+
+function materialToInventoryNode(material: StudyPipelineStatusResponse["materials"][number]): CourseInventoryNode {
+  const text = normalizedText(`${material.name} ${material.type} ${material.resourceType ?? ""} ${material.fileType ?? ""}`);
+  const solution = text.includes("solution") || text.includes("losung");
+  const task = !solution && (text.includes("task") || text.includes("aufgabenblatt"));
+  const lecture = text.includes("slide") || text.includes("script") || /^teil\s+\d+/.test(text);
+  const bucket = task ? "task_sheet" : solution ? "solution" : lecture ? "lecture_material" : "unknown";
+  const role = task ? "sheet" : solution ? "solution" : lecture ? "script" : "unknown";
+
+  return {
+    bucket,
+    confidence: bucket === "unknown" ? "low" : "medium",
+    fileType: material.fileType,
+    id: material.id,
+    name: material.name,
+    reason: "Derived from pipeline status because inventory was unavailable.",
+    resourceType: material.resourceType,
+    role,
+    sectionId: material.sectionId,
+    sectionName: material.sectionName,
+    type: material.type,
+  };
+}
+
+function pairingKey(name: string): string {
+  return normalizedText(name)
+    .replace(/\b(solution|losung)\b/g, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizedText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function sortTaskGroups(groups: CourseInventoryResponse["taskGroups"]): CourseInventoryResponse["taskGroups"] {
+  return [...groups].sort((a, b) => naturalCompare(a.title, b.title));
+}
+
+function sortInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[] {
+  return [...nodes].sort((a, b) => naturalCompare(a.name, b.name));
+}
+
+function visibleBoundaryItems<T>(items: T[], maxItems: number): T[] {
+  if (items.length <= maxItems) return items;
+  const first = items[0];
+  const last = items.at(-1);
+  return first && last && first !== last ? [first, last] : items.slice(0, 1);
+}
+
+function hiddenBoundaryItems<T>(items: T[], maxItems: number): T[] {
+  if (items.length <= maxItems) return [];
+  return items.slice(1, -1);
+}
+
+function naturalCompare(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function titleRange(first?: string, last?: string): string {
+  const firstNumber = extractTrailingNumber(first);
+  const lastNumber = extractTrailingNumber(last);
+  if (firstNumber && lastNumber) return `${firstNumber} ... ${lastNumber}`;
+  if (first && last) return `${first} ... ${last}`;
+  return first ?? last ?? "Middle items";
+}
+
+function extractTrailingNumber(value?: string): string | null {
+  return value?.match(/(\d+)(?!.*\d)/)?.[1] ?? null;
+}
+
+function frameData({
+  height,
+  subtitle,
+  title,
+  width,
+}: {
+  height: number;
+  subtitle: string;
+  title: string;
+  width: number;
+}): BlueprintNodeData {
+  return {
+    detail: "Visual group for repeated pipeline items.",
+    frame: { height, width },
+    inputs: [],
+    meta: [],
+    outputs: [],
+    stepKind: "split",
+    subtitle,
+    title,
+    tone: "process",
+  };
+}

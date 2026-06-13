@@ -4,87 +4,30 @@ import {
   Background,
   Controls,
   Handle,
-  MarkerType,
   Position,
   ReactFlow,
-  type Edge,
-  type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { AlertCircle, CheckCircle2, Database, FileText, GitBranch, Layers, Search, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, FileText, GitBranch, Layers, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import {
+  buildBlueprintGraph,
+  type BlueprintGraphNode,
+  type BlueprintNode,
+  type BlueprintNodeTone,
+  type PipelineRunRecord,
+  type PipelineRunsResponse,
+} from "@/components/course-pipeline-blueprint-model";
 import type {
-  CourseInventoryNode,
   CourseInventoryResponse,
   StudyPipelineStatusResponse,
 } from "@/components/study-pipeline-preview";
 import { cn } from "@/lib/utils";
 
-export type PipelineRunRecord = {
-  id: string;
-  sourceId: string;
-  courseId: string;
-  resourceId?: string;
-  fileHash?: string;
-  stage: string;
-  engine: string;
-  configHash: string;
-  ownership: "shared" | "user_owned" | string;
-  createdBy?: string;
-  status: string;
-  artifactRoot: string;
-  error?: string;
-  startedAt?: string;
-  finishedAt?: string;
-  createdAt: string;
-  artifactRefs?: Array<{
-    id: string;
-    kind: string;
-    uri?: string;
-    storageKey?: string;
-    checksum?: string;
-    pageNumber?: number;
-    blockId?: string;
-    metadata?: Record<string, unknown>;
-  }>;
-};
-
-export type ActiveRunSelectionRecord = {
-  sourceId: string;
-  resourceId?: string;
-  stage: string;
-  activeRunId: string;
-  selectedBy?: string;
-  selectedAt: string;
-  reason: string;
-};
-
-export type PipelineRunsResponse = {
-  courseId: string;
-  runs: PipelineRunRecord[];
-  activeSelections: ActiveRunSelectionRecord[];
-};
-
-type BlueprintNodeTone = "source" | "process" | "resource" | "run" | "output" | "warning";
-
-type BlueprintNodeData = {
-  title: string;
-  subtitle: string;
-  detail: string;
-  tone: BlueprintNodeTone;
-  status?: string;
-  active?: boolean;
-  artifacts?: string[];
-  evidence?: string[];
-  meta: Array<{ label: string; value: string }>;
-  onSelect?: (nodeId: string) => void;
-  outputPreview?: string;
-};
-
-type BlueprintNode = Node<BlueprintNodeData, "blueprint">;
-type BlueprintNodeInput = Omit<BlueprintNode, "type"> & { type?: "blueprint" };
+export { buildBlueprintGraph };
+export type { PipelineRunRecord, PipelineRunsResponse };
 
 type CoursePipelineBlueprintProps = {
   inventory: CourseInventoryResponse | null;
@@ -94,23 +37,18 @@ type CoursePipelineBlueprintProps = {
 
 const nodeTypes = {
   blueprint: BlueprintNodeCard,
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  inventory: "Inventory",
-  raw: "Raw import",
-  extracted: "Extracted",
-  curated: "Codex curated",
+  frame: BlueprintGroupFrame,
 };
 
 export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipelineBlueprintProps) {
   const graph = useMemo(() => buildBlueprintGraph({ inventory, runs, status }), [inventory, runs, status]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(graph.nodes[0]?.id ?? null);
-  const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? graph.nodes[0];
+  const selectableNodes = useMemo(() => graph.nodes.filter(isBlueprintNode), [graph.nodes]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(selectableNodes[0]?.id ?? null);
+  const selectedNode = selectableNodes.find((node) => node.id === selectedNodeId) ?? selectableNodes[0];
   const interactiveNodes = useMemo(
     () => graph.nodes.map((node) => ({
       ...node,
-      data: { ...node.data, onSelect: setSelectedNodeId },
+      data: node.type === "blueprint" ? { ...node.data, onSelect: setSelectedNodeId } : node.data,
       selected: node.id === selectedNode?.id,
     })),
     [graph.nodes, selectedNode?.id],
@@ -118,13 +56,14 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
 
   return (
     <div className="grid min-h-[640px] gap-4 md:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
+      <div className="h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
         <ReactFlow
+          className="pipeline-blueprint-flow"
           colorMode="light"
-          defaultViewport={{ x: 28, y: -95, zoom: 0.85 }}
+          defaultViewport={{ x: 20, y: -280, zoom: 0.72 }}
           edges={graph.edges}
           maxZoom={1.4}
-          minZoom={0.45}
+          minZoom={0.2}
           nodeTypes={nodeTypes}
           nodes={interactiveNodes}
           nodesConnectable={false}
@@ -152,12 +91,51 @@ export function CoursePipelineBlueprint({ inventory, runs, status }: CoursePipel
             <p className="mt-1 text-sm text-muted-foreground">{selectedNode.data.subtitle}</p>
             <p className="mt-4 text-sm leading-6 text-foreground/80">{selectedNode.data.detail}</p>
 
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <MetricTile label="Step" value={stepKindLabel(selectedNode.data.stepKind)} />
+              <MetricTile label="Inputs" value={String(selectedNode.data.inputs.length)} />
+              <MetricTile label="Outputs" value={String(selectedNode.data.outputs.length)} />
+            </div>
+
+            <div className="mt-3 grid gap-3">
+              <PortPanel items={selectedNode.data.inputs} title="Input" />
+              <PortPanel items={selectedNode.data.outputs} title="Output" />
+            </div>
+
+            {selectedNode.data.problems?.length ? (
+              <div className="mt-3 rounded-2xl bg-destructive/10 px-3 py-3">
+                <p className="mb-2 text-xs font-medium text-destructive">Problems</p>
+                <div className="grid gap-2">
+                  {selectedNode.data.problems.map((problem) => (
+                    <div className="rounded-2xl bg-background/70 px-3 py-2" key={`${problem.label}:${problem.detail}`}>
+                      <p className="text-xs font-medium text-destructive">{problem.label}</p>
+                      <p className="mt-1 text-xs leading-5 text-destructive/80">{problem.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-5 rounded-2xl bg-background/70 px-3 py-3">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Output</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Rendered / Stored Preview</p>
               <p className="max-h-48 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
                 {selectedNode.data.outputPreview || "No direct output preview is stored for this node yet."}
               </p>
             </div>
+
+            {selectedNode.data.config?.length ? (
+              <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Config</p>
+                <div className="grid gap-2">
+                  {selectedNode.data.config.map((item) => (
+                    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 text-xs" key={`${selectedNode.id}:config:${item.label}`}>
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span className="break-words font-medium text-foreground">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-3 rounded-2xl bg-background/70 px-3 py-3">
               <p className="mb-2 text-xs font-medium text-muted-foreground">Evidence</p>
@@ -211,8 +189,8 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   return (
     <div
       className={cn(
-        "w-[220px] rounded-3xl bg-background px-4 py-3 shadow-sm transition-shadow",
-        selected ? "outline outline-2 outline-primary/60" : "shadow-black/5",
+        "h-[178px] w-[240px] overflow-hidden rounded-3xl bg-background px-4 py-3 shadow-lg shadow-black/10 transition-shadow",
+        selected ? "outline outline-2 outline-primary/60" : "",
       )}
       onClick={(event) => {
         event.stopPropagation();
@@ -227,345 +205,94 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       role="button"
       tabIndex={0}
     >
-      <Handle className="opacity-0" position={Position.Left} type="target" />
+      {HANDLE_POSITIONS.map((top, index) => (
+        <Handle
+          className="opacity-0"
+          id={`in-${index}`}
+          key={`in-${index}`}
+          position={Position.Left}
+          style={{ top: `${top}%` }}
+          type="target"
+        />
+      ))}
       <div className="flex items-start gap-3">
         <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
           <Icon aria-hidden className="size-4" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{data.title}</p>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{data.subtitle}</p>
+          <p className="truncate text-base font-semibold leading-5 text-foreground">{data.title}</p>
+          <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
+        <Badge variant="secondary">{stepKindLabel(data.stepKind)}</Badge>
         {data.active ? <Badge>active</Badge> : null}
         {data.status ? <Badge variant={data.status === "failed" ? "destructive" : "outline"}>{data.status}</Badge> : null}
       </div>
-      <Handle className="opacity-0" position={Position.Right} type="source" />
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+        <span className="truncate rounded-full bg-secondary/60 px-2 py-1">in {data.inputs.length}</span>
+        <span className="truncate rounded-full bg-secondary/60 px-2 py-1 text-right">out {data.outputs.length}</span>
+      </div>
+      {HANDLE_POSITIONS.map((top, index) => (
+        <Handle
+          className="opacity-0"
+          id={`out-${index}`}
+          key={`out-${index}`}
+          position={Position.Right}
+          style={{ top: `${top}%` }}
+          type="source"
+        />
+      ))}
     </div>
   );
 }
 
-export function buildBlueprintGraph({
-  inventory,
-  runs,
-  status,
-}: CoursePipelineBlueprintProps): { nodes: BlueprintNode[]; edges: Edge[] } {
-  const nodes: BlueprintNode[] = [];
-  const edges: Edge[] = [];
-  const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
-  const latestRunsByStage = latestRuns(runs?.runs ?? []);
-  const taskGroups = inventory?.taskGroups ?? [];
-  const visibleTaskGroups = taskGroups.slice(0, 7);
-  const warnings = buildWarnings(inventory, runs);
+const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;
 
-  addNode(nodes, {
-    id: "course",
-    position: { x: 0, y: 180 },
-    data: {
-      title: "Moodle course",
-      subtitle: `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources`,
-      detail: "The course is the shared source. Every downstream pipeline run should map back to this input.",
-      evidence: [
-        "Initial source: Moodle course inventory",
-        `${status?.summary.totalResources ?? inventory?.summary.totalResources ?? 0} resources are available for classification`,
-      ],
-      outputPreview: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts currently visible downstream`,
-      tone: "source",
-      status: status?.status,
-      meta: [
-        { label: "Course ID", value: status?.courseId ?? inventory?.courseId ?? "unknown" },
-        { label: "Current stage", value: status?.stage || "not started" },
-      ],
-    },
-  });
-  addNode(nodes, {
-    id: "inventory",
-    position: { x: 280, y: 180 },
-    data: {
-      title: "Inventory",
-      subtitle: inventory ? `${inventory.summary.taskGroups} task groups` : "not loaded",
-      detail: "Classifies Moodle resources into task sheets, solutions, lecture material, interactions, references, and unknown items.",
-      evidence: inventory
-        ? [
-            `${inventory.summary.taskGroups} task groups`,
-            `${inventory.summary.lectureMaterial} lecture resources`,
-            `${inventory.summary.unknown} unknown resources`,
-          ]
-        : ["Inventory response is missing"],
-      outputPreview: inventory
-        ? `Task groups: ${inventory.summary.taskGroups}\nPaired: ${inventory.summary.pairedTaskGroups}\nMissing solutions: ${inventory.summary.missingSolutionGroups}`
-        : "",
-      tone: "process",
-      status: inventory ? "loaded" : "missing",
-      meta: inventory
-        ? [
-            { label: "Lecture material", value: String(inventory.summary.lectureMaterial) },
-            { label: "Task groups", value: String(inventory.summary.taskGroups) },
-            { label: "Unknown", value: String(inventory.summary.unknown) },
-          ]
-        : [{ label: "State", value: "No inventory response loaded yet." }],
-    },
-  });
-  addEdge(edges, "course", "inventory", "inventory");
-
-  const bucketNodes = [
-    { id: "bucket-tasks", title: "Task groups", count: taskGroups.length, y: 20 },
-    { id: "bucket-lecture", title: "Lecture material", count: inventory?.lectureMaterial.length ?? 0, y: 180 },
-    { id: "bucket-review", title: "Review inputs", count: warnings.length, y: 340 },
-  ];
-  for (const bucket of bucketNodes) {
-    addNode(nodes, {
-      id: bucket.id,
-      position: { x: 560, y: bucket.y },
-      data: {
-        title: bucket.title,
-        subtitle: `${bucket.count} item${bucket.count === 1 ? "" : "s"}`,
-        detail: "A classified bucket groups resources before extraction and curation decide what becomes user-facing content.",
-        evidence: [`${bucket.count} classified item${bucket.count === 1 ? "" : "s"}`],
-        outputPreview: bucket.id === "bucket-tasks"
-          ? taskGroups.slice(0, 5).map((group) => group.title).join("\n")
-          : bucket.id === "bucket-lecture"
-            ? (inventory?.lectureMaterial ?? []).slice(0, 5).map((item) => item.name).join("\n")
-            : warnings.slice(0, 5).map((item) => item.title).join("\n"),
-        tone: bucket.id === "bucket-review" ? "warning" : "resource",
-        status: bucket.count > 0 ? "has data" : "empty",
-        meta: [{ label: "Count", value: String(bucket.count) }],
-      },
-    });
-    addEdge(edges, "inventory", bucket.id, bucket.id === "bucket-review" ? "review" : "classified", {
-      muted: bucket.id === "bucket-review",
-    });
-  }
-
-  visibleTaskGroups.forEach((group, index) => {
-    const nodeId = `task-group-${group.id}`;
-    addNode(nodes, {
-      id: nodeId,
-      position: { x: 740, y: index * 112 },
-      data: {
-        title: group.title,
-        subtitle: group.solution ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
-        detail: group.pairingReason || "Task group created from classified Moodle resources.",
-        evidence: [
-          `Sheet: ${group.sheet.name}`,
-          group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
-          `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
-        ],
-        outputPreview: `${group.title}\n${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
-        tone: group.solution ? "resource" : "warning",
-        status: group.pairingStatus,
-        meta: [
-          { label: "Sheet", value: group.sheet.name },
-          { label: "Solution", value: group.solution?.name ?? "missing" },
-          { label: "Confidence", value: group.pairingConfidence || "unknown" },
-        ],
-      },
-    });
-    addEdge(edges, "bucket-tasks", nodeId, "contains");
-  });
-
-  if (taskGroups.length > visibleTaskGroups.length) {
-    addNode(nodes, {
-      id: "task-groups-more",
-      position: { x: 740, y: visibleTaskGroups.length * 112 },
-      data: {
-        title: `${taskGroups.length - visibleTaskGroups.length} more task groups`,
-        subtitle: "hidden from graph",
-        detail: "The graph keeps the canvas readable. The Resources and Buckets tabs contain the complete list.",
-        evidence: ["Visible graph is intentionally capped for readability"],
-        outputPreview: taskGroups.slice(visibleTaskGroups.length).map((group) => group.title).join("\n"),
-        tone: "resource",
-        status: "collapsed",
-        meta: [{ label: "Hidden groups", value: String(taskGroups.length - visibleTaskGroups.length) }],
-      },
-    });
-    addEdge(edges, "bucket-tasks", "task-groups-more", "more", { muted: true });
-  }
-
-  const runStages = ["inventory", "raw", "extracted", "curated"];
-  runStages.forEach((stage, index) => {
-    const run = latestRunsByStage.get(stage);
-    const x = 1020 + index * 240;
-    addNode(nodes, {
-      id: `run-${stage}`,
-      position: { x, y: 180 },
-      data: {
-        title: STAGE_LABELS[stage] ?? stage,
-        subtitle: run ? `${run.engine} · ${run.configHash}` : "no stored run",
-        detail: run
-          ? `Latest ${stage} run recorded at ${formatDateTime(run.createdAt)}.`
-          : "This stage has no immutable run record yet.",
-        artifacts: run ? runArtifactSummary(run) : [],
-        evidence: run
-          ? [
-              `Run ${run.id}`,
-              `Engine ${run.engine}`,
-              `${run.artifactRefs?.length ?? 0} artifact refs`,
-            ]
-          : ["No immutable run record stored for this stage"],
-        outputPreview: run ? runPreview(run) : "",
-        tone: "run",
-        status: run?.status ?? (status?.stage === stage ? status.status : "missing"),
-        active: run ? activeRunIds.has(run.id) : false,
-        meta: run
-          ? [
-              { label: "Run ID", value: run.id },
-              { label: "Engine", value: run.engine },
-              { label: "Ownership", value: run.ownership },
-              { label: "Artifact root", value: run.artifactRoot || "none" },
-            ]
-          : [{ label: "State", value: "No run stored for this stage." }],
-      },
-    });
-    addEdge(edges, index === 0 ? "inventory" : `run-${runStages[index - 1]}`, `run-${stage}`, run?.status ?? "pending");
-  });
-
-  addNode(nodes, {
-    id: "outputs",
-    position: { x: 1980, y: 180 },
-    data: {
-      title: "Final outputs",
-      subtitle: `${status?.summary.tasks ?? 0} tasks · ${status?.summary.scripts ?? 0} scripts`,
-      detail: "User-facing tasks, scripts, formulas, and source-linked content should only appear here if traceable upstream nodes exist.",
-      evidence: [
-        `${status?.summary.tasks ?? 0} published tasks`,
-        `${status?.summary.linkedSolutions ?? 0} linked solutions`,
-        `${status?.summary.missingSolutions ?? 0} missing solutions`,
-      ],
-      outputPreview: `Tasks: ${status?.summary.tasks ?? 0}\nScripts: ${status?.summary.scripts ?? 0}\nLinked solutions: ${status?.summary.linkedSolutions ?? 0}`,
-      tone: "output",
-      status: status?.stage === "curated" ? "ready" : "pending",
-      meta: [
-        { label: "Tasks", value: String(status?.summary.tasks ?? 0) },
-        { label: "Linked solutions", value: String(status?.summary.linkedSolutions ?? 0) },
-        { label: "Missing solutions", value: String(status?.summary.missingSolutions ?? 0) },
-      ],
-    },
-  });
-  addEdge(edges, "run-curated", "outputs", "publishes");
-
-  warnings.slice(0, 5).forEach((warning, index) => {
-    const nodeId = `warning-${index}`;
-    addNode(nodes, {
-      id: nodeId,
-      position: { x: 1020 + index * 230, y: 420 },
-      data: warning,
-    });
-    addEdge(edges, "bucket-review", nodeId, "review", { muted: true });
-  });
-
-  return { nodes, edges };
+function BlueprintGroupFrame({ data }: NodeProps<Extract<BlueprintGraphNode, { type: "frame" }>>) {
+  return (
+    <div
+      className="pointer-events-none rounded-[28px] border-0 bg-foreground/[0.035] shadow-inner"
+      style={{ height: data.frame?.height ?? 240, width: data.frame?.width ?? 480 }}
+    >
+      <div className="flex items-center justify-between px-5 py-3">
+        <p className="text-sm font-semibold text-foreground/70">{data.title}</p>
+        <p className="text-xs font-medium text-muted-foreground">{data.subtitle}</p>
+      </div>
+    </div>
+  );
 }
 
-function buildWarnings(
-  inventory: CourseInventoryResponse | null,
-  runs: PipelineRunsResponse | null,
-): Array<BlueprintNodeData & { sourceId: string }> {
-  const missingSolutions = inventory?.taskGroups
-    .filter((group) => group.pairingStatus !== "paired")
-    .map((group) => ({
-      sourceId: "bucket-review",
-      title: group.title,
-      subtitle: group.pairingStatus.replaceAll("_", " "),
-      detail: group.pairingReason || "This task group needs review before it can be trusted.",
-      tone: "warning" as const,
-      status: group.pairingStatus,
-      meta: [
-        { label: "Sheet", value: group.sheet.name },
-        { label: "Solution", value: group.solution?.name ?? "missing" },
-      ],
-    })) ?? [];
-  const unknownResources = inventory?.unknown.slice(0, 4).map((item) => warningFromInventoryNode(item)) ?? [];
-  const failedRuns = runs?.runs
-    .filter((run) => run.status === "failed")
-    .slice(0, 4)
-    .map((run) => ({
-      sourceId: `run-${run.stage}`,
-      title: `${STAGE_LABELS[run.stage] ?? run.stage} failed`,
-      subtitle: run.engine,
-      detail: run.error || "The run failed without a recorded error message.",
-      tone: "warning" as const,
-      status: "failed",
-      meta: [
-        { label: "Run ID", value: run.id },
-        { label: "Created", value: formatDateTime(run.createdAt) },
-      ],
-    })) ?? [];
-
-  return [...missingSolutions, ...unknownResources, ...failedRuns];
+function isBlueprintNode(node: BlueprintGraphNode): node is BlueprintNode {
+  return node.type === "blueprint";
 }
 
-function warningFromInventoryNode(item: CourseInventoryNode): BlueprintNodeData & { sourceId: string } {
-  return {
-    sourceId: "bucket-review",
-    title: item.name,
-    subtitle: "unknown resource",
-    detail: item.reason || "No confident bucket matched this resource.",
-    tone: "warning",
-    status: item.confidence ? `${item.confidence} confidence` : "unknown",
-    meta: [
-      { label: "Resource ID", value: item.id },
-      { label: "Section", value: item.sectionName || "unknown section" },
-    ],
-  };
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-background/70 px-3 py-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-semibold text-foreground">{value}</p>
+    </div>
+  );
 }
 
-function latestRuns(runs: PipelineRunRecord[]): Map<string, PipelineRunRecord> {
-  const result = new Map<string, PipelineRunRecord>();
-  for (const run of runs) {
-    const existing = result.get(run.stage);
-    if (!existing || new Date(run.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
-      result.set(run.stage, run);
-    }
-  }
-  return result;
-}
-
-function addNode(nodes: BlueprintNode[], node: BlueprintNodeInput) {
-  nodes.push({ ...node, type: "blueprint" });
-}
-
-function addEdge(edges: Edge[], source: string, target: string, label: string, options?: { muted?: boolean }) {
-  edges.push({
-    id: `${source}->${target}`,
-    source,
-    target,
-    label,
-    markerEnd: { color: options?.muted ? "#a3a3a3" : "#737373", type: MarkerType.ArrowClosed },
-    style: {
-      stroke: options?.muted ? "#a3a3a3" : label === "failed" ? "#dc2626" : "#737373",
-      strokeDasharray: options?.muted ? "4 6" : undefined,
-      strokeWidth: options?.muted ? 1.5 : 2,
-    },
-    type: "smoothstep",
-  });
-}
-
-function runPreview(run: PipelineRunRecord): string {
-  for (const ref of run.artifactRefs ?? []) {
-    if (typeof ref.metadata?.preview === "string" && ref.metadata.preview) return ref.metadata.preview;
-    if (typeof ref.metadata?.textPreview === "string" && ref.metadata.textPreview) return ref.metadata.textPreview;
-  }
-  if (run.error) return run.error;
-  return `${run.stage} ${run.status}\nEngine: ${run.engine}\nArtifact root: ${run.artifactRoot || "none"}`;
-}
-
-function runArtifactSummary(run: PipelineRunRecord): string[] {
-  return (run.artifactRefs ?? []).slice(0, 12).map((ref) => {
-    const parts = [
-      ref.kind,
-      ref.pageNumber ? `page ${ref.pageNumber}` : "",
-      ref.blockId ? `block ${ref.blockId}` : "",
-      ref.storageKey || ref.uri || "",
-      ref.checksum ? `checksum ${shortValue(ref.checksum)}` : "",
-    ].filter(Boolean);
-    return `${ref.id}: ${parts.join(" · ")}`;
-  });
-}
-
-function shortValue(value: string) {
-  return value.length > 18 ? `${value.slice(0, 18)}...` : value;
+function PortPanel({ items, title }: { items: Array<{ label: string; detail?: string; state?: string }>; title: string }) {
+  return (
+    <div className="rounded-2xl bg-background/70 px-3 py-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="grid gap-2">
+        {items.map((item) => (
+          <div className="rounded-2xl bg-secondary/60 px-3 py-2" key={`${title}:${item.label}:${item.detail ?? ""}`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-xs font-medium text-foreground">{item.label}</p>
+              {item.state ? <Badge variant={item.state === "missing" || item.state === "failed" ? "destructive" : "outline"}>{item.state}</Badge> : null}
+            </div>
+            {item.detail ? <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{item.detail}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function nodeIcon(tone: BlueprintNodeTone) {
@@ -587,15 +314,8 @@ function nodeToneClass(tone: BlueprintNodeTone): string {
   return "bg-secondary text-muted-foreground";
 }
 
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value || "unknown time";
-  }
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-  });
+function stepKindLabel(kind: "collect" | "split" | "transform"): string {
+  if (kind === "collect") return "N -> 1";
+  if (kind === "split") return "1 -> N";
+  return "1 -> 1";
 }

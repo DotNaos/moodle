@@ -166,19 +166,32 @@ const runs: PipelineRunsResponse = {
 };
 
 describe("course pipeline blueprint graph", () => {
-  test("builds source, bucket, run, output, and warning nodes from trace data", () => {
+  test("builds a blackbox conveyor graph from trace data", () => {
     const graph = buildBlueprintGraph({ inventory, runs, status });
     const titles = graph.nodes.map((node) => node.data.title);
 
-    expect(titles).toContain("Moodle course");
-    expect(titles).toContain("Inventory");
+    expect(titles).toContain("Course");
+    expect(titles).toContain("Resource Set");
     expect(titles).toContain("Aufgabenblatt 01");
     expect(titles).toContain("Aufgabenblatt 02");
-    expect(titles).toContain("Extracted");
-    expect(titles).toContain("Final outputs");
-    expect(titles).toContain("Codex curated failed");
-    expect(graph.edges.some((edge) => edge.source === "run-extracted" && edge.target === "run-curated")).toBe(true);
-    expect(graph.nodes.find((node) => node.id === "run-extracted")?.data.active).toBe(true);
+    expect(titles).toContain("Collect Pair");
+    expect(titles).toContain("Codex Transform");
+    expect(titles).toContain("Output 1");
+    expect(titles).toContain("Output 2");
+    expect(titles).toContain("Script Section 1");
+    expect(titles).toContain("Review Collector");
+
+    expect(graph.nodes.find((node) => node.id === "resource-set")?.data.stepKind).toBe("split");
+    expect(graph.nodes.find((node) => node.data.title === "Collect Pair")?.data.stepKind).toBe("collect");
+    expect(graph.nodes.find((node) => node.data.title === "Codex Transform")?.data.stepKind).toBe("transform");
+    expect(graph.nodes.find((node) => node.data.title === "Output 2")?.data.problems?.map((problem) => problem.label)).toContain("Solution missing");
+    const nodeTitles = new Map(graph.nodes.map((node) => [node.id, node.data.title]));
+    const directTaskGroupToOutput = graph.edges.some((edge) => {
+      const sourceTitle = nodeTitles.get(edge.source) ?? "";
+      const targetTitle = nodeTitles.get(edge.target) ?? "";
+      return sourceTitle.startsWith("Aufgabenblatt") && targetTitle.startsWith("Output");
+    });
+    expect(directTaskGroupToOutput).toBe(false);
     expect(graph.nodes.some((node) => node.data.tone === "warning")).toBe(true);
   });
 
@@ -187,6 +200,53 @@ describe("course pipeline blueprint graph", () => {
 
     expect(graph.nodes.length).toBeGreaterThan(0);
     expect(graph.nodes.find((node) => node.id === "course")?.data.subtitle).toBe("0 resources");
-    expect(graph.nodes.find((node) => node.id === "run-extracted")?.data.status).toBe("missing");
+    expect(graph.nodes.find((node) => node.id === "resource-set")?.data.status).toBe("missing");
+    expect(graph.nodes.find((node) => node.id === "resource-set")?.data.problems?.[0]?.label).toBe("Inventory missing");
+  });
+
+  test("sorts repeated task groups naturally and collapses the middle", () => {
+    const manyTaskGroups: CourseInventoryResponse = {
+      ...inventory,
+      summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
+      taskGroups: Array.from({ length: 12 }, (_, index) => {
+        const number = index + 1;
+        return {
+          id: `sheet-${number}`,
+          pairingConfidence: "high",
+          pairingReason: "Sheet and solution numbers match.",
+          pairingStatus: "paired" as const,
+          sheet: {
+            bucket: "task_sheet" as const,
+            confidence: "high" as const,
+            id: `sheet-${number}`,
+            name: `Aufgabenblatt ${number}`,
+            reason: "Task sheet",
+            role: "sheet" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          solution: {
+            bucket: "solution" as const,
+            confidence: "high" as const,
+            id: `solution-${number}`,
+            name: `Aufgabenblatt ${number} Lösung`,
+            reason: "Solution sheet",
+            role: "solution" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          title: `Aufgabenblatt ${number}`,
+        };
+      }).reverse(),
+    };
+
+    const graph = buildBlueprintGraph({ inventory: manyTaskGroups, runs: null, status });
+    const titles = graph.nodes.map((node) => node.data.title);
+
+    expect(titles).toContain("Aufgabenblatt 1");
+    expect(titles).toContain("Aufgabenblatt 12");
+    expect(titles).not.toContain("Aufgabenblatt 10");
+    expect(titles).toContain("2 ... 11 collapsed");
+    expect(titles.indexOf("Aufgabenblatt 1")).toBeLessThan(titles.indexOf("Aufgabenblatt 12"));
   });
 });
