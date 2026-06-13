@@ -57,7 +57,6 @@ import type {
 } from "@/components/study-pipeline-preview";
 import type { TaskViewResponse } from "@/components/task-study-panel";
 import { cn } from "@/lib/utils";
-import { preparePreviewMarkdown } from "@/components/course-pipeline-blueprint-preview";
 import {
   LiveStatePanel,
   NodeLiveIndicator,
@@ -68,6 +67,10 @@ import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course
 import { SourceTracePanel } from "@/components/course-pipeline-trace-panel";
 import { LossTracePanel } from "@/components/course-pipeline-loss-panel";
 import { PipelineCableEdge } from "@/components/course-pipeline-blueprint-edge";
+import {
+  buildPipelineNodePreview,
+  type PipelineNodePreview,
+} from "@/components/course-pipeline-node-preview";
 
 export { buildBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
@@ -339,23 +342,10 @@ function NodeInspector({
 }
 
 function RenderedNodePreview({ node }: { node: BlueprintNode }) {
-  const rawPreview = node.data.outputPreview ?? "";
-  const { hiddenCount, markdown } = useMemo(() => preparePreviewMarkdown(rawPreview), [rawPreview]);
-  if (!markdown.trim()) {
-    return (
-      <p className="rounded-2xl bg-background/70 px-3 py-3 text-sm leading-6 text-muted-foreground">
-        No direct output preview is stored for this node yet.
-      </p>
-    );
-  }
+  const preview = useMemo(() => buildPipelineNodePreview(node.data), [node.data]);
   return (
     <div className="max-h-[36rem] overflow-auto rounded-2xl bg-background/80 px-3 py-3">
-      {hiddenCount > 0 ? (
-        <p className="mb-3 rounded-2xl bg-secondary/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {hiddenCount} pipeline trace line{hiddenCount === 1 ? "" : "s"} hidden from this rendered preview.
-        </p>
-      ) : null}
-      <MarkdownRenderer className="space-y-3 break-words text-sm leading-6 text-foreground" text={markdown} />
+      <NodePreviewContent preview={preview} size="inspector" />
     </div>
   );
 }
@@ -447,7 +437,7 @@ function ExtractionActionButtons({
 
 function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
-  const preview = nodeBodyPreviewMarkdown(data.outputPreview);
+  const preview = useMemo(() => buildPipelineNodePreview(data), [data]);
   const [previewOpen, setPreviewOpen] = useState(false);
   return (
     <div
@@ -498,44 +488,30 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
                   {data.problems.length}
                 </span>
               ) : null}
-              {preview ? (
-                <button
-                  aria-label="Open output preview"
-                  className="grid size-6 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setPreviewOpen(true);
-                  }}
-                  type="button"
-                >
-                  <Maximize2 aria-hidden className="size-3.5" />
-                </button>
-              ) : null}
+              <button
+                aria-label="Open output preview"
+                className="grid size-6 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPreviewOpen(true);
+                }}
+                type="button"
+              >
+                <Maximize2 aria-hidden className="size-3.5" />
+              </button>
             </div>
           </div>
-          {preview ? (
-            <div
-              className="max-h-[8.5rem] overflow-auto pr-1"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <MarkdownRenderer
-                className="space-y-1 break-words text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
-                text={preview}
-              />
-            </div>
-          ) : (
-            <p className="line-clamp-3 whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
-              No preview stored yet.
-            </p>
-          )}
+          <div className="max-h-[8.5rem] overflow-auto pr-1" onClick={(event) => event.stopPropagation()}>
+            <NodePreviewContent preview={preview} size="node" />
+          </div>
         </div>
         {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
       <NodePreviewDialog
-        markdown={preview}
         onOpenChange={setPreviewOpen}
         open={previewOpen}
+        preview={preview}
         title={data.title}
       />
     </div>
@@ -543,14 +519,14 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
 }
 
 function NodePreviewDialog({
-  markdown,
   onOpenChange,
   open,
+  preview,
   title,
 }: {
-  markdown: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  preview: PipelineNodePreview;
   title: string;
 }) {
   return (
@@ -563,13 +539,43 @@ function NodePreviewDialog({
           <DialogTitle className="truncate text-base">{title}</DialogTitle>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-          <MarkdownRenderer
-            className="max-w-none space-y-4 break-words text-sm leading-6 text-foreground [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3"
-            text={markdown}
-          />
+          <NodePreviewContent preview={preview} size="modal" />
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function NodePreviewContent({
+  preview,
+  size,
+}: {
+  preview: PipelineNodePreview;
+  size: "inspector" | "modal" | "node";
+}) {
+  if (preview.kind === "json") {
+    return (
+      <pre
+        className={cn(
+          "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
+          size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
+        )}
+      >
+        {preview.text}
+      </pre>
+    );
+  }
+
+  return (
+    <MarkdownRenderer
+      className={cn(
+        "break-words text-foreground",
+        size === "node"
+          ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+          : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
+      )}
+      text={preview.text}
+    />
   );
 }
 
@@ -679,19 +685,6 @@ function portsBySlot(items: BlueprintPort[]): Map<number, BlueprintPort> {
     map.set(slots[index] ?? index, item);
   });
   return map;
-}
-
-function nodeBodyPreviewMarkdown(rawPreview: string | undefined): string {
-  if (!rawPreview?.trim()) return "";
-  const { markdown } = preparePreviewMarkdown(rawPreview);
-  return markdown
-    .split("\n")
-    .filter((line) => !/^\s*(Source|Source task|Original Sources|Solution status|Solution page)\s*:/i.test(line))
-    .join("\n")
-    .replace(/<!--\s*source:[\s\S]*?-->/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
-    .slice(0, 900);
 }
 
 function portColorClass(port: BlueprintPort): string {
