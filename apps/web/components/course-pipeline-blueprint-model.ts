@@ -152,6 +152,14 @@ export type BlueprintRunScope = {
   resourceIds: string[];
 };
 
+export type BlueprintRunStage = "inventory" | "raw" | "extracted" | "curated";
+
+export type BlueprintRunRequest = {
+  mode: "from" | "single";
+  scope: BlueprintRunScope;
+  startStage: BlueprintRunStage;
+};
+
 export type BlueprintNodeData = {
   title: string;
   subtitle: string;
@@ -169,11 +177,14 @@ export type BlueprintNodeData = {
   meta: Array<{ label: string; value: string }>;
   live?: BlueprintLiveState;
   onSelect?: (nodeId: string) => void;
+  onRunFromNode?: (request: BlueprintRunRequest) => void;
   outputPreview?: string;
   outputs: BlueprintPort[];
   problems?: BlueprintProblem[];
   renderedFields?: BlueprintRenderedField[];
   runScope?: BlueprintRunScope;
+  runActionDisabled?: boolean;
+  runActionRunning?: boolean;
   extractionVariants?: BlueprintExtractionVariant[];
   frame?: {
     height: number;

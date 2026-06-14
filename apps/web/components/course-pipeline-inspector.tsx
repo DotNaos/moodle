@@ -8,6 +8,7 @@ import {
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint";
 import type { BlueprintRunScope } from "@/components/course-pipeline-blueprint-model";
+import type { BlueprintRunRequest } from "@/components/course-pipeline-blueprint-model";
 import { hasPipelineLiveWork } from "@/components/course-pipeline-progress";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
 import { Badge } from "@/components/ui/badge";
@@ -204,10 +205,17 @@ export function CoursePipelineInspector({
     }
   }
 
-  async function runPipelinePlan() {
+  async function runPipelinePlan(override?: BlueprintRunRequest) {
     const runId = makeClientRunId();
-    const scope = resolveRunScope({ mode: runScopeMode, selectedScope });
-    const stages = stagesForPlan(runMode, runStartStage);
+    const nextMode = override?.mode ?? runMode;
+    const nextStartStage = override?.startStage ?? runStartStage;
+    const scope = override?.scope ?? resolveRunScope({ mode: runScopeMode, selectedScope });
+    const stages = stagesForPlan(nextMode, nextStartStage);
+    if (override) {
+      setRunMode(nextMode);
+      setRunStartStage(nextStartStage);
+      setRunScopeMode(scope.kind === "course" ? "course" : "selected");
+    }
     setRunningPlanId(runId);
     setError(null);
     setRunPlan(stages.map((stage) => ({
@@ -218,11 +226,11 @@ export function CoursePipelineInspector({
     })));
 
     try {
-      setRunPlan((current) => markPlanStep(current, stages[0]?.id ?? runStartStage, "running"));
+      setRunPlan((current) => markPlanStep(current, stages[0]?.id ?? nextStartStage, "running"));
       const response = await studyPipelinePost<PipelinePlanResponse>(
         courseId,
         "/plan",
-        planRequestBody(runMode, runStartStage, scope),
+        planRequestBody(nextMode, nextStartStage, scope),
       );
       setRunPlan(planStepsFromResponse(runId, stages, response.steps));
       if (response.response) {
@@ -288,9 +296,11 @@ export function CoursePipelineInspector({
             extractedDocuments={extractedDocuments}
             inventory={inventory}
             onRerunExtraction={(engine) => void rerunExtracted(engine)}
+            onRunNode={(request) => void runPipelinePlan(request)}
             onSelectedScopeChange={setSelectedScope}
             onSelectRun={(runId) => void selectActiveRun(runId)}
             rerunningEngine={rerunningEngine}
+            runningNodeAction={Boolean(runningPlanId) || loading}
             runs={runs}
             selectingRunId={selectingRunId}
             status={status}
