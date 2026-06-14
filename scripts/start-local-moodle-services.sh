@@ -29,6 +29,15 @@ if ! curl -sf "http://127.0.0.1:8080/healthz" >/dev/null; then
   exit 1
 fi
 
+echo "Applying local database migrations..."
+docker compose -f docker-compose.dev.yml exec -T postgres sh -lc '
+set -eu
+for file in /docker-entrypoint-initdb.d/*.sql; do
+  echo "Applying ${file}..."
+  psql -v ON_ERROR_STOP=1 -U moodle -d moodle -f "${file}" >/dev/null
+done
+'
+
 if [[ -f "$ENV_LOCAL" ]]; then
   python3 - <<'PY' "$ENV_LOCAL"
 from pathlib import Path

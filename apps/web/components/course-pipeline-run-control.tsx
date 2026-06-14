@@ -6,11 +6,17 @@ import type { BlueprintRunScope } from "@/components/course-pipeline-blueprint-m
 import type { StudyPipelineStatusResponse } from "@/components/study-pipeline-preview";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import type { CodexModelOption } from "@/hooks/use-codex-models";
 
 export type PipelineStageId = "inventory" | "raw" | "extracted" | "curated";
 export type PipelineRunMode = "single" | "from";
 export type PipelineScopeMode = "course" | "selected";
 type PipelineStepState = "failed" | "queued" | "running" | "succeeded";
+
+export type PipelineCodexSettings = {
+  model?: string;
+  reasoningEffort?: string;
+};
 
 export type PipelinePlanStep = {
   detail?: string;
@@ -40,8 +46,12 @@ export const PIPELINE_STAGES: Array<{ id: PipelineStageId; label: string }> = [
 
 export function PipelineRunControl({
   disabled,
+  codexModel,
+  codexModelOptions,
+  codexModelsLoading,
   mode,
   onModeChange,
+  onCodexModelChange,
   onRun,
   onScopeModeChange,
   onStartStageChange,
@@ -51,8 +61,12 @@ export function PipelineRunControl({
   startStage,
 }: {
   disabled: boolean;
+  codexModel: string;
+  codexModelOptions: CodexModelOption[];
+  codexModelsLoading: boolean;
   mode: PipelineRunMode;
   onModeChange: (mode: PipelineRunMode) => void;
+  onCodexModelChange: (model: string) => void;
   onRun: () => void;
   onScopeModeChange: (mode: PipelineScopeMode) => void;
   onStartStageChange: (stage: PipelineStageId) => void;
@@ -68,11 +82,15 @@ export function PipelineRunControl({
   const canUseSelection = Boolean(selectedScope && selectedScope.kind !== "course");
   const runLabel = mode === "single" ? "Schritt starten" : "Ab hier starten";
   const scopeLabel = effectiveScope.kind === "course" ? "Ganzer Kurs" : effectiveScope.label;
+  const includesCodex = stagesForPlan(mode, startStage).some((stage) => stage.id === "curated");
+  const modelOptions = codexModelOptions.length > 0
+    ? codexModelOptions.map((model) => ({ label: model.label || model.id, value: model.id }))
+    : [{ label: codexModelsLoading ? "Modelle laden" : "Default Codex", value: "" }];
 
   return (
     <section className="rounded-3xl bg-secondary/45 p-3 sm:p-4">
       <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <PipelineSelect
             disabled={disabled}
             label="Modus"
@@ -100,6 +118,15 @@ export function PipelineRunControl({
             ]}
             value={scopeMode === "selected" && canUseSelection ? "selected" : "course"}
           />
+          {includesCodex ? (
+            <PipelineSelect
+              disabled={disabled || codexModelsLoading}
+              label="Codex Modell"
+              onChange={onCodexModelChange}
+              options={modelOptions}
+              value={codexModelOptions.some((model) => model.id === codexModel) ? codexModel : ""}
+            />
+          ) : null}
         </div>
 
         <Button className="h-11 w-full rounded-full px-4 lg:w-fit" disabled={disabled} onClick={onRun} type="button">
@@ -151,9 +178,12 @@ export function stagesForPlan(mode: PipelineRunMode, startStage: PipelineStageId
   return PIPELINE_STAGES.slice(Math.max(0, startIndex));
 }
 
-export function planRequestBody(mode: PipelineRunMode, startStage: PipelineStageId, scope: BlueprintRunScope) {
+export function planRequestBody(mode: PipelineRunMode, startStage: PipelineStageId, scope: BlueprintRunScope, codex?: PipelineCodexSettings) {
+  const includesCodex = stagesForPlan(mode, startStage).some((stage) => stage.id === "curated");
   return {
     ...stageRequestBody(startStage, scope),
+    ...(includesCodex && codex?.model ? { model: codex.model } : {}),
+    ...(includesCodex && codex?.reasoningEffort ? { reasoningEffort: codex.reasoningEffort } : {}),
     mode,
     startStage,
   };

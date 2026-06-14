@@ -36,6 +36,7 @@ import type {
 import type { TaskViewResponse } from "@/components/task-study-panel";
 import type { Course } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
+import { useCodexModels } from "@/hooks/use-codex-models";
 import {
   derivePipelineGate,
   firstPipelineGateError,
@@ -72,6 +73,7 @@ export function CoursePipelineInspector({
   const [runStartStage, setRunStartStage] = useState<PipelineStageId>("extracted");
   const [runPlan, setRunPlan] = useState<PipelinePlanStep[]>([]);
   const [runningPlanId, setRunningPlanId] = useState<string | null>(null);
+  const codexModels = useCodexModels(courseId);
 
   const liveWork = useMemo(
     () => hasPipelineLiveWork({
@@ -272,7 +274,10 @@ export function CoursePipelineInspector({
       const response = await studyPipelinePost<PipelinePlanResponse>(
         courseId,
         "/plan",
-        planRequestBody(nextMode, nextStartStage, scope),
+        planRequestBody(nextMode, nextStartStage, scope, {
+          model: codexModels.selectedModel,
+          reasoningEffort: codexModels.selectedReasoningEffort,
+        }),
       );
       setRunPlan(planStepsFromResponse(runId, stages, response.steps));
       if (response.response) {
@@ -328,8 +333,12 @@ export function CoursePipelineInspector({
           {gate.kind === "ready" ? (
             <>
               <PipelineRunControl
+                codexModel={codexModels.selectedModel}
+                codexModelOptions={codexModels.models}
+                codexModelsLoading={codexModels.loading || codexModels.authChecking}
                 disabled={Boolean(runningPlanId) || loading}
                 mode={runMode}
+                onCodexModelChange={codexModels.setSelectedModel}
                 onModeChange={setRunMode}
                 onRun={() => void runPipelinePlan()}
                 onScopeModeChange={setRunScopeMode}
