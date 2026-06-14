@@ -40,6 +40,17 @@ type PipelinePlanStep = {
   stage: PipelineStageId;
 };
 
+type PipelinePlanResponse = {
+  courseId: string;
+  response?: StudyPipelineStatusResponse;
+  status: "failed" | "succeeded" | string;
+  steps: Array<{
+    error?: string;
+    stage: PipelineStageId;
+    status: PipelineStepState | string;
+  }>;
+};
+
 const PIPELINE_STAGES: Array<{ id: PipelineStageId; label: string }> = [
   { id: "inventory", label: "Inventory" },
   { id: "raw", label: "Raw import" },
@@ -207,16 +218,21 @@ export function CoursePipelineInspector({
     })));
 
     try {
-      for (const stage of stages) {
-        setRunPlan((current) => markPlanStep(current, stage.id, "running"));
-        const response = await studyPipelinePost<StudyPipelineStatusResponse>(
-          courseId,
-          `/${stage.id}`,
-          stageRequestBody(stage.id, scope),
-        );
-        setStatus(response);
-        setRunPlan((current) => markPlanStep(current, stage.id, "succeeded"));
-        await loadInspectorData({ silent: true });
+      setRunPlan((current) => markPlanStep(current, stages[0]?.id ?? runStartStage, "running"));
+      const response = await studyPipelinePost<PipelinePlanResponse>(
+        courseId,
+        "/plan",
+        planRequestBody(runMode, runStartStage, scope),
+      );
+      setRunPlan(planStepsFromResponse(runId, stages, response.steps));
+      if (response.response) {
+        setStatus(response.response);
+      }
+      if (response.status === "failed") {
+        const failedStep = response.steps.find((step) => step.status === "failed");
+        if (failedStep?.error) {
+          setError(failedStep.error);
+        }
       }
     } catch (runError) {
       setRunPlan((current) => markRunningPlanStepFailed(current, formatStudyPipelineError(runError)));
@@ -319,51 +335,54 @@ function PipelineRunControl({
   const running = plan.some((step) => step.state === "running");
   const completed = plan.filter((step) => step.state === "succeeded").length;
   const percent = plan.length === 0 ? 0 : Math.round((completed / plan.length) * 100);
-  const selectedDisabled = !selectedScope;
+  const canUseSelection = Boolean(selectedScope && selectedScope.kind !== "course");
+  const runLabel = mode === "single" ? "Schritt starten" : "Ab hier starten";
+  const scopeLabel = effectiveScope.kind === "course" ? "Ganzer Kurs" : effectiveScope.label;
 
   return (
-    <section className="rounded-3xl bg-secondary/45 px-4 py-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <ModeButton active={mode === "from"} disabled={disabled} label="Ab Schritt" onClick={() => onModeChange("from")} />
-            <ModeButton active={mode === "single"} disabled={disabled} label="Nur Schritt" onClick={() => onModeChange("single")} />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {PIPELINE_STAGES.map((stage) => (
-              <ModeButton
-                active={startStage === stage.id}
-                disabled={disabled}
-                key={stage.id}
-                label={stage.label}
-                onClick={() => onStartStageChange(stage.id)}
-              />
-            ))}
-          </div>
+    <section className="rounded-3xl bg-secondary/45 p-3 sm:p-4">
+      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <PipelineSelect
+            disabled={disabled}
+            label="Modus"
+            onChange={(value) => onModeChange(value as PipelineRunMode)}
+            options={[
+              { label: "Ab Schritt", value: "from" },
+              { label: "Nur Schritt", value: "single" },
+            ]}
+            value={mode}
+          />
+          <PipelineSelect
+            disabled={disabled}
+            label="Start"
+            onChange={(value) => onStartStageChange(value as PipelineStageId)}
+            options={PIPELINE_STAGES.map((stage) => ({ label: stage.label, value: stage.id }))}
+            value={startStage}
+          />
+          <PipelineSelect
+            disabled={disabled}
+            label="Scope"
+            onChange={(value) => onScopeModeChange(value as PipelineScopeMode)}
+            options={[
+              { label: "Ganzer Kurs", value: "course" },
+              { disabled: !canUseSelection, label: "Auswahl", value: "selected" },
+            ]}
+            value={scopeMode === "selected" && canUseSelection ? "selected" : "course"}
+          />
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 xl:items-end">
-          <div className="flex flex-wrap gap-2">
-            <ModeButton active={scopeMode === "course"} disabled={disabled} label="Ganzer Kurs" onClick={() => onScopeModeChange("course")} />
-            <ModeButton
-              active={scopeMode === "selected"}
-              disabled={disabled || selectedDisabled}
-              label="Auswahl"
-              onClick={() => onScopeModeChange("selected")}
-            />
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <p className="min-w-0 truncate text-sm text-muted-foreground">
-              Scope: <span className="font-medium text-foreground">{effectiveScope.label}</span>
-              {effectiveScope.resourceIds.length > 0 ? ` · ${effectiveScope.resourceIds.length} resource${effectiveScope.resourceIds.length === 1 ? "" : "s"}` : ""}
-            </p>
-            <Button className="w-fit rounded-full" disabled={disabled} onClick={onRun} type="button">
-              {running ? <Spinner aria-hidden /> : <Play aria-hidden />}
-              {mode === "single" ? "Schritt starten" : "Ab hier starten"}
-            </Button>
-          </div>
-        </div>
+        <Button className="h-11 w-full rounded-full px-4 lg:w-fit" disabled={disabled} onClick={onRun} type="button">
+          {running ? <Spinner aria-hidden /> : <Play aria-hidden />}
+          {runLabel}
+        </Button>
       </div>
+
+      <p className="mt-2 truncate text-xs text-muted-foreground">
+        {running ? "Server-Run läuft. Seite kann geschlossen werden. " : ""}
+        Scope: <span className="font-medium text-foreground">{scopeLabel}</span>
+        {effectiveScope.resourceIds.length > 0 ? ` · ${effectiveScope.resourceIds.length} resource${effectiveScope.resourceIds.length === 1 ? "" : "s"}` : ""}
+      </p>
 
       {plan.length > 0 ? (
         <div className="mt-4">
@@ -385,28 +404,35 @@ function PipelineRunControl({
   );
 }
 
-function ModeButton({
-  active,
+function PipelineSelect({
   disabled,
   label,
-  onClick,
+  onChange,
+  options,
+  value,
 }: {
-  active: boolean;
   disabled: boolean;
   label: string;
-  onClick: () => void;
+  onChange: (value: string) => void;
+  options: Array<{ disabled?: boolean; label: string; value: string }>;
+  value: string;
 }) {
   return (
-    <button
-      className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
-        active ? "bg-foreground text-background" : "bg-background/70 text-muted-foreground hover:text-foreground"
-      } disabled:cursor-not-allowed disabled:opacity-45`}
-      disabled={disabled}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
+    <label className="grid gap-1">
+      <span className="px-1 text-xs font-medium text-muted-foreground">{label}</span>
+      <select
+        className="h-11 min-w-0 rounded-full bg-background px-4 text-sm font-semibold text-foreground outline-none transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option disabled={option.disabled} key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -472,6 +498,52 @@ function stageRequestBody(stage: PipelineStageId, scope: BlueprintRunScope) {
     ...(stage === "extracted" ? { configHash: "config:extracted:pdftotext:default", engine: "pdftotext" } : {}),
     ...(scope.resourceIds.length > 0 ? { resourceIds: scope.resourceIds } : {}),
   };
+}
+
+function planRequestBody(mode: PipelineRunMode, startStage: PipelineStageId, scope: BlueprintRunScope) {
+  return {
+    ...stageRequestBody(startStage, scope),
+    mode,
+    startStage,
+  };
+}
+
+function planStepsFromResponse(
+  runId: string,
+  expectedStages: Array<{ id: PipelineStageId; label: string }>,
+  responseSteps: PipelinePlanResponse["steps"],
+): PipelinePlanStep[] {
+  const labels = new Map(PIPELINE_STAGES.map((stage) => [stage.id, stage.label]));
+  const expectedIds = new Set(expectedStages.map((stage) => stage.id));
+  const normalized = responseSteps
+    .filter((step) => expectedIds.has(step.stage))
+    .map((step) => ({
+      detail: step.error,
+      id: `${runId}:${step.stage}`,
+      label: labels.get(step.stage) ?? step.stage,
+      state: normalizePlanStepState(step.status),
+      stage: step.stage,
+    }));
+  return normalized.length > 0
+    ? normalized
+    : expectedStages.map((stage) => ({
+      id: `${runId}:${stage.id}`,
+      label: stage.label,
+      state: "queued",
+      stage: stage.id,
+    }));
+}
+
+function normalizePlanStepState(state: string): PipelineStepState {
+  switch (state) {
+    case "failed":
+    case "queued":
+    case "running":
+    case "succeeded":
+      return state;
+    default:
+      return "queued";
+  }
 }
 
 function markPlanStep(plan: PipelinePlanStep[], stage: PipelineStageId, state: PipelineStepState): PipelinePlanStep[] {
