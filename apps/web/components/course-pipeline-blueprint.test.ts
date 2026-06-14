@@ -445,8 +445,68 @@ describe("course pipeline blueprint graph", () => {
 
     const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
     expect(firstTaskGroup?.data.hiddenItems).toHaveLength(11);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]).toBe("Aufgabenblatt 2");
-    expect(firstTaskGroup?.data.hiddenItems?.at(-1)).toBe("Aufgabenblatt 12");
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.id).toBe("sheet-2");
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.selected).toBe(false);
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 2");
+    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.id).toBe("sheet-12");
+    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.selected).toBe(false);
+    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.title).toBe("Aufgabenblatt 12");
+  });
+
+  test("shows selected hidden task groups as full pipeline lanes", () => {
+    const manyTaskGroups: CourseInventoryResponse = {
+      ...inventory,
+      summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
+      taskGroups: Array.from({ length: 12 }, (_, index) => {
+        const number = index + 1;
+        return {
+          id: `sheet-${number}`,
+          pairingConfidence: "high",
+          pairingReason: "Sheet and solution numbers match.",
+          pairingStatus: "paired" as const,
+          sheet: {
+            bucket: "task_sheet" as const,
+            confidence: "high" as const,
+            id: `sheet-${number}`,
+            name: `Aufgabenblatt ${number}`,
+            reason: "Task sheet",
+            role: "sheet" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          solution: {
+            bucket: "solution" as const,
+            confidence: "high" as const,
+            id: `solution-${number}`,
+            name: `Aufgabenblatt ${number} Lösung`,
+            reason: "Solution sheet",
+            role: "solution" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          title: `Aufgabenblatt ${number}`,
+        };
+      }).reverse(),
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments: null,
+      inventory: manyTaskGroups,
+      runs: null,
+      selectedTaskGroupIds: ["sheet-2"],
+      status,
+      taskView: null,
+    });
+    const titles = graph.nodes.map((node) => node.data.title);
+
+    expect(titles).toContain("Aufgabenblatt 1");
+    expect(titles).toContain("Aufgabenblatt 2");
+    expect(titles).not.toContain("Aufgabenblatt 12");
+
+    const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
+    const selectedItem = firstTaskGroup?.data.hiddenItems?.find((item) => item.id === "sheet-2");
+    expect(selectedItem?.selected).toBe(true);
+    expect(selectedItem?.title).toBe("Aufgabenblatt 2");
   });
 
   test("does not project global runs onto resource-specific extraction nodes", () => {

@@ -117,6 +117,12 @@ export type BlueprintPort = {
   state?: string;
 };
 
+export type BlueprintHiddenItem = {
+  id: string;
+  title: string;
+  selected: boolean;
+};
+
 export type BlueprintRenderedField = {
   label: string;
   path: string;
@@ -172,11 +178,12 @@ export type BlueprintNodeData = {
   bodyData?: unknown;
   config?: Array<{ label: string; value: string }>;
   evidence?: string[];
-  hiddenItems?: string[];
+  hiddenItems?: BlueprintHiddenItem[];
   inputs: BlueprintPort[];
   meta: Array<{ label: string; value: string }>;
   live?: BlueprintLiveState;
   onSelect?: (nodeId: string) => void;
+  onToggleHiddenItem?: (itemId: string) => void;
   onRunFromNode?: (request: BlueprintRunRequest) => void;
   outputPreview?: string;
   outputs: BlueprintPort[];
@@ -228,6 +235,7 @@ type CoursePipelineBlueprintModelInput = {
   runs: PipelineRunsResponse | null;
   status: StudyPipelineStatusResponse | null;
   taskView: TaskViewResponse | null;
+  selectedTaskGroupIds?: string[];
   unavailable?: {
     extractedDocuments?: string;
     inventory?: string;
@@ -253,6 +261,7 @@ export function buildBlueprintGraph({
   inventory,
   runs,
   status,
+  selectedTaskGroupIds,
   taskView,
   unavailable,
 }: CoursePipelineBlueprintModelInput): { nodes: BlueprintGraphNode[]; edges: Edge[] } {
@@ -266,8 +275,8 @@ export function buildBlueprintGraph({
   const usingDerivedInventory = !inventory && Boolean(derivedInventory);
   const taskGroups = sortTaskGroups(derivedInventory?.taskGroups ?? []);
   const scriptResources = sortInventoryNodes(derivedInventory?.lectureMaterial ?? []);
-  const visibleTaskGroups = visibleBoundaryItems(taskGroups, MAX_TASK_GROUPS);
-  const hiddenTaskGroups = hiddenBoundaryItems(taskGroups, MAX_TASK_GROUPS);
+  const visibleTaskGroups = visibleTaskGroupItems(taskGroups, selectedTaskGroupIds ?? []);
+  const hiddenTaskGroups = taskGroups.length > MAX_TASK_GROUPS ? hiddenTaskGroupItems(taskGroups, visibleTaskGroups) : [];
   const visibleScriptResources = scriptResources.slice(0, MAX_SCRIPT_GROUPS);
   const totalResources = status?.summary.totalResources ?? derivedInventory?.summary.totalResources ?? 0;
   const centerY = 760;
@@ -413,6 +422,11 @@ export function buildBlueprintGraph({
       runLookup,
       y: taskLaneStartY + index * taskLaneGap,
       hiddenSiblingTitles: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => hiddenGroup.title) : undefined,
+      hiddenSiblingItems: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => ({
+        id: hiddenGroup.id,
+        selected: selectedTaskGroupIds?.includes(hiddenGroup.id) ?? false,
+        title: hiddenGroup.title,
+      })) : undefined,
     });
   });
 
@@ -780,14 +794,21 @@ function sortInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[]
   return [...nodes].sort((a, b) => naturalCompare(a.name, b.name));
 }
 
-function visibleBoundaryItems<T>(items: T[], maxItems: number): T[] {
-  if (items.length <= maxItems) return items;
-  return items.slice(0, 1);
+function visibleTaskGroupItems(
+  items: CourseInventoryResponse["taskGroups"],
+  selectedIds: string[],
+): CourseInventoryResponse["taskGroups"] {
+  if (items.length <= MAX_TASK_GROUPS) return items;
+  const selectedIdSet = new Set(selectedIds);
+  return items.filter((item, index) => index === 0 || selectedIdSet.has(item.id));
 }
 
-function hiddenBoundaryItems<T>(items: T[], maxItems: number): T[] {
-  if (items.length <= maxItems) return [];
-  return items.slice(1);
+function hiddenTaskGroupItems(
+  items: CourseInventoryResponse["taskGroups"],
+  visibleItems: CourseInventoryResponse["taskGroups"],
+): CourseInventoryResponse["taskGroups"] {
+  const visibleIds = new Set(visibleItems.map((item) => item.id));
+  return items.filter((item, index) => index > 0 || !visibleIds.has(item.id));
 }
 
 function naturalCompare(left: string, right: string): number {

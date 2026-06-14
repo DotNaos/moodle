@@ -43,6 +43,7 @@ export function addTaskGroupLane({
   edges,
   extractedLookup,
   group,
+  hiddenSiblingItems,
   hiddenSiblingTitles,
   index,
   nodes,
@@ -54,6 +55,7 @@ export function addTaskGroupLane({
   edges: Edge[];
   extractedLookup: ExtractedLookup;
   group: CourseInventoryTaskGroup;
+  hiddenSiblingItems?: BlueprintNodeData["hiddenItems"];
   hiddenSiblingTitles?: string[];
   index: number;
   nodes: BlueprintGraphNode[];
@@ -95,7 +97,7 @@ export function addTaskGroupLane({
         group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
         `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
       ],
-      hiddenItems: hiddenSiblingTitles,
+      hiddenItems: hiddenSiblingItems ?? hiddenSiblingTitles?.map((title) => ({ id: title, selected: false, title })),
       inputs: [{ label: "task group", detail: "classified Moodle resources" }],
       outputs: [
         { label: "sheet pdf", detail: group.sheet.name },

@@ -125,9 +125,10 @@ export function CoursePipelineBlueprint({
   unavailable,
 }: CoursePipelineBlueprintProps) {
   const [edgeStyle, setEdgeStyle] = useState<"rounded" | "square">("rounded");
+  const [selectedTaskGroupIds, setSelectedTaskGroupIds] = useState<string[]>([]);
   const graph = useMemo(
-    () => buildBlueprintGraph({ extractedDocuments, inventory, runs, status, taskView, unavailable }),
-    [extractedDocuments, inventory, runs, status, taskView, unavailable],
+    () => buildBlueprintGraph({ extractedDocuments, inventory, runs, selectedTaskGroupIds, status, taskView, unavailable }),
+    [extractedDocuments, inventory, runs, selectedTaskGroupIds, status, taskView, unavailable],
   );
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
   const visibleEdges = useMemo(
@@ -172,6 +173,13 @@ export function CoursePipelineBlueprint({
             ...node.data,
             onRunFromNode: onRunNode,
             onSelect: setSelectedNodeId,
+            onToggleHiddenItem: (itemId: string) => {
+              setSelectedTaskGroupIds((current) => (
+                current.includes(itemId)
+                  ? current.filter((id) => id !== itemId)
+                  : [...current, itemId]
+              ));
+            },
             runActionDisabled: Boolean(runningNodeAction),
             runActionRunning: Boolean(runningNodeAction),
           }
@@ -576,7 +584,12 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
             <NodePreviewContent preview={preview} size="node" />
           </div>
         </div>
-        {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
+        {data.hiddenItems?.length ? (
+          <HiddenItemsDisclosure
+            items={data.hiddenItems}
+            onToggle={data.onToggleHiddenItem}
+          />
+        ) : null}
       </div>
       <NodePreviewDialog
         onOpenChange={setPreviewOpen}
@@ -769,20 +782,42 @@ function compactNodeJsonPreview(text: string): string {
   return compact;
 }
 
-function HiddenItemsDisclosure({ items }: { items: string[] }) {
+function HiddenItemsDisclosure({
+  items,
+  onToggle,
+}: {
+  items: NonNullable<BlueprintNode["data"]["hiddenItems"]>;
+  onToggle?: (itemId: string) => void;
+}) {
+  const selectedCount = items.filter((item) => item.selected).length;
   return (
     <details
-      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-1.5 text-[11px] leading-4 text-foreground/80"
+      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-2 text-[11px] leading-4 text-foreground/80"
       onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
-      <summary className="cursor-pointer list-none truncate font-semibold text-foreground/75">
-        {items.length} more task group{items.length === 1 ? "" : "s"}
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-semibold text-foreground/75">
+        <span className="truncate">{items.length} weitere Aufgabenblätter</span>
+        <span className="shrink-0 rounded-full bg-background/75 px-2 py-0.5 text-[10px] text-muted-foreground">
+          {selectedCount} sichtbar
+        </span>
       </summary>
-      <div className="mt-1 grid max-h-14 gap-1 overflow-auto pr-1">
+      <div className="mt-2 grid max-h-44 gap-1 overflow-auto pr-1">
         {items.map((item) => (
-          <label className="flex min-w-0 items-center gap-1.5" key={item}>
-            <input className="size-3 accent-emerald-500" readOnly type="checkbox" />
-            <span className="truncate">{item}</span>
+          <label
+            className={cn(
+              "flex min-w-0 cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 transition-colors",
+              item.selected ? "bg-background/90 text-foreground" : "hover:bg-background/70",
+            )}
+            key={item.id}
+          >
+            <input
+              checked={item.selected}
+              className="size-3 accent-emerald-500"
+              onChange={() => onToggle?.(item.id)}
+              type="checkbox"
+            />
+            <span className="truncate">{item.title}</span>
           </label>
         ))}
       </div>
