@@ -22,11 +22,11 @@ export async function POST(request: Request, context: RouteContext) {
 async function proxyStudyPipeline(request: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401);
   }
   const session = await resolveMoodleSession(userId);
   if (!session.ok) {
-    return moodleNotConnectedResponse(session.error);
+    return pipelineBlockedResponse(session.code, session.error);
   }
 
   const params = await context.params;
@@ -76,7 +76,8 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
 
   const restored = await restoreMoodleSession(userId);
   if (!restored.ok) {
-    return proxyServiceResponse(upstreamResponse);
+    await clearMoodleSessionCookie();
+    return pipelineBlockedResponse(restored.code, restored.error);
   }
   const retryHeaders = studyPipelineHeaders(userId, restored.session.apiKey);
   if (accept) {
@@ -91,6 +92,14 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
     headers: retryHeaders,
     body,
   });
+
+  if (retryResponse.status === 401) {
+    await clearMoodleSessionCookie();
+    return pipelineBlockedResponse(
+      "moodle_session_expired",
+      "Moodle session could not be verified. Reconnect Moodle before opening the pipeline.",
+    );
+  }
 
   return proxyServiceResponse(retryResponse);
 }
@@ -133,7 +142,7 @@ type MoodleSessionState = {
   createdAt: number;
 };
 
-type SessionResult = { ok: true; session: MoodleSessionState } | { ok: false; error?: string };
+type SessionResult = { ok: true; session: MoodleSessionState } | { ok: false; code: string; error: string };
 
 async function resolveMoodleSession(userId: string): Promise<SessionResult> {
   const cookieStore = await cookies();
@@ -149,7 +158,11 @@ async function restoreMoodleSession(userId: string): Promise<SessionResult> {
   try {
     internalSecret = getMoodleInternalSecret();
   } catch (error) {
-    return { ok: false, error: getErrorMessage(error) };
+    return {
+      code: "backend_auth_misconfigured",
+      error: getErrorMessage(error),
+      ok: false,
+    };
   }
 
   const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/auth/clerk/session`, {
@@ -165,7 +178,13 @@ async function restoreMoodleSession(userId: string): Promise<SessionResult> {
 
   const payload = await readServiceJSON<SessionRestorePayload>(upstreamResponse);
   if (!upstreamResponse.ok || !payload.apiKey) {
-    return { ok: false, error: payload.error };
+    return {
+      code: upstreamResponse.status === 401 || upstreamResponse.status === 403
+        ? "backend_auth_misconfigured"
+        : "moodle_not_connected",
+      error: payload.error ?? "Connect your Moodle account first.",
+      ok: false,
+    };
   }
 
   const session = {
@@ -178,14 +197,19 @@ async function restoreMoodleSession(userId: string): Promise<SessionResult> {
   return { ok: true, session };
 }
 
-function moodleNotConnectedResponse(error?: string) {
+function pipelineBlockedResponse(code: string, error: string, status = code === "unauthenticated" ? 401 : 409) {
   return Response.json(
     {
-      code: "moodle_not_connected",
-      error: error ?? "Connect your Moodle account first.",
+      code,
+      error,
     },
-    { status: 409 },
+    { status },
   );
+}
+
+async function clearMoodleSessionCookie() {
+  const cookieStore = await cookies();
+  cookieStore.delete(MOODLE_SESSION_COOKIE);
 }
 
 function sessionCookieOptions() {

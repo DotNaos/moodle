@@ -2,6 +2,7 @@
 
 import { AlertCircle, History, MessagesSquare, SquarePen, X } from "lucide-react";
 import { Show, useAuth } from "@clerk/nextjs";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -31,8 +32,8 @@ import { CoursesHomePanel } from "@/components/courses-home-panel";
 import { DesktopCourseSidebar } from "@/components/desktop-course-sidebar";
 import { HomeOverview } from "@/components/home-overview";
 import { MobileDrilldownBar } from "@/components/mobile-drilldown-bar";
+import { MobileQuickChat } from "@/components/mobile-quick-chat";
 import { MobileTabBar, type MobileTab } from "@/components/mobile-tab-bar";
-import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import {
   CalendarEventDetailPanel,
   CalendarEventsPanel,
@@ -67,7 +68,6 @@ import {
 import {
   apiRequest,
   getErrorMessage,
-  getMoodleConnectionMessage,
   isMoodleNotConnected,
   pruneMaterialCache,
 } from "@/lib/moodle-api";
@@ -98,6 +98,9 @@ const CHAT_SIDEBAR_MAX_WIDTH = 640;
 
 export default function Home() {
   const { isLoaded, isSignedIn, userId } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const navigator = useNavigator();
   const userSettings = useUserSettings();
   const { path, document: activeDocument } = navigator.state;
@@ -113,7 +116,6 @@ export default function Home() {
   const [materialsLoading, setMaterialsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsConnection, setNeedsConnection] = useState(false);
-  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") {
@@ -314,7 +316,6 @@ export default function Home() {
     setSelectedCategory("all");
     setMaterialsLoading(false);
     setNeedsConnection(true);
-    setConnectionMessage(getMoodleConnectionMessage(disconnectError));
     setError(null);
   }
 
@@ -377,7 +378,6 @@ export default function Home() {
     setLoading(!options.background && courses.length === 0);
     setRefreshing(options.background || courses.length > 0);
     setError(null);
-    setConnectionMessage(null);
 
     try {
       const [userResponse, coursesResponse] = await Promise.all([
@@ -397,7 +397,6 @@ export default function Home() {
       setMaterialsByCourseId(nextMaterialsByCourseId);
       setLoadedMaterialsByCourseId(nextLoadedMaterialsByCourseId);
       setNeedsConnection(false);
-      setConnectionMessage(null);
       setSelectedCategory(nextSelectedCategory);
       writeDashboardCache(userId, {
         user: userResponse,
@@ -412,7 +411,6 @@ export default function Home() {
         handleMoodleDisconnected(loadError);
       } else {
         setNeedsConnection(false);
-        setConnectionMessage(null);
         setError(getErrorMessage(loadError));
       }
     } finally {
@@ -439,7 +437,6 @@ export default function Home() {
       setSelectedCategory("all");
       setError(null);
       setNeedsConnection(false);
-      setConnectionMessage(null);
       return;
     }
     if (!userId || dashboardBootstrappedUserIdRef.current === userId) {
@@ -455,7 +452,6 @@ export default function Home() {
       setLoadedMaterialsByCourseId(loadedMaterialsFor(cached.materialsByCourseId));
       setSelectedCategory(cached.selectedCategory);
       setNeedsConnection(false);
-      setConnectionMessage(null);
       setError(null);
     }
     void loadDashboard({ background: Boolean(cached) });
@@ -469,6 +465,13 @@ export default function Home() {
     }
     void ensureCourseMaterials(activeCourseId);
   }, [activeCourseId, ensureCourseMaterials, isSignedIn, needsConnection]);
+
+  useEffect(() => {
+    if (!isSignedIn || !needsConnection) return;
+    const query = searchParams.toString();
+    const next = `${pathname}${query ? `?${query}` : ""}`;
+    router.replace(`/moodle/connect?next=${encodeURIComponent(next)}`);
+  }, [isSignedIn, needsConnection, pathname, router, searchParams]);
 
   // Load recordings when browsing the recordings list or opening a recording.
   const recordingsCourseId = studyMode === "recordings" ? activeCourseId : null;
@@ -1043,16 +1046,7 @@ export default function Home() {
           {error ? <DashboardToast message={error} onDismiss={() => setError(null)} /> : null}
 
           {needsConnection ? (
-            <section className="min-h-0 flex-1 overflow-auto px-4 py-4">
-              <MoodleConnectCard
-                reason={connectionMessage}
-                onConnected={() => {
-                  setNeedsConnection(false);
-                  setConnectionMessage(null);
-                  void loadDashboard();
-                }}
-              />
-            </section>
+            <FullPageLoading />
           ) : (
             <div className="flex min-h-0 w-full flex-1">
               <DesktopCourseSidebar

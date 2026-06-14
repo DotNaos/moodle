@@ -111,7 +111,7 @@ export function CourseMainPanel({
 
   if (studyMode === "pipeline") {
     return courseId ? (
-      <CoursePipelineInspector course={course ?? courseFallbackFromRoute(courseId)} courseId={courseId} />
+      <CoursePipelineInspector course={course} courseId={courseId} />
     ) : (
       <CoursePanelShell>
         <NoCourseSelected />
@@ -248,14 +248,6 @@ export function CourseMainPanel({
       <NoCourseSelected />
     </CoursePanelShell>
   );
-}
-
-function courseFallbackFromRoute(courseId: string): Course {
-  return {
-    id: courseId,
-    fullName: `Course ${courseId}`,
-    shortName: courseId,
-  };
 }
 
 function CoursePanelShell({ children, course }: { children: ReactNode; course?: Course | null }) {
