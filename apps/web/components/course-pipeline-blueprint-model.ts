@@ -206,6 +206,7 @@ export type ExtractedLookup = {
 
 export type TaskOutputRecord = TaskViewResponse["sheets"][number]["tasks"][number] & {
   sheetTitle: string;
+  solutionMarkdown?: string;
   solutionResourceId?: string;
   solutionTitle?: string;
 };
@@ -691,6 +692,7 @@ function buildOutputLookup(taskView: TaskViewResponse | null): OutputLookup {
       const output = {
         ...task,
         sheetTitle: sheet.title,
+        solutionMarkdown: sheet.solutionMarkdown,
         solutionResourceId: sheet.solutionResourceId,
         solutionTitle: sheet.solutionTitle,
       };

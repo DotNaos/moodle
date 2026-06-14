@@ -67,6 +67,7 @@ export function buildTaskOutputLossDiagnostics({
 function outputMarkdownForTask(output: TaskOutputRecord): string {
   return [
     output.promptMarkdown,
+    output.solutionMarkdown,
     ...output.parts.map((part) => part.promptMarkdown),
   ].filter(Boolean).join("\n\n");
 }

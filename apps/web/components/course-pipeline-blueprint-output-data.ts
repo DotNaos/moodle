@@ -164,6 +164,7 @@ function taskOutputBodyData({
       sheetTitle: output.sheetTitle,
       solutionResourceId: output.solutionResourceId ?? null,
       solutionTitle: output.solutionTitle ?? null,
+      solutionMarkdown: output.solutionMarkdown ?? null,
       promptMarkdown: output.promptMarkdown,
       parts: output.parts,
       contentState: output.contentState ?? null,
@@ -214,6 +215,14 @@ function taskOutputRenderedFields(
         path: `outputs[${outputIndex}].promptMarkdown`,
         type: "markdown",
         value: output.promptMarkdown,
+      });
+    }
+    if (output.solutionMarkdown?.trim()) {
+      fields.push({
+        label: output.solutionTitle ? `${output.solutionTitle} · Lösung` : `${output.title} · Lösung`,
+        path: `outputs[${outputIndex}].solutionMarkdown`,
+        type: "markdown",
+        value: output.solutionMarkdown,
       });
     }
     for (const [partIndex, part] of output.parts.entries()) {
