@@ -451,10 +451,14 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const Icon = nodeIcon(data.tone);
   const preview = useMemo(() => buildPipelineNodePreview(data), [data]);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const blockingProblems = (data.problems ?? []).filter((problem) => problem.severity === "error");
+  const primaryProblem = blockingProblems[0] ?? data.problems?.[0] ?? null;
+  const failed = data.status === "failed" || data.live?.status === "failed" || blockingProblems.length > 0;
   return (
     <div
       className={cn(
         "relative min-h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
+        failed ? "bg-destructive/5 shadow-destructive/20 ring-2 ring-destructive/55" : "",
         liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
       )}
@@ -490,6 +494,20 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
           <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
         </div>
         <ChannelRows inputs={data.inputs} outputs={data.outputs} />
+
+        {primaryProblem ? (
+          <div className="mt-3 rounded-2xl bg-destructive/10 px-3 py-2 text-destructive">
+            <div className="flex items-start gap-2">
+              <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold leading-4">{primaryProblem.label}</p>
+                <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-destructive/85">
+                  {primaryProblem.detail}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-3 rounded-2xl bg-secondary/45 px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
