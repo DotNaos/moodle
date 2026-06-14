@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 
+import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { decodeMoodleSession, encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
 import { getMoodleInternalSecret, MOODLE_SERVICES_URL, proxyServiceResponse, readServiceJSON } from "@/lib/moodle-services";
 
@@ -23,6 +24,17 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
     return pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401);
+  }
+  const backendGate = await checkBackendPreflight(userId);
+  if (backendGate.state === "blocked") {
+    return pipelineBlockedResponse(
+      backendGate.code,
+      backendGate.error ?? "Moodle backend is not ready for the pipeline.",
+      backendGate.status,
+    );
+  }
+  if (backendGate.state === "needs_moodle_connect") {
+    return pipelineBlockedResponse("moodle_not_connected", "Connect Moodle before opening the pipeline.", 409);
   }
   const session = await resolveMoodleSession(userId);
   if (!session.ok) {

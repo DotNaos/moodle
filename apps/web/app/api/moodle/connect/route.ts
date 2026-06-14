@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 
+import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
 import {
   getMoodleInternalSecret,
@@ -26,6 +27,17 @@ export async function POST(request: Request) {
         error: "Sign in before connecting Moodle.",
       },
       { status: 401 },
+    );
+  }
+
+  const backendGate = await checkBackendPreflight(userId);
+  if (backendGate.state === "blocked") {
+    return Response.json(
+      {
+        code: backendGate.code,
+        error: backendGate.error ?? "Moodle backend is not ready for login.",
+      },
+      { status: backendGate.status },
     );
   }
 

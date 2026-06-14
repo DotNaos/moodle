@@ -109,7 +109,14 @@ function isBlockingPipelineError(error: PipelineGateError): boolean {
     code === "moodle_session_expired" ||
     code === "moodle_access_denied" ||
     code === "pipeline_access_unverified" ||
-    code === "backend_auth_misconfigured"
+    code === "backend_auth_misconfigured" ||
+    code === "backend_internal_secret_missing" ||
+    code === "backend_profile_invalid" ||
+    code === "backend_profile_mismatch" ||
+    code === "backend_profile_mixed_secret" ||
+    code === "backend_session_check_failed" ||
+    code === "backend_trust_failed" ||
+    code === "backend_unreachable"
   ) {
     return true;
   }

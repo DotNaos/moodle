@@ -22,7 +22,15 @@ type BridgeStartResponse = {
 };
 
 type ConnectResponse = {
-  code?: "app_session_missing" | "moodle_connect_failed" | "moodle_login_failed";
+  code?:
+    | "app_session_missing"
+    | "backend_trust_failed"
+    | "backend_unreachable"
+    | "backend_profile_mismatch"
+    | "backend_profile_mixed_secret"
+    | "backend_internal_secret_missing"
+    | "moodle_connect_failed"
+    | "moodle_login_failed";
   error?: string;
 };
 
