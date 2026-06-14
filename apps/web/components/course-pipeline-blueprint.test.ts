@@ -896,6 +896,51 @@ describe("course pipeline blueprint graph", () => {
     expect(outputNode?.data.meta.find((item) => item.label === "Unresolved elements")?.value).toBe("0");
   });
 
+  test("does not mark solution images as lost when the final solution references the asset", () => {
+    const extractedDocumentsWithSolutionImage: ExtractedDocumentsResponse = {
+      ...extractedDocuments,
+      documents: extractedDocuments.documents.map((document) => {
+        if (document.id !== "document-947712") return document;
+        return {
+          ...document,
+          assets: [{ id: "solution-img-1", kind: "embedded_image", mimeType: "image/png", pageNumber: 1, path: "/assets/solution-img-1.png" }],
+          pages: document.pages.map((page) => ({
+            ...page,
+            blocks: [
+              ...page.blocks,
+              { assetId: "solution-img-1", id: "solution-image-block", pageNumber: 1, type: "image" },
+            ],
+          })),
+        };
+      }),
+    };
+    const taskViewWithSolutionImage: TaskViewResponse = {
+      ...taskView,
+      sheets: taskView.sheets.map((sheet) => ({
+        ...sheet,
+        solutionMarkdown: "## Lösung\n\n![Lösungsdiagramm](/assets/solution-img-1.png)",
+        tasks: sheet.tasks.map((task) => ({
+          ...task,
+          promptMarkdown: `${task.promptMarkdown}\n\n![Aufgabendiagramm](/assets/img-1.png)`,
+        })),
+      })),
+    };
+    const graph = buildBlueprintGraph({
+      extractedDocuments: extractedDocumentsWithSolutionImage,
+      inventory,
+      runs: resourceRuns,
+      status,
+      taskView: taskViewWithSolutionImage,
+    });
+    const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
+    const problemLabels = outputNode?.data.problems?.map((problem) => problem.label) ?? [];
+
+    expect(problemLabels).not.toContain("Element accountability required");
+    expect(outputNode?.data.evidence).toContain("2 extracted source image blocks checked");
+    expect(outputNode?.data.evidence).toContain("2 final output image references found");
+    expect(outputNode?.data.meta.find((item) => item.label === "Unresolved elements")?.value).toBe("0");
+  });
+
   test("traces a final task output back to its source documents", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const outputNode = graph.nodes.find((node) => node.data.title === "Aufgabe 1");
