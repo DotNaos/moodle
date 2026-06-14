@@ -561,6 +561,19 @@ describe("script markdown renderer", () => {
     expect(html).not.toContain("&lt;figure&gt;");
   });
 
+  test("renders study pipeline extracted asset figures as images", () => {
+    const html = renderScriptMarkdownHTML([
+      "<figure>",
+      '  <img src="/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=%2Fdata%2Fstudy%2Fcourses%2F22584%2Fextracted%2Fruns%2Frun-1%2Fassets%2F947711%2Fimages%2Fimage-000.png" alt="PDF element embedded-image-001" />',
+      "</figure>",
+    ].join("\n"));
+
+    expect(html).toContain("<figure");
+    expect(html).toContain("<img");
+    expect(html).toContain("PDF element embedded-image-001");
+    expect(html).not.toContain("&lt;figure&gt;");
+  });
+
   test("separates headings and fenced code even without extra PDF extraction spacing", () => {
     const html = renderScriptMarkdownHTML([
       "## High Performance Computing (CDS-110)",

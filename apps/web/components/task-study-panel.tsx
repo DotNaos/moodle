@@ -2527,6 +2527,7 @@ function isTrustedFigureBlock(block: string): boolean {
   return Boolean(src && (
     src.startsWith("/api/moodle/") ||
     src.startsWith("/api/study-bundles/") ||
+    src.startsWith("/api/study-pipeline/") ||
     src.startsWith("/_next/")
   ));
 }
