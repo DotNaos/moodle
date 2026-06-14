@@ -46,6 +46,8 @@ import {
   type BlueprintGraphNode,
   type BlueprintNode,
   type BlueprintRunScope,
+  type BlueprintRunRequest,
+  type BlueprintRunStage,
   type BlueprintNodeTone,
   type BlueprintPort,
   type BlueprintRenderedField,
@@ -84,9 +86,11 @@ type CoursePipelineBlueprintProps = {
   status: StudyPipelineStatusResponse | null;
   taskView: TaskViewResponse | null;
   onRerunExtraction?: (engine: string) => void;
+  onRunNode?: (request: BlueprintRunRequest) => void;
   onSelectedScopeChange?: (scope: BlueprintRunScope | null) => void;
   onSelectRun?: (runId: string) => void;
   rerunningEngine?: string | null;
+  runningNodeAction?: boolean;
   selectingRunId?: string | null;
   unavailable?: {
     extractedDocuments?: string;
@@ -112,9 +116,11 @@ export function CoursePipelineBlueprint({
   status,
   taskView,
   onRerunExtraction,
+  onRunNode,
   onSelectedScopeChange,
   onSelectRun,
   rerunningEngine,
+  runningNodeAction,
   selectingRunId,
   unavailable,
 }: CoursePipelineBlueprintProps) {
@@ -161,10 +167,18 @@ export function CoursePipelineBlueprint({
   const interactiveNodes = useMemo(
     () => graph.nodes.map((node) => ({
       ...node,
-      data: node.type === "blueprint" ? { ...node.data, onSelect: setSelectedNodeId } : node.data,
+      data: node.type === "blueprint"
+        ? {
+            ...node.data,
+            onRunFromNode: onRunNode,
+            onSelect: setSelectedNodeId,
+            runActionDisabled: Boolean(runningNodeAction),
+            runActionRunning: Boolean(runningNodeAction),
+          }
+        : node.data,
       selected: node.id === selectedNode?.id,
     })),
-    [graph.nodes, selectedNode?.id],
+    [graph.nodes, onRunNode, runningNodeAction, selectedNode?.id],
   );
 
   return (
@@ -454,6 +468,8 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const blockingProblems = (data.problems ?? []).filter((problem) => problem.severity === "error");
   const primaryProblem = blockingProblems[0] ?? data.problems?.[0] ?? null;
   const failed = data.status === "failed" || data.live?.status === "failed" || blockingProblems.length > 0;
+  const runStage = runStageForNode(data);
+  const showRunAction = Boolean(data.onRunFromNode && runStage && data.runScope && (selected || failed));
   return (
     <div
       className={cn(
@@ -509,6 +525,30 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
           </div>
         ) : null}
 
+        {showRunAction ? (
+          <Button
+            className={cn(
+              "mt-3 h-8 w-full justify-center rounded-full text-xs font-semibold",
+              failed ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "",
+            )}
+            disabled={data.runActionDisabled}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              data.onRunFromNode?.({
+                mode: "from",
+                scope: data.runScope!,
+                startStage: runStage!,
+              });
+            }}
+            type="button"
+            variant={failed ? "destructive" : "secondary"}
+          >
+            {data.runActionRunning ? <Spinner aria-hidden /> : <RotateCw aria-hidden className="size-3.5" />}
+            {failed ? "Ab Fehler neu starten" : "Ab hier starten"}
+          </Button>
+        ) : null}
+
         <div className="mt-3 rounded-2xl bg-secondary/45 px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Output</span>
@@ -546,6 +586,18 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       />
     </div>
   );
+}
+
+function runStageForNode(data: BlueprintNode["data"]): BlueprintRunStage | null {
+  const title = data.title.toLowerCase();
+  const subtitle = data.subtitle.toLowerCase();
+  const detail = data.detail.toLowerCase();
+  const combined = `${title} ${subtitle} ${detail}`;
+  if (/codex|curated|curation|final|output|website/.test(combined)) return "curated";
+  if (/extract|section|page|pdf|document|ocr/.test(combined)) return "extracted";
+  if (/raw|import|material/.test(combined)) return "raw";
+  if (/inventory|resource set|course/.test(combined)) return "inventory";
+  return null;
 }
 
 function NodePreviewDialog({
