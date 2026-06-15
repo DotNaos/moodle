@@ -78,10 +78,15 @@ export function addTaskGroupLane({
   const codexId = `${groupId}-codex`;
   const outputId = `${groupId}-output`;
   const paired = Boolean(group.solution);
-  const sheetRun = findLatestRun(runLookup, group.sheet.id, ["extracted", "extract_text", "extract_pages"]);
-  const solutionRun = group.solution ? findLatestRun(runLookup, group.solution.id, ["extracted", "extract_text", "extract_pages"]) : null;
   const sheetDocument = findExtractedDocument(extractedLookup, group.sheet.id);
   const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  const sheetRun = findLatestRun(runLookup, group.sheet.id, extractionStages)
+    ?? findRunForExtractedDocument(runLookup, sheetDocument, extractionStages);
+  const solutionRun = group.solution
+    ? findLatestRun(runLookup, group.solution.id, extractionStages)
+      ?? findRunForExtractedDocument(runLookup, solutionDocument, extractionStages)
+    : null;
   const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
   const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
   const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
@@ -269,8 +274,10 @@ export function addScriptLane({
   const selectedId = `${baseId}-selected`;
   const codexId = `${baseId}-codex`;
   const outputId = `${baseId}-output`;
-  const extractionRun = findLatestRun(runLookup, resource.id, ["extracted", "extract_text", "extract_pages"]);
   const extractedDocument = findExtractedDocument(extractedLookup, resource.id);
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  const extractionRun = findLatestRun(runLookup, resource.id, extractionStages)
+    ?? findRunForExtractedDocument(runLookup, extractedDocument, extractionStages);
   const codexRun = findLatestRun(runLookup, resource.id, ["curated", "codex_curate"]);
   const scriptOutputs = findScriptOutputs(outputLookup, resource.id);
   const selectedExtractionReady = Boolean((extractionRun && extractionRun.status !== "failed") || (extractedDocument && extractedDocument.status !== "failed"));
@@ -571,6 +578,7 @@ function resourceRunScope(resource: CourseInventoryNode): BlueprintRunScope {
 }
 
 export type RunLookup = {
+  byId: Map<string, PipelineRunRecord>;
   activeByResourceStage: Map<string, PipelineRunRecord>;
   byResourceStage: Map<string, PipelineRunRecord[]>;
 };
@@ -603,7 +611,7 @@ export function buildRunLookup(
       activeByResourceStage.set(runKey(key, stage), run);
     }
   }
-  return { activeByResourceStage, byResourceStage };
+  return { activeByResourceStage, byId, byResourceStage };
 }
 
 function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[]): PipelineRunRecord | null {
@@ -622,6 +630,17 @@ function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[
     }
   }
   return null;
+}
+
+function findRunForExtractedDocument(
+  runLookup: RunLookup,
+  document: ExtractedDocumentRecord | null,
+  stages: string[],
+): PipelineRunRecord | null {
+  if (!document?.runId) return null;
+  const run = runLookup.byId.get(document.runId);
+  if (!run || !stages.includes(run.stage)) return null;
+  return run;
 }
 
 function shouldPreferActiveRun(activeRun: PipelineRunRecord, latestRun: PipelineRunRecord | null): boolean {

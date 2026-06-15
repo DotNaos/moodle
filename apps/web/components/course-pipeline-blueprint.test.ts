@@ -602,6 +602,81 @@ describe("course pipeline blueprint graph", () => {
     expect(sheetExtraction?.data.problems?.map((problem) => problem.label)).toContain("No extraction run");
   });
 
+  test("uses an extracted document run id to attach course-level extraction runs", () => {
+    const documentRunId = extractedDocuments.documents[0]?.runId ?? "";
+    const runsWithCourseLevelExtraction: PipelineRunsResponse = {
+      activeSelections: [{
+        activeRunId: documentRunId,
+        reason: "course-wide extraction selected",
+        selectedAt: "2026-06-13T07:05:00Z",
+        sourceId: "source:moodle-course:22584",
+        stage: "extracted",
+      }],
+      courseId: "22584",
+      runs: [{
+        artifactRefs: [{ id: "document-947711", kind: "extracted_document", metadata: { chars: 240 } }],
+        artifactRoot: "study-pipeline/course-22584/run-extracted-course",
+        configHash: "config:extracted:pdftotext:default",
+        courseId: "22584",
+        createdAt: "2026-06-13T07:03:00Z",
+        engine: "baseline-pdftotext-pdftoppm",
+        id: documentRunId,
+        ownership: "shared",
+        sourceId: "source:moodle-course:22584",
+        stage: "extracted",
+        status: "succeeded",
+      }],
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments,
+      inventory,
+      runs: runsWithCourseLevelExtraction,
+      status,
+      taskView,
+    });
+    const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");
+
+    expect(sheetExtraction?.data.status).toBe("succeeded");
+    expect(sheetExtraction?.data.evidence).toContain(`Run ${documentRunId}`);
+    expect(sheetExtraction?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Run record missing");
+  });
+
+  test("redacts Moodle tokens from pipeline raw preview data", () => {
+    const tokenizedInventory: CourseInventoryResponse = {
+      ...inventory,
+      taskGroups: inventory.taskGroups.map((group) => ({
+        ...group,
+        sheet: {
+          ...group.sheet,
+          url: "https://moodle.fhgr.ch/pluginfile.php/file.pdf?forcedownload=1&token=secret-token",
+        },
+      })),
+    };
+    const tokenizedDocuments: ExtractedDocumentsResponse = {
+      ...extractedDocuments,
+      documents: extractedDocuments.documents.map((document) => ({
+        ...document,
+        resource: {
+          ...document.resource,
+          url: "https://moodle.fhgr.ch/pluginfile.php/file.pdf?wstoken=secret-token",
+        } as typeof document.resource,
+      })),
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments: tokenizedDocuments,
+      inventory: tokenizedInventory,
+      runs: resourceRuns,
+      status,
+      taskView,
+    });
+    const serialized = JSON.stringify(graph.nodes.map((node) => node.data.bodyData));
+
+    expect(serialized).not.toContain("secret-token");
+    expect(serialized).toContain("%5Bredacted%5D");
+  });
+
   test("attaches OCR engine variants to resource extraction nodes", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");

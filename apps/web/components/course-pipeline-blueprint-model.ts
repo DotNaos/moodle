@@ -598,8 +598,21 @@ function resourceBodyData(resource: CourseInventoryNode) {
     role: resource.role,
     confidence: resource.confidence,
     reason: resource.reason,
-    url: resource.url ?? null,
+    url: redactSensitiveUrl(resource.url ?? null),
   };
+}
+
+function redactSensitiveUrl(value: string | null): string | null {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    for (const param of ["token", "wstoken", "sesskey", "password", "key"]) {
+      if (url.searchParams.has(param)) url.searchParams.set(param, "[redacted]");
+    }
+    return url.toString();
+  } catch {
+    return value.replace(/([?&](?:token|wstoken|sesskey|password|key)=)[^&\s]+/gi, "$1[redacted]");
+  }
 }
 
 function inventoryFromStatus(status: StudyPipelineStatusResponse | null): CourseInventoryResponse | null {

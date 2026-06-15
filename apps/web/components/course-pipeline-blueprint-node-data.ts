@@ -566,7 +566,7 @@ function extractedDocumentBodyData(
     type: "extracted_document",
     document: {
       id: document.id,
-      resource: document.resource,
+      resource: sanitizePreviewValue(document.resource),
       engine: document.engine,
       status: document.status,
       sourcePath: document.sourcePath ?? null,
@@ -601,6 +601,33 @@ function extractedDocumentBodyData(
         }
       : null,
   };
+}
+
+function sanitizePreviewValue<T>(value: T): T {
+  if (typeof value === "string") return redactSensitiveUrl(value) as T;
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizePreviewValue(item)) as T;
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    sanitized[key] = key.toLowerCase().includes("url")
+      ? redactSensitiveUrl(String(entry ?? ""))
+      : sanitizePreviewValue(entry);
+  }
+  return sanitized as T;
+}
+
+function redactSensitiveUrl(value: string): string {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    const sensitiveParams = ["token", "wstoken", "sesskey", "password", "key"];
+    for (const param of sensitiveParams) {
+      if (url.searchParams.has(param)) url.searchParams.set(param, "[redacted]");
+    }
+    return url.toString();
+  } catch {
+    return value.replace(/([?&](?:token|wstoken|sesskey|password|key)=)[^&\s]+/gi, "$1[redacted]");
+  }
 }
 
 function extractedDocumentMarkdown(document: PDFDocumentStructure, courseId?: string): string {
