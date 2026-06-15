@@ -11,6 +11,7 @@ import {
   addReviewLane,
   addScriptLane,
   addTaskGroupLane,
+  buildTaskGroupProgressItems,
   buildRunLookup,
   buildWarnings,
 } from "@/components/course-pipeline-blueprint-lanes";
@@ -123,6 +124,14 @@ export type BlueprintHiddenItem = {
   selected: boolean;
 };
 
+export type BlueprintProgressItem = {
+  id: string;
+  title: string;
+  detail?: string;
+  status: "done" | "failed" | "loading" | "missing" | "needs_review" | "pending";
+  selected?: boolean;
+};
+
 export type BlueprintRenderedField = {
   label: string;
   path: string;
@@ -179,6 +188,7 @@ export type BlueprintNodeData = {
   config?: Array<{ label: string; value: string }>;
   evidence?: string[];
   hiddenItems?: BlueprintHiddenItem[];
+  progressItems?: BlueprintProgressItem[];
   inputs: BlueprintPort[];
   meta: Array<{ label: string; value: string }>;
   live?: BlueprintLiveState;
@@ -244,7 +254,6 @@ type CoursePipelineBlueprintModelInput = {
   };
 };
 
-const MAX_TASK_GROUPS = 4;
 const MAX_SCRIPT_GROUPS = 3;
 
 const STAGE_LABELS: Record<string, string> = {
@@ -276,7 +285,6 @@ export function buildBlueprintGraph({
   const taskGroups = sortTaskGroups(derivedInventory?.taskGroups ?? []);
   const scriptResources = sortInventoryNodes(derivedInventory?.lectureMaterial ?? []);
   const visibleTaskGroups = visibleTaskGroupItems(taskGroups, selectedTaskGroupIds ?? []);
-  const hiddenTaskGroups = taskGroups.length > MAX_TASK_GROUPS ? hiddenTaskGroupItems(taskGroups, visibleTaskGroups) : [];
   const visibleScriptResources = scriptResources.slice(0, MAX_SCRIPT_GROUPS);
   const totalResources = status?.summary.totalResources ?? derivedInventory?.summary.totalResources ?? 0;
   const centerY = 760;
@@ -421,12 +429,21 @@ export function buildBlueprintGraph({
       outputLookup,
       runLookup,
       y: taskLaneStartY + index * taskLaneGap,
-      hiddenSiblingTitles: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => hiddenGroup.title) : undefined,
-      hiddenSiblingItems: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => ({
+      hiddenSiblingItems: index === 0 ? taskGroups.map((hiddenGroup) => ({
         id: hiddenGroup.id,
-        selected: selectedTaskGroupIds?.includes(hiddenGroup.id) ?? false,
+        selected: hiddenGroup.id === group.id,
         title: hiddenGroup.title,
       })) : undefined,
+      progressItems: index === 0
+        ? buildTaskGroupProgressItems({
+            extractedLookup,
+            groups: taskGroups,
+            outputLookup,
+            runLookup,
+            selectedGroupId: group.id,
+          })
+        : undefined,
+      taskGroupCount: taskGroups.length,
     });
   });
 
@@ -811,17 +828,9 @@ function visibleTaskGroupItems(
   items: CourseInventoryResponse["taskGroups"],
   selectedIds: string[],
 ): CourseInventoryResponse["taskGroups"] {
-  if (items.length <= MAX_TASK_GROUPS) return items;
-  const selectedIdSet = new Set(selectedIds);
-  return items.filter((item, index) => index === 0 || selectedIdSet.has(item.id));
-}
-
-function hiddenTaskGroupItems(
-  items: CourseInventoryResponse["taskGroups"],
-  visibleItems: CourseInventoryResponse["taskGroups"],
-): CourseInventoryResponse["taskGroups"] {
-  const visibleIds = new Set(visibleItems.map((item) => item.id));
-  return items.filter((item, index) => index > 0 || !visibleIds.has(item.id));
+  if (items.length === 0) return [];
+  const selected = items.find((item) => selectedIds.includes(item.id));
+  return [selected ?? items[0]!];
 }
 
 function naturalCompare(left: string, right: string): number {

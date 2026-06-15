@@ -45,11 +45,12 @@ export function addTaskGroupLane({
   extractedLookup,
   group,
   hiddenSiblingItems,
-  hiddenSiblingTitles,
   index,
   nodes,
   outputLookup,
+  progressItems,
   runLookup,
+  taskGroupCount,
   y,
 }: {
   activeRunIds: Set<string>;
@@ -57,11 +58,12 @@ export function addTaskGroupLane({
   extractedLookup: ExtractedLookup;
   group: CourseInventoryTaskGroup;
   hiddenSiblingItems?: BlueprintNodeData["hiddenItems"];
-  hiddenSiblingTitles?: string[];
   index: number;
   nodes: BlueprintGraphNode[];
   outputLookup: OutputLookup;
+  progressItems?: BlueprintNodeData["progressItems"];
   runLookup: RunLookup;
+  taskGroupCount?: number;
   y: number;
 }) {
   const baseId = stableId(group.id);
@@ -95,19 +97,31 @@ export function addTaskGroupLane({
     id: groupId,
     position: { x: PIPELINE_X.group, y },
     data: {
-      title: group.title,
-      subtitle: paired ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
-      detail: group.pairingReason || "Classified task group from Moodle resources.",
+      title: hiddenSiblingItems?.length ? "Task groups[]" : group.title,
+      subtitle: hiddenSiblingItems?.length
+        ? `${taskGroupCount ?? hiddenSiblingItems.length} task groups · selected ${group.title}`
+        : paired ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
+      detail: hiddenSiblingItems?.length
+        ? "Task groups are an array. The list below shows every group status; the selected group continues through the detailed PDF, extraction, Codex, and output path."
+        : group.pairingReason || "Classified task group from Moodle resources.",
       evidence: [
         `Sheet: ${group.sheet.name}`,
         group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
         `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
       ],
-      hiddenItems: hiddenSiblingItems ?? hiddenSiblingTitles?.map((title) => ({ id: title, selected: false, title })),
+      hiddenItems: hiddenSiblingItems,
+      progressItems,
       inputs: [{ label: "task group", detail: "classified Moodle resources" }],
       outputs: [
-        { label: "sheet pdf", detail: group.sheet.name },
-        { label: "solution pdf", detail: group.solution?.name ?? "missing", state: paired ? "available" : "missing" },
+        {
+          label: hiddenSiblingItems?.length ? "sheet pdf[]" : "sheet pdf",
+          detail: hiddenSiblingItems?.length ? `${taskGroupCount ?? hiddenSiblingItems.length} sheets` : group.sheet.name,
+        },
+        {
+          label: hiddenSiblingItems?.length ? "solution pdf[]" : "solution pdf",
+          detail: hiddenSiblingItems?.length ? "paired solution slots" : group.solution?.name ?? "missing",
+          state: paired ? "available" : "missing",
+        },
       ],
       outputPreview: `${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
       problems: paired ? undefined : [{ label: "Solution missing", detail: "Codex can still build a task, but solution checks cannot be trusted.", severity: "warning" }],
@@ -116,6 +130,7 @@ export function addTaskGroupLane({
       tone: paired ? "resource" : "warning",
       status: group.pairingStatus,
       meta: [
+        ...(hiddenSiblingItems?.length ? [{ label: "Selected group", value: group.title }] : []),
         { label: "Sheet", value: group.sheet.name },
         { label: "Solution", value: group.solution?.name ?? "missing" },
         { label: "Confidence", value: group.pairingConfidence || "unknown" },
@@ -243,6 +258,62 @@ export function addTaskGroupLane({
     }),
   });
   addEdge(edges, codexId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
+}
+
+export function buildTaskGroupProgressItems({
+  extractedLookup,
+  groups,
+  outputLookup,
+  runLookup,
+  selectedGroupId,
+}: {
+  extractedLookup: ExtractedLookup;
+  groups: CourseInventoryTaskGroup[];
+  outputLookup: OutputLookup;
+  runLookup: RunLookup;
+  selectedGroupId?: string;
+}): NonNullable<BlueprintNodeData["progressItems"]> {
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  return groups.map((group) => {
+    const sheetDocument = findExtractedDocument(extractedLookup, group.sheet.id);
+    const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
+    const sheetRun = findLatestRun(runLookup, group.sheet.id, extractionStages)
+      ?? findRunForExtractedDocument(runLookup, sheetDocument, extractionStages);
+    const solutionRun = group.solution
+      ? findLatestRun(runLookup, group.solution.id, extractionStages)
+        ?? findRunForExtractedDocument(runLookup, solutionDocument, extractionStages)
+      : null;
+    const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
+    const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
+    const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
+    const failedRun = [sheetRun, solutionRun, codexRun].find((run) => run?.status === "failed");
+    const runningRun = [sheetRun, solutionRun, codexRun].find((run) => run && (run.status === "running" || run.status === "queued"));
+    const status = taskOutputs.length > 0
+      ? "done"
+      : failedRun
+        ? "failed"
+        : runningRun
+          ? "loading"
+          : collectIssues.some((problem) => problem.severity === "error")
+            ? "failed"
+            : collectIssues.length > 0
+              ? "needs_review"
+              : "pending";
+    const detail = failedRun?.error
+      ?? collectIssues[0]?.detail
+      ?? (taskOutputs.length > 0
+        ? `${taskOutputs.length} website task output${taskOutputs.length === 1 ? "" : "s"}`
+        : runningRun
+          ? `${runningRun.stage} ${runningRun.status}`
+          : group.pairingStatus.replaceAll("_", " "));
+    return {
+      detail,
+      id: group.id,
+      selected: group.id === selectedGroupId,
+      status,
+      title: group.title,
+    };
+  });
 }
 
 export function addScriptLane({

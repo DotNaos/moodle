@@ -319,19 +319,22 @@ describe("course pipeline blueprint graph", () => {
 
     expect(titles).toContain("Course");
     expect(titles).toContain("Resource Set");
-    expect(titles).toContain("Aufgabenblatt 01");
-    expect(titles).toContain("Aufgabenblatt 02");
+    expect(titles).toContain("Task groups[]");
     expect(titles).toContain("Collect Pair");
     expect(titles).toContain("Codex Transform");
     expect(titles).toContain("Output 1");
-    expect(titles).toContain("Output 2");
+    expect(titles).not.toContain("Output 2");
     expect(titles).toContain("Script Section 1");
     expect(titles).toContain("Review Collector");
 
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.stepKind).toBe("split");
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]")?.data.progressItems?.map((item) => item.title)).toEqual([
+      "Aufgabenblatt 01",
+      "Aufgabenblatt 02",
+    ]);
     expect(graph.nodes.find((node) => node.data.title === "Collect Pair")?.data.stepKind).toBe("collect");
     expect(graph.nodes.find((node) => node.data.title === "Codex Transform")?.data.stepKind).toBe("transform");
-    expect(graph.nodes.find((node) => node.data.title === "Output 2")?.data.problems?.map((problem) => problem.label)).toContain("Solution missing");
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]")?.data.progressItems?.find((item) => item.title === "Aufgabenblatt 02")?.status).toBe("needs_review");
     const nodeTitles = new Map(graph.nodes.map((node) => [node.id, node.data.title]));
     const directTaskGroupToOutput = graph.edges.some((edge) => {
       const sourceTitle = nodeTitles.get(edge.source) ?? "";
@@ -481,7 +484,7 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.problems?.[0]?.label).toBe("Inventory missing");
   });
 
-  test("sorts repeated task groups naturally and keeps hidden groups inside the first lane", () => {
+  test("sorts repeated task groups naturally and keeps the array inside one task-group node", () => {
     const manyTaskGroups: CourseInventoryResponse = {
       ...inventory,
       summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
@@ -520,22 +523,36 @@ describe("course pipeline blueprint graph", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory: manyTaskGroups, runs: null, status, taskView: null });
     const titles = graph.nodes.map((node) => node.data.title);
 
-    expect(titles).toContain("Aufgabenblatt 1");
+    expect(titles).toContain("Task groups[]");
     expect(titles).not.toContain("Aufgabenblatt 12");
     expect(titles).not.toContain("Aufgabenblatt 10");
     expect(titles).not.toContain("2 ... 11 collapsed");
 
-    const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
-    expect(firstTaskGroup?.data.hiddenItems).toHaveLength(11);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.id).toBe("sheet-2");
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.selected).toBe(false);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 2");
+    const firstTaskGroup = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(firstTaskGroup?.data.hiddenItems).toHaveLength(12);
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.id).toBe("sheet-1");
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.selected).toBe(true);
+    expect(firstTaskGroup?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 1");
     expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.id).toBe("sheet-12");
     expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.selected).toBe(false);
     expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.title).toBe("Aufgabenblatt 12");
+    expect(firstTaskGroup?.data.progressItems?.map((item) => item.title)).toEqual([
+      "Aufgabenblatt 1",
+      "Aufgabenblatt 2",
+      "Aufgabenblatt 3",
+      "Aufgabenblatt 4",
+      "Aufgabenblatt 5",
+      "Aufgabenblatt 6",
+      "Aufgabenblatt 7",
+      "Aufgabenblatt 8",
+      "Aufgabenblatt 9",
+      "Aufgabenblatt 10",
+      "Aufgabenblatt 11",
+      "Aufgabenblatt 12",
+    ]);
   });
 
-  test("shows selected hidden task groups as full pipeline lanes", () => {
+  test("uses the selected task group for the detail lane without rendering sibling lanes", () => {
     const manyTaskGroups: CourseInventoryResponse = {
       ...inventory,
       summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
@@ -581,14 +598,17 @@ describe("course pipeline blueprint graph", () => {
     });
     const titles = graph.nodes.map((node) => node.data.title);
 
-    expect(titles).toContain("Aufgabenblatt 1");
-    expect(titles).toContain("Aufgabenblatt 2");
+    expect(titles).toContain("Task groups[]");
+    expect(titles).not.toContain("Aufgabenblatt 1");
+    expect(titles).not.toContain("Aufgabenblatt 2");
     expect(titles).not.toContain("Aufgabenblatt 12");
 
-    const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
+    const firstTaskGroup = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
     const selectedItem = firstTaskGroup?.data.hiddenItems?.find((item) => item.id === "sheet-2");
     expect(selectedItem?.selected).toBe(true);
     expect(selectedItem?.title).toBe("Aufgabenblatt 2");
+    expect(firstTaskGroup?.data.subtitle).toContain("selected Aufgabenblatt 2");
+    expect(graph.nodes.find((node) => node.data.title === "Sheet PDF")?.data.subtitle).toBe("Aufgabenblatt 2");
   });
 
   test("does not project global runs onto resource-specific extraction nodes", () => {
@@ -1175,7 +1195,7 @@ describe("course pipeline blueprint graph", () => {
       "Pages",
       "Sheet PDF",
       "Solution PDF",
-      "Aufgabenblatt 01",
+      "Task groups[]",
       "Resource Set",
       "Course",
     ]) {

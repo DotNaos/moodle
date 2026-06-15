@@ -22,6 +22,7 @@ import {
   GitBranch,
   ImageOff,
   Layers,
+  LoaderCircle,
   Maximize2,
   RotateCw,
   Search,
@@ -174,11 +175,7 @@ export function CoursePipelineBlueprint({
             onRunFromNode: onRunNode,
             onSelect: setSelectedNodeId,
             onToggleHiddenItem: (itemId: string) => {
-              setSelectedTaskGroupIds((current) => (
-                current.includes(itemId)
-                  ? current.filter((id) => id !== itemId)
-                  : [...current, itemId]
-              ));
+              setSelectedTaskGroupIds([itemId]);
             },
             runActionDisabled: Boolean(runningNodeAction),
             runActionRunning: Boolean(runningNodeAction),
@@ -519,6 +516,13 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
         </div>
         <ChannelRows inputs={data.inputs} outputs={data.outputs} />
 
+        {data.progressItems?.length ? (
+          <NodeProgressList
+            items={data.progressItems}
+            onSelect={data.onToggleHiddenItem}
+          />
+        ) : null}
+
         {primaryProblem ? (
           <div className="mt-3 rounded-2xl bg-destructive/10 px-3 py-2 text-destructive">
             <div className="flex items-start gap-2">
@@ -584,12 +588,6 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
             <NodePreviewContent preview={preview} size="node" />
           </div>
         </div>
-        {data.hiddenItems?.length ? (
-          <HiddenItemsDisclosure
-            items={data.hiddenItems}
-            onToggle={data.onToggleHiddenItem}
-          />
-        ) : null}
       </div>
       <NodePreviewDialog
         onOpenChange={setPreviewOpen}
@@ -782,47 +780,81 @@ function compactNodeJsonPreview(text: string): string {
   return compact;
 }
 
-function HiddenItemsDisclosure({
+function NodeProgressList({
   items,
-  onToggle,
+  onSelect,
 }: {
-  items: NonNullable<BlueprintNode["data"]["hiddenItems"]>;
-  onToggle?: (itemId: string) => void;
+  items: NonNullable<BlueprintNode["data"]["progressItems"]>;
+  onSelect?: (itemId: string) => void;
 }) {
-  const selectedCount = items.filter((item) => item.selected).length;
   return (
-    <details
-      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-2 text-[11px] leading-4 text-foreground/80"
+    <div
+      className="mt-3 max-h-44 overflow-auto rounded-2xl bg-secondary/45 px-2 py-1.5"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-semibold text-foreground/75">
-        <span className="truncate">{items.length} weitere Aufgabenblätter</span>
-        <span className="shrink-0 rounded-full bg-background/75 px-2 py-0.5 text-[10px] text-muted-foreground">
-          {selectedCount} sichtbar
+      <div className="mb-1 flex items-center justify-between gap-2 px-1">
+        <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Items</span>
+        <span className="rounded-full bg-background/75 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          {items.length}
         </span>
-      </summary>
-      <div className="mt-2 grid max-h-44 gap-1 overflow-auto pr-1">
-        {items.map((item) => (
-          <label
+      </div>
+      <div className="grid gap-1">
+        {items.map((item) => {
+          const StatusIcon = progressStatusIcon(item.status);
+          return (
+          <button
             className={cn(
-              "flex min-w-0 cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 transition-colors",
-              item.selected ? "bg-background/90 text-foreground" : "hover:bg-background/70",
+              "grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-xl px-1.5 py-1 text-left transition-colors",
+              item.selected ? "bg-background text-foreground shadow-sm shadow-black/10" : "text-foreground/80 hover:bg-background/70",
             )}
             key={item.id}
+            onClick={() => onSelect?.(item.id)}
+            type="button"
           >
-            <input
-              checked={item.selected}
-              className="size-3 accent-emerald-500"
-              onChange={() => onToggle?.(item.id)}
-              type="checkbox"
-            />
-            <span className="truncate">{item.title}</span>
-          </label>
-        ))}
+            <span className={cn("grid size-4 place-items-center rounded-full", progressStatusClass(item.status))}>
+              <StatusIcon aria-hidden className={cn("size-2.5", item.status === "loading" ? "animate-spin" : "")} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[10px] font-semibold leading-3">{item.title}</span>
+              {item.detail && (item.status === "failed" || item.status === "needs_review") ? (
+                <span className="block truncate text-[9px] leading-3 text-muted-foreground">{item.detail}</span>
+              ) : null}
+            </span>
+            <span className="rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-muted-foreground">
+              {progressStatusLabel(item.status)}
+            </span>
+          </button>
+          );
+        })}
       </div>
-    </details>
+    </div>
   );
+}
+
+function progressStatusLabel(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]): string {
+  if (status === "done") return "done";
+  if (status === "failed") return "error";
+  if (status === "loading") return "run";
+  if (status === "needs_review") return "review";
+  if (status === "missing") return "missing";
+  return "open";
+}
+
+function progressStatusIcon(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]) {
+  if (status === "done") return CheckCircle2;
+  if (status === "failed") return AlertCircle;
+  if (status === "loading") return LoaderCircle;
+  return Activity;
+}
+
+function progressStatusClass(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]): string {
+  if (status === "done") return "bg-emerald-100 text-emerald-700";
+  if (status === "failed") return "bg-destructive/10 text-destructive";
+  if (status === "loading") return "bg-blue-100 text-blue-700";
+  if (status === "needs_review") return "bg-amber-100 text-amber-700";
+  if (status === "missing") return "bg-rose-100 text-rose-700";
+  return "bg-background text-muted-foreground";
 }
 
 const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;

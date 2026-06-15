@@ -32,6 +32,13 @@ export function buildPipelineNodePreview(data: BlueprintNodeData): PipelineNodeP
     if (markdown) return { kind: "markdown", text: markdown };
   }
 
+  if (data.progressItems?.length) {
+    return {
+      kind: "markdown",
+      text: progressItemsPreviewMarkdown(data),
+    };
+  }
+
   return {
     kind: "json",
     text: jsonText,
@@ -196,7 +203,21 @@ function serializableNodeData(data: BlueprintNodeData): Record<string, unknown> 
     meta: data.meta,
     extractionVariants: data.extractionVariants,
     hiddenItems: data.hiddenItems,
+    progressItems: data.progressItems,
   }) as Record<string, unknown>;
+}
+
+function progressItemsPreviewMarkdown(data: BlueprintNodeData): string {
+  const counts = new Map<string, number>();
+  for (const item of data.progressItems ?? []) {
+    counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+  }
+  const selected = data.progressItems?.find((item) => item.selected);
+  return [
+    data.outputPreview?.trim(),
+    selected ? `Selected: ${selected.title}` : "",
+    [...counts.entries()].map(([status, count]) => `${status}: ${count}`).join(" · "),
+  ].filter(Boolean).join("\n");
 }
 
 function removeEmptyValues(value: unknown): unknown {
