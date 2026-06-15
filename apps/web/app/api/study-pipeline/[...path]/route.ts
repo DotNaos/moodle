@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 
 import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { decodeMoodleSession, encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
@@ -21,30 +22,32 @@ export async function POST(request: Request, context: RouteContext) {
 }
 
 async function proxyStudyPipeline(request: Request, context: RouteContext) {
+  const requestId = request.headers.get("x-request-id") ?? randomUUID();
+  const startedAt = Date.now();
   const { userId } = await auth();
   if (!userId) {
-    return pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401);
+    return withRequestId(pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401), requestId);
   }
   const backendGate = await checkBackendPreflight(userId);
   if (backendGate.state === "blocked") {
-    return pipelineBlockedResponse(
+    return withRequestId(pipelineBlockedResponse(
       backendGate.code,
       backendGate.error ?? "Moodle backend is not ready for the pipeline.",
       backendGate.status,
-    );
+    ), requestId);
   }
   if (backendGate.state === "needs_moodle_connect") {
-    return pipelineBlockedResponse("moodle_not_connected", "Connect Moodle before opening the pipeline.", 409);
+    return withRequestId(pipelineBlockedResponse("moodle_not_connected", "Connect Moodle before opening the pipeline.", 409), requestId);
   }
   const session = await resolveMoodleSession(userId);
   if (!session.ok) {
-    return pipelineBlockedResponse(session.code, session.error);
+    return withRequestId(pipelineBlockedResponse(session.code, session.error), requestId);
   }
 
   const params = await context.params;
   const upstreamPath = params.path?.map(encodeURIComponent).join("/") ?? "";
   if (!isStudyPipelinePath(upstreamPath)) {
-    return Response.json({ error: "Study pipeline route not found." }, { status: 404 });
+    return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
   }
 
   const requestUrl = new URL(request.url);
@@ -52,6 +55,7 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
   upstreamUrl.search = requestUrl.search;
 
   const headers = studyPipelineHeaders(userId, session.session.apiKey);
+  headers.set("X-Request-ID", requestId);
   const accept = request.headers.get("accept");
   if (accept) {
     headers.set("accept", accept);
@@ -63,57 +67,245 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const body = hasBody ? await request.text() : undefined;
-  const upstreamResponse = await fetch(upstreamUrl, {
+  const upstreamResponse = await fetchStudyPipelineUpstream(upstreamUrl, {
     method: request.method,
     cache: "no-store",
     headers,
     body,
+  }, {
+    method: request.method,
+    requestId,
+    startedAt,
+    upstreamPath,
   });
+  if (upstreamResponse.kind === "error") {
+    return upstreamResponse.response;
+  }
 
-  if (upstreamResponse.status !== 401) {
-    return proxyServiceResponse(upstreamResponse);
+  if (upstreamResponse.response.status !== 401) {
+    return proxyStudyPipelineResponse(upstreamResponse.response, {
+      request,
+      requestId,
+      startedAt,
+      upstreamPath,
+    });
   }
 
   if (allowLocalAnonymousStudyPipeline()) {
-    const retryResponse = await fetch(upstreamUrl, {
+    const anonymousHeaders = studyPipelineHeaders(userId, "");
+    anonymousHeaders.set("X-Request-ID", requestId);
+    const retryResponse = await fetchStudyPipelineUpstream(upstreamUrl, {
       method: request.method,
       cache: "no-store",
-      headers: studyPipelineHeaders(userId, ""),
+      headers: anonymousHeaders,
       body,
+    }, {
+      method: request.method,
+      requestId,
+      retry: "anonymous-local",
+      startedAt,
+      upstreamPath,
     });
-    if (retryResponse.status !== 401) {
-      return proxyServiceResponse(retryResponse);
+    if (retryResponse.kind === "error") {
+      return retryResponse.response;
+    }
+    if (retryResponse.response.status !== 401) {
+      return proxyStudyPipelineResponse(retryResponse.response, {
+        request,
+        requestId,
+        retry: "anonymous-local",
+        startedAt,
+        upstreamPath,
+      });
     }
   }
 
   const restored = await restoreMoodleSession(userId);
   if (!restored.ok) {
     await clearMoodleSessionCookie();
-    return pipelineBlockedResponse(restored.code, restored.error);
+    return withRequestId(pipelineBlockedResponse(restored.code, restored.error), requestId);
   }
   const retryHeaders = studyPipelineHeaders(userId, restored.session.apiKey);
+  retryHeaders.set("X-Request-ID", requestId);
   if (accept) {
     retryHeaders.set("accept", accept);
   }
   if (contentType) {
     retryHeaders.set("content-type", contentType);
   }
-  const retryResponse = await fetch(upstreamUrl, {
+  const retryResponse = await fetchStudyPipelineUpstream(upstreamUrl, {
     method: request.method,
     cache: "no-store",
     headers: retryHeaders,
     body,
+  }, {
+    method: request.method,
+    requestId,
+    retry: "restored-session",
+    startedAt,
+    upstreamPath,
   });
-
-  if (retryResponse.status === 401) {
-    await clearMoodleSessionCookie();
-    return pipelineBlockedResponse(
-      "moodle_session_expired",
-      "Moodle session could not be verified. Reconnect Moodle before opening the pipeline.",
-    );
+  if (retryResponse.kind === "error") {
+    return retryResponse.response;
   }
 
-  return proxyServiceResponse(retryResponse);
+  if (retryResponse.response.status === 401) {
+    await clearMoodleSessionCookie();
+    return withRequestId(pipelineBlockedResponse(
+      "moodle_session_expired",
+      "Moodle session could not be verified. Reconnect Moodle before opening the pipeline.",
+    ), requestId);
+  }
+
+  return proxyStudyPipelineResponse(retryResponse.response, {
+    request,
+    requestId,
+    retry: "restored-session",
+    startedAt,
+    upstreamPath,
+  });
+}
+
+async function fetchStudyPipelineUpstream(
+  input: URL,
+  init: RequestInit,
+  context: {
+    method: string;
+    requestId: string;
+    retry?: string;
+    startedAt: number;
+    upstreamPath: string;
+  },
+): Promise<{ kind: "response"; response: Response } | { kind: "error"; response: Response }> {
+  try {
+    return { kind: "response", response: await fetch(input, init) };
+  } catch (error) {
+    const classified = classifyUpstreamFetchError(error);
+    logStudyPipelineProxy({
+      durationMs: Date.now() - context.startedAt,
+      error: `${classified.code}: ${classified.error}`,
+      method: context.method,
+      requestId: context.requestId,
+      retry: context.retry,
+      status: classified.status,
+      upstreamPath: context.upstreamPath,
+    });
+    return {
+      kind: "error",
+      response: withRequestId(Response.json({
+        code: classified.code,
+        error: classified.error,
+        requestId: context.requestId,
+      }, { status: classified.status }), context.requestId),
+    };
+  }
+}
+
+function classifyUpstreamFetchError(error: unknown): { code: string; error: string; status: number } {
+  const code = extractErrorCode(error);
+  if (code === "UND_ERR_HEADERS_TIMEOUT") {
+    return {
+      code: "upstream_headers_timeout",
+      error: "The pipeline run is still waiting for the backend response. The server may continue running it; refresh the pipeline status in a moment.",
+      status: 504,
+    };
+  }
+  return {
+    code: "upstream_fetch_failed",
+    error: getErrorMessage(error),
+    status: 502,
+  };
+}
+
+function extractErrorCode(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const maybeCode = "code" in error ? (error as { code?: unknown }).code : undefined;
+    if (typeof maybeCode === "string") return maybeCode;
+    const cause = "cause" in error ? (error as { cause?: unknown }).cause : undefined;
+    if (typeof cause === "object" && cause !== null && "code" in cause) {
+      const causeCode = (cause as { code?: unknown }).code;
+      if (typeof causeCode === "string") return causeCode;
+    }
+  }
+  return "";
+}
+
+async function proxyStudyPipelineResponse(
+  upstreamResponse: Response,
+  context: {
+    request: Request;
+    requestId: string;
+    retry?: string;
+    startedAt: number;
+    upstreamPath: string;
+  },
+): Promise<Response> {
+  const shouldLog = context.request.method !== "GET" || !upstreamResponse.ok;
+  if (shouldLog) {
+    const error = upstreamResponse.ok ? undefined : await readErrorSummary(upstreamResponse.clone());
+    logStudyPipelineProxy({
+      durationMs: Date.now() - context.startedAt,
+      error,
+      method: context.request.method,
+      requestId: context.requestId,
+      retry: context.retry,
+      status: upstreamResponse.status,
+      upstreamPath: context.upstreamPath,
+    });
+  }
+  return withRequestId(proxyServiceResponse(upstreamResponse), context.requestId);
+}
+
+function withRequestId(response: Response, requestId: string): Response {
+  response.headers.set("X-Request-ID", requestId);
+  return response;
+}
+
+async function readErrorSummary(response: Response): Promise<string> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const payload = await readServiceJSON<{ error?: unknown; code?: unknown }>(response);
+    const parts = [payload.code, payload.error]
+      .map((value) => typeof value === "string" ? value : "")
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return truncateLogValue(parts.join(": "));
+    }
+  }
+  const text = await response.text().catch(() => "");
+  return truncateLogValue(text || response.statusText || "upstream request failed");
+}
+
+function logStudyPipelineProxy(event: {
+  durationMs: number;
+  error?: string;
+  method: string;
+  requestId: string;
+  retry?: string;
+  status: number;
+  upstreamPath: string;
+}) {
+  const payload = {
+    event: "study_pipeline.proxy",
+    duration_ms: event.durationMs,
+    error: event.error,
+    method: event.method,
+    request_id: event.requestId,
+    retry: event.retry,
+    status: event.status,
+    upstream_path: event.upstreamPath,
+  };
+  const line = JSON.stringify(payload);
+  if (event.status >= 400) {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+}
+
+function truncateLogValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
 }
 
 function isStudyPipelinePath(path: string): boolean {

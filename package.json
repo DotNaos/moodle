@@ -19,6 +19,7 @@
     "web:dev:expo": "bun run --filter @moodle-clients/web dev:expo",
     "web:build": "bun run --filter @moodle-clients/web build",
     "study:import": "bun ./scripts/import-study-bundle.mjs",
+    "study:pipeline:logs": "bun ./scripts/study-pipeline-logs.mjs",
     "mobile:dev": "node ./scripts/mobile-with-proxy-dev.cjs start",
     "mobile:start": "node ./scripts/mobile-with-proxy-dev.cjs start",
     "mobile:ios": "node ./scripts/mobile-with-proxy-dev.cjs ios",

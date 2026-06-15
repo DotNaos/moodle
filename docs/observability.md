@@ -2,6 +2,50 @@
 
 The mobile app is wired for Sentry error reporting and structured logs.
 
+## Study pipeline request tracing
+
+The study pipeline spans the web frontend, the Next.js proxy, and Moodle Services. Every proxied study-pipeline request must carry an `X-Request-ID` header. For user-triggered pipeline runs, the UI creates this id before the request starts. The same id is returned to the browser and forwarded to Moodle Services.
+
+Use the request id as the primary debugging key:
+
+```sh
+bun run study:pipeline:logs <request-id>
+```
+
+The command reads the local web tmux pane and the Moodle Services Docker logs. For manual filtering:
+
+```sh
+tmux capture-pane -pt moodle-web-dev -S -800 | rg '<request-id>|study_pipeline\.proxy'
+docker logs moodle-services-moodle-api-1 2>&1 | rg '<request-id>|study_pipeline\.'
+```
+
+The Next.js proxy logs one structured JSON line for every non-GET study-pipeline request and for every upstream error. Moodle Services logs structured JSON events around long-running pipeline plans:
+
+- `study_pipeline.request.start`
+- `study_pipeline.plan.start`
+- `study_pipeline.plan.step.start`
+- `study_pipeline.plan.step.succeeded`
+- `study_pipeline.plan.step.failed`
+- `study_pipeline.plan.step.record_failed`
+- `study_pipeline.plan.finish`
+- `study_pipeline.request.finish`
+
+The logs must include enough fields to answer where a run is stuck: `request_id`, `course_id`, `stage`, `step_index`, `engine`, `duration_ms`, `run_id`, and a bounded `error` string when something fails.
+
+Do not log credentials, cookies, Moodle tokens, request bodies, extracted task content, PDF text, or generated answers. Log ids, status, stage, timings, and short error summaries only.
+
+### Long-running requests
+
+Pipeline runs can take longer than the proxy wait window. A proxy timeout is not the same as a failed backend run.
+
+When the proxy hits the Node/Undici header timeout, it returns:
+
+- HTTP `504`
+- `code: upstream_headers_timeout`
+- the `requestId`
+
+The UI should keep the run understandable: show the request id, refresh pipeline state, and rely on `/runs` plus the backend plan logs to determine whether the server finished, failed, or is still running.
+
 ## Required Sentry settings
 
 Create a Sentry React Native project, then configure these values outside the repo:

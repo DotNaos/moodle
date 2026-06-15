@@ -1,12 +1,13 @@
 "use client";
 
-import { CheckCircle2, Circle, Loader2, Play, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Loader2, Play, XCircle } from "lucide-react";
 
 import type { BlueprintRunScope } from "@/components/course-pipeline-blueprint-model";
 import type { StudyPipelineStatusResponse } from "@/components/study-pipeline-preview";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { CodexModelOption } from "@/hooks/use-codex-models";
+import type { CodexDeviceCode } from "@/lib/codex-auth-client";
 
 export type PipelineStageId = "inventory" | "raw" | "extracted" | "curated";
 export type PipelineRunMode = "single" | "from";
@@ -32,6 +33,10 @@ export type PipelinePlanResponse = {
   status: "failed" | "succeeded" | string;
   steps: Array<{
     error?: string;
+    run?: {
+      error?: string;
+      status?: string;
+    };
     stage: PipelineStageId;
     status: PipelineStepState | string;
   }>;
@@ -48,8 +53,13 @@ export function PipelineRunControl({
   disabled,
   codexModel,
   codexModelOptions,
+  codexConnected,
+  codexConnecting,
+  codexDeviceCode,
+  codexError,
   codexModelsLoading,
   mode,
+  onCodexConnect,
   onModeChange,
   onCodexModelChange,
   onRun,
@@ -63,8 +73,13 @@ export function PipelineRunControl({
   disabled: boolean;
   codexModel: string;
   codexModelOptions: CodexModelOption[];
+  codexConnected: boolean;
+  codexConnecting: boolean;
+  codexDeviceCode: CodexDeviceCode | null;
+  codexError: string | null;
   codexModelsLoading: boolean;
   mode: PipelineRunMode;
+  onCodexConnect: () => void;
   onModeChange: (mode: PipelineRunMode) => void;
   onCodexModelChange: (model: string) => void;
   onRun: () => void;
@@ -83,6 +98,8 @@ export function PipelineRunControl({
   const runLabel = mode === "single" ? "Schritt starten" : "Ab hier starten";
   const scopeLabel = effectiveScope.kind === "course" ? "Ganzer Kurs" : effectiveScope.label;
   const includesCodex = stagesForPlan(mode, startStage).some((stage) => stage.id === "curated");
+  const codexModelReady = !includesCodex || (codexConnected && Boolean(codexModel));
+  const codexRunBlocked = includesCodex && !codexModelReady;
   const modelOptions = codexModelOptions.length > 0
     ? codexModelOptions.map((model) => ({ label: model.label || model.id, value: model.id }))
     : [{ label: codexModelsLoading ? "Modelle laden" : "Default Codex", value: "" }];
@@ -129,11 +146,43 @@ export function PipelineRunControl({
           ) : null}
         </div>
 
-        <Button className="h-11 w-full rounded-full px-4 lg:w-fit" disabled={disabled} onClick={onRun} type="button">
+        <Button className="h-11 w-full rounded-full px-4 lg:w-fit" disabled={disabled || codexRunBlocked} onClick={onRun} type="button">
           {running ? <Spinner aria-hidden /> : <Play aria-hidden />}
           {runLabel}
         </Button>
       </div>
+
+      {includesCodex && !codexModelReady ? (
+        <div className="mt-3 rounded-3xl bg-background/70 px-3 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">ChatGPT verbinden</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Codex kann erst laufen, wenn diese Session verbunden ist und ein Modell geladen wurde.
+              </p>
+              {codexError ? <p className="mt-1 text-xs text-destructive">{codexError}</p> : null}
+            </div>
+            <Button className="w-full rounded-full sm:w-fit" disabled={disabled || codexConnecting || codexModelsLoading} onClick={onCodexConnect} type="button">
+              {codexConnecting || codexModelsLoading ? <Spinner aria-hidden /> : null}
+              {codexConnecting ? "Warte auf Login" : "ChatGPT verbinden"}
+            </Button>
+          </div>
+          {codexDeviceCode ? (
+            <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-secondary/70 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Code eingeben</p>
+                <p className="mt-1 font-mono text-lg font-semibold tracking-wide text-foreground">{codexDeviceCode.userCode}</p>
+              </div>
+              <Button asChild className="w-full rounded-full sm:w-fit" type="button" variant="secondary">
+                <a href={codexDeviceCode.verificationUri} rel="noreferrer" target="_blank">
+                  Öffnen
+                  <ExternalLink aria-hidden />
+                </a>
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <p className="mt-2 truncate text-xs text-muted-foreground">
         {running ? "Server-Run läuft. Seite kann geschlossen werden. " : ""}
@@ -199,10 +248,10 @@ export function planStepsFromResponse(
   const normalized = responseSteps
     .filter((step) => expectedIds.has(step.stage))
     .map((step) => ({
-      detail: step.error,
+      detail: step.error ?? (step.run?.status === "failed" ? step.run.error : undefined),
       id: `${runId}:${step.stage}`,
       label: labels.get(step.stage) ?? step.stage,
-      state: normalizePlanStepState(step.status),
+      state: step.run?.status === "failed" ? "failed" : normalizePlanStepState(step.status),
       stage: step.stage,
     }));
   return normalized.length > 0
@@ -225,6 +274,17 @@ export function markRunningPlanStepFailed(plan: PipelinePlanStep[], detail: stri
     if (!marked && step.state === "running") {
       marked = true;
       return { ...step, detail, state: "failed" };
+    }
+    return step;
+  });
+}
+
+export function markRunningPlanStepWaitingForStatus(plan: PipelinePlanStep[], detail: string): PipelinePlanStep[] {
+  let marked = false;
+  return plan.map((step) => {
+    if (!marked && step.state === "running") {
+      marked = true;
+      return { ...step, detail, state: "running" };
     }
     return step;
   });

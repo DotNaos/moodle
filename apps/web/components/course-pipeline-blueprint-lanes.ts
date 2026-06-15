@@ -15,6 +15,7 @@ import {
   finalTaskOutputNodeData,
 } from "@/components/course-pipeline-blueprint-output-data";
 import type {
+  ActiveRunSelectionRecord,
   BlueprintGraphNode,
   BlueprintNode,
   BlueprintNodeData,
@@ -570,10 +571,16 @@ function resourceRunScope(resource: CourseInventoryNode): BlueprintRunScope {
 }
 
 export type RunLookup = {
+  activeByResourceStage: Map<string, PipelineRunRecord>;
   byResourceStage: Map<string, PipelineRunRecord[]>;
 };
 
-export function buildRunLookup(runs: PipelineRunRecord[]): RunLookup {
+export function buildRunLookup(
+  runs: PipelineRunRecord[],
+  activeSelections: ActiveRunSelectionRecord[] = [],
+): RunLookup {
+  const byId = new Map(runs.map((run) => [run.id, run]));
+  const activeByResourceStage = new Map<string, PipelineRunRecord>();
   const byResourceStage = new Map<string, PipelineRunRecord[]>();
   for (const run of runs) {
     if (!run.resourceId) continue;
@@ -587,10 +594,27 @@ export function buildRunLookup(runs: PipelineRunRecord[]): RunLookup {
   for (const records of byResourceStage.values()) {
     records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
-  return { byResourceStage };
+  for (const selection of activeSelections) {
+    const run = byId.get(selection.activeRunId);
+    if (!run) continue;
+    const stage = selection.stage || run.stage;
+    const selectedResourceId = selection.resourceId || run.resourceId;
+    for (const key of resourceKeys(selectedResourceId)) {
+      activeByResourceStage.set(runKey(key, stage), run);
+    }
+  }
+  return { activeByResourceStage, byResourceStage };
 }
 
 function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[]): PipelineRunRecord | null {
+  for (const stage of stages) {
+    for (const key of resourceKeys(resourceId)) {
+      const activeRun = runLookup.activeByResourceStage.get(runKey(key, stage));
+      const latestRun = runLookup.byResourceStage.get(runKey(key, stage))?.[0] ?? null;
+      if (activeRun && shouldPreferActiveRun(activeRun, latestRun)) return activeRun;
+      if (latestRun) return latestRun;
+    }
+  }
   for (const stage of stages) {
     for (const key of resourceKeys(resourceId)) {
       const resourceRun = runLookup.byResourceStage.get(runKey(key, stage))?.[0];
@@ -598,6 +622,14 @@ function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[
     }
   }
   return null;
+}
+
+function shouldPreferActiveRun(activeRun: PipelineRunRecord, latestRun: PipelineRunRecord | null): boolean {
+  if (!latestRun || latestRun.id === activeRun.id) return true;
+  if (latestRun.status === "running" || latestRun.status === "queued" || latestRun.status === "failed") {
+    return new Date(activeRun.createdAt).getTime() >= new Date(latestRun.createdAt).getTime();
+  }
+  return true;
 }
 
 function runKey(resourceId: string, stage: string): string {

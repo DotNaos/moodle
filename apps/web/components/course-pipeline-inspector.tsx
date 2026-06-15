@@ -9,11 +9,13 @@ import {
   type PipelineRunsResponse,
 } from "@/components/course-pipeline-blueprint";
 import type { BlueprintRunScope } from "@/components/course-pipeline-blueprint-model";
+import { resourceKeys } from "@/components/course-pipeline-blueprint-model";
 import type { BlueprintRunRequest } from "@/components/course-pipeline-blueprint-model";
 import { hasPipelineLiveWork } from "@/components/course-pipeline-progress";
 import {
   markPlanStep,
   markRunningPlanStepFailed,
+  markRunningPlanStepWaitingForStatus,
   PipelineRunControl,
   planRequestBody,
   planStepsFromResponse,
@@ -73,15 +75,20 @@ export function CoursePipelineInspector({
   const [runStartStage, setRunStartStage] = useState<PipelineStageId>("extracted");
   const [runPlan, setRunPlan] = useState<PipelinePlanStep[]>([]);
   const [runningPlanId, setRunningPlanId] = useState<string | null>(null);
+  const [monitoringDetachedPlanId, setMonitoringDetachedPlanId] = useState<string | null>(null);
   const codexModels = useCodexModels(courseId);
 
-  const liveWork = useMemo(
+  const serverLiveWork = useMemo(
     () => hasPipelineLiveWork({
       actionIds: [selectingRunId, rerunningEngine, runningPlanId],
       runs,
       status,
     }),
     [rerunningEngine, runningPlanId, runs, selectingRunId, status],
+  );
+  const liveWork = useMemo(
+    () => serverLiveWork || Boolean(monitoringDetachedPlanId),
+    [monitoringDetachedPlanId, serverLiveWork],
   );
   const gate = derivePipelineGate({
     blockingError: gateError,
@@ -90,6 +97,11 @@ export function CoursePipelineInspector({
     statusLoaded: Boolean(status),
   });
   const redirectingToConnect = gate.kind === "blocked" && shouldRedirectToMoodleConnect(gate.issue);
+  const displayedRunScope = useMemo(() => {
+    const scope = resolveRunScope({ mode: runScopeMode, selectedScope });
+    const normalized = normalizeScopeForPlan(scope, stagesForPlan(runMode, runStartStage), inventory);
+    return normalized.kind === "course" ? selectedScope : normalized;
+  }, [inventory, runMode, runScopeMode, runStartStage, selectedScope]);
 
   useEffect(() => {
     void loadInspectorData();
@@ -109,6 +121,13 @@ export function CoursePipelineInspector({
     if (!redirectingToConnect) return;
     router.replace(`/moodle/connect?next=${encodeURIComponent(`/courses/${courseId}/pipeline`)}`);
   }, [courseId, redirectingToConnect, router]);
+
+  useEffect(() => {
+    if (!monitoringDetachedPlanId || serverLiveWork || (!status && !runs)) return;
+    setMonitoringDetachedPlanId(null);
+    setRunPlan([]);
+    setError(null);
+  }, [monitoringDetachedPlanId, runs, serverLiveWork, status]);
 
   async function loadInspectorData(options?: { silent?: boolean }) {
     if (!options?.silent) {
@@ -253,14 +272,16 @@ export function CoursePipelineInspector({
     const runId = makeClientRunId();
     const nextMode = override?.mode ?? runMode;
     const nextStartStage = override?.startStage ?? runStartStage;
-    const scope = override?.scope ?? resolveRunScope({ mode: runScopeMode, selectedScope });
     const stages = stagesForPlan(nextMode, nextStartStage);
+    const initialScope = override?.scope ?? resolveRunScope({ mode: runScopeMode, selectedScope });
+    const scope = normalizeScopeForPlan(initialScope, stages, inventory);
     if (override) {
       setRunMode(nextMode);
       setRunStartStage(nextStartStage);
       setRunScopeMode(scope.kind === "course" ? "course" : "selected");
     }
     setRunningPlanId(runId);
+    setMonitoringDetachedPlanId(null);
     setError(null);
     setRunPlan(stages.map((stage) => ({
       id: `${runId}:${stage.id}`,
@@ -278,6 +299,7 @@ export function CoursePipelineInspector({
           model: codexModels.selectedModel,
           reasoningEffort: codexModels.selectedReasoningEffort,
         }),
+        runId,
       );
       setRunPlan(planStepsFromResponse(runId, stages, response.steps));
       if (response.response) {
@@ -290,8 +312,17 @@ export function CoursePipelineInspector({
         }
       }
     } catch (runError) {
-      setRunPlan((current) => markRunningPlanStepFailed(current, formatStudyPipelineError(runError)));
-      handlePipelineActionError(runError, setError, setGateError);
+      if (isUpstreamHeadersTimeout(runError)) {
+        setMonitoringDetachedPlanId(runId);
+        setRunPlan((current) => markRunningPlanStepWaitingForStatus(
+          current,
+          "Backend läuft weiter. Status wird neu geladen.",
+        ));
+        setError(formatStudyPipelineTimeout(runError));
+      } else {
+        setRunPlan((current) => markRunningPlanStepFailed(current, formatStudyPipelineError(runError)));
+        handlePipelineActionError(runError, setError, setGateError);
+      }
     } finally {
       setRunningPlanId(null);
       await loadInspectorData({ silent: true });
@@ -335,9 +366,14 @@ export function CoursePipelineInspector({
               <PipelineRunControl
                 codexModel={codexModels.selectedModel}
                 codexModelOptions={codexModels.models}
+                codexConnected={codexModels.connected}
+                codexConnecting={codexModels.connecting}
+                codexDeviceCode={codexModels.deviceCode}
+                codexError={codexModels.error}
                 codexModelsLoading={codexModels.loading || codexModels.authChecking}
-                disabled={Boolean(runningPlanId) || loading}
+                disabled={Boolean(runningPlanId) || Boolean(monitoringDetachedPlanId) || loading}
                 mode={runMode}
+                onCodexConnect={() => void codexModels.connect()}
                 onCodexModelChange={codexModels.setSelectedModel}
                 onModeChange={setRunMode}
                 onRun={() => void runPipelinePlan()}
@@ -345,7 +381,7 @@ export function CoursePipelineInspector({
                 onStartStageChange={setRunStartStage}
                 plan={runPlan}
                 scopeMode={runScopeMode}
-                selectedScope={selectedScope}
+                selectedScope={displayedRunScope}
                 startStage={runStartStage}
               />
 
@@ -357,7 +393,7 @@ export function CoursePipelineInspector({
                 onSelectedScopeChange={setSelectedScope}
                 onSelectRun={(runId) => void selectActiveRun(runId)}
                 rerunningEngine={rerunningEngine}
-                runningNodeAction={Boolean(runningPlanId) || loading}
+                runningNodeAction={Boolean(runningPlanId) || Boolean(monitoringDetachedPlanId) || loading}
                 runs={runs}
                 selectingRunId={selectingRunId}
                 status={status}
@@ -378,6 +414,30 @@ export function CoursePipelineInspector({
       </div>
     </section>
   );
+}
+
+function normalizeScopeForPlan(
+  scope: BlueprintRunScope,
+  stages: Array<{ id: PipelineStageId; label: string }>,
+  inventory: CourseInventoryResponse | null,
+): BlueprintRunScope {
+  const includesCodex = stages.some((stage) => stage.id === "curated");
+  if (!includesCodex || scope.kind !== "resource" || !inventory) {
+    return scope;
+  }
+  const selectedKeys = new Set(scope.resourceIds.flatMap(resourceKeys));
+  const matchingGroup = inventory.taskGroups.find((group) => {
+    const groupResourceIds = [group.sheet.id, group.solution?.id].filter(Boolean) as string[];
+    return groupResourceIds.some((resourceId) => resourceKeys(resourceId).some((key) => selectedKeys.has(key)));
+  });
+  if (!matchingGroup) {
+    return scope;
+  }
+  return {
+    kind: "task_group",
+    label: matchingGroup.title,
+    resourceIds: [matchingGroup.sheet.id, matchingGroup.solution?.id].filter(Boolean) as string[],
+  };
 }
 
 function PipelineGatePanel({
@@ -450,33 +510,38 @@ async function studyPipelineRequest<T>(courseId: string, suffix: string): Promis
     `/api/study-pipeline/courses/${encodeURIComponent(courseId)}/study-pipeline${suffix}`,
     { cache: "no-store" },
   );
-  const payload = await response.json().catch(() => ({})) as { code?: string; error?: string };
+  const payload = await response.json().catch(() => ({})) as { code?: string; error?: string; requestId?: string };
   if (!response.ok) {
     throw new StudyPipelineRequestError(
       payload.error ?? `Moodle study pipeline failed with ${response.status}.`,
       response.status,
       payload.code,
+      payload.requestId ?? response.headers.get("x-request-id") ?? undefined,
     );
   }
   return payload as T;
 }
 
-async function studyPipelinePost<T>(courseId: string, suffix: string, body: unknown): Promise<T> {
+async function studyPipelinePost<T>(courseId: string, suffix: string, body: unknown, requestId?: string): Promise<T> {
   const response = await fetch(
     `/api/study-pipeline/courses/${encodeURIComponent(courseId)}/study-pipeline${suffix}`,
     {
       body: JSON.stringify(body),
       cache: "no-store",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(requestId ? { "X-Request-ID": requestId } : {}),
+      },
       method: "POST",
     },
   );
-  const payload = await response.json().catch(() => ({})) as { code?: string; error?: string };
+  const payload = await response.json().catch(() => ({})) as { code?: string; error?: string; requestId?: string };
   if (!response.ok) {
     throw new StudyPipelineRequestError(
       payload.error ?? `Moodle study pipeline failed with ${response.status}.`,
       response.status,
       payload.code,
+      payload.requestId ?? response.headers.get("x-request-id") ?? undefined,
     );
   }
   return payload as T;
@@ -505,7 +570,27 @@ async function loadTaskViewForInspector(courseId: string): Promise<TaskViewRespo
 }
 
 function formatStudyPipelineError(error: unknown): string {
+  if (error instanceof StudyPipelineRequestError) {
+    const parts = [error.message];
+    const details = [
+      error.code ? `code ${error.code}` : "",
+      error.requestId ? `request ${error.requestId}` : "",
+    ].filter(Boolean);
+    if (details.length > 0) {
+      parts.push(`(${details.join(", ")})`);
+    }
+    return parts.join(" ");
+  }
   return error instanceof Error ? error.message : "Moodle study pipeline failed.";
+}
+
+function formatStudyPipelineTimeout(error: StudyPipelineRequestError): string {
+  const suffix = error.requestId ? ` Request ${error.requestId}.` : "";
+  return `Der Backend-Run läuft weiter, aber der Frontend-Proxy hat beim Warten auf die Antwort ein Timeout erreicht. Ich lade den Status neu.${suffix}`;
+}
+
+function isUpstreamHeadersTimeout(error: unknown): error is StudyPipelineRequestError {
+  return error instanceof StudyPipelineRequestError && error.code === "upstream_headers_timeout";
 }
 
 class StudyPipelineRequestError extends Error {
@@ -513,6 +598,7 @@ class StudyPipelineRequestError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly requestId?: string,
   ) {
     super(message);
   }

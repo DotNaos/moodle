@@ -342,6 +342,88 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.some((node) => node.data.tone === "warning")).toBe(true);
   });
 
+  test("uses the active run selection instead of a newer failed run for the main lane state", () => {
+    const selectedRunId = "run-curated-active-success";
+    const supersededRunId = "run-curated-newer-failed";
+    const runsWithActiveCuratedSelection: PipelineRunsResponse = {
+      activeSelections: [{
+        activeRunId: selectedRunId,
+        reason: "latest successful run",
+        resourceId: "947711",
+        selectedAt: "2026-06-13T07:08:00Z",
+        sourceId: "source:moodle-course:22584",
+        stage: "curated",
+      }],
+      courseId: "22584",
+      runs: [
+        {
+          artifactRefs: [
+            { id: "artifact-page-render", kind: "page_render" },
+            { id: "artifact-element-accountability", kind: "element_accountability" },
+            { id: "artifact-render-preview", kind: "rendered_preview" },
+          ],
+          artifactRoot: "study-pipeline/course-22584/run-curated-active",
+          configHash: "config:curated:codex:gpt-5.5:medium",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:08:00Z",
+          engine: "codex",
+          id: selectedRunId,
+          ownership: "user_owned",
+          resourceId: "947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "curated",
+          status: "succeeded",
+          curationChecklist: {
+            items: [
+              { evidenceArtifactId: "artifact-page-render", id: "page_images_reviewed", label: "Page images reviewed", status: "checked" },
+              { id: "extracted_elements_reviewed", label: "Extracted PDF elements reviewed", status: "checked" },
+              { evidenceArtifactId: "artifact-element-accountability", id: "element_accountability_complete", label: "Element accountability complete", status: "checked" },
+              { id: "layout_reconstructed", label: "Layout reconstructed", status: "checked" },
+              { evidenceArtifactId: "artifact-render-preview", id: "rendered_preview_reviewed", label: "Rendered preview reviewed", status: "checked" },
+              { id: "source_mapping_complete", label: "Source mapping complete", status: "checked" },
+            ],
+            renderPreviewArtifactId: "artifact-render-preview",
+            status: "complete",
+          },
+          elementDecisions: [{
+            elementKind: "paragraph",
+            outcome: "used",
+            sourceElementId: "block-1",
+          }],
+        },
+        {
+          artifactRoot: "study-pipeline/course-22584/run-curated-failed",
+          configHash: "config:curated:codex:gpt-5.5:medium",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:06:00Z",
+          engine: "codex",
+          error: "element accountability incomplete",
+          id: supersededRunId,
+          ownership: "user_owned",
+          resourceId: "947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "curated",
+          status: "failed",
+        },
+      ],
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments,
+      inventory,
+      runs: runsWithActiveCuratedSelection,
+      status,
+      taskView,
+    });
+    const codexNode = graph.nodes.find((node) => node.id === "task-group-sheet-01-codex");
+
+    expect(codexNode?.data.status).toBe("succeeded");
+    expect(codexNode?.data.active).toBe(true);
+    expect(codexNode?.data.evidence).toContain(`Run ${selectedRunId}`);
+    expect(codexNode?.data.evidence).not.toContain(`Run ${supersededRunId}`);
+    expect(codexNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Run failed");
+  });
+
   test("adds readable stage columns and keeps conveyor edges moving right", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
     const stageIds = [

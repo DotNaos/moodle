@@ -268,7 +268,7 @@ export function buildBlueprintGraph({
   const nodes: BlueprintGraphNode[] = [];
   const edges: Edge[] = [];
   const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
-  const runLookup = buildRunLookup(runs?.runs ?? []);
+  const runLookup = buildRunLookup(runs?.runs ?? [], runs?.activeSelections ?? []);
   const extractedLookup = buildExtractedLookup(extractedDocuments);
   const outputLookup = buildOutputLookup(taskView);
   const derivedInventory = inventory ?? inventoryFromStatus(status);
