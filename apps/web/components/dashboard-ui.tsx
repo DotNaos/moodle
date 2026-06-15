@@ -57,10 +57,10 @@ export function CourseThumbnail({
         ? "size-9"
         : "size-14"
     : size === "large"
-      ? "h-16 w-24"
+      ? "size-16"
       : size === "compact"
-        ? "h-9 w-12"
-        : "h-14 w-16";
+        ? "size-9"
+        : "size-14";
   const radius = circle ? "rounded-full" : size === "compact" ? "rounded-xl" : "rounded-2xl";
 
   return (
@@ -123,10 +123,12 @@ function useInView<T extends HTMLElement>(ref: RefObject<T | null>): boolean {
 
 export function CourseSidebarRow({
   active = false,
+  collapsed = false,
   course,
   onSelect,
 }: {
   active?: boolean;
+  collapsed?: boolean;
   course: Course;
   onSelect: () => void;
 }) {
@@ -134,31 +136,68 @@ export function CourseSidebarRow({
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(imageUrl) && !imageFailed;
 
+  if (collapsed) {
+    return (
+      <button
+        aria-label={courseTitle(course)}
+        className={cn(
+          "group grid size-11 place-items-center overflow-hidden rounded-xl transition-colors",
+          active ? "bg-primary text-primary-foreground" : "hover:bg-secondary/80",
+        )}
+        title={courseTitle(course)}
+        type="button"
+        onClick={onSelect}
+      >
+        <span className="relative size-9 overflow-hidden rounded-lg bg-secondary">
+          {showImage && imageUrl ? (
+            <img
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              src={imageUrl}
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-muted-foreground">
+              <ImageIcon aria-hidden className="size-4" />
+            </span>
+          )}
+          {active ? <span aria-hidden className="absolute inset-0 bg-primary/35" /> : null}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       className={cn(
-        "group flex min-h-11 w-full items-stretch gap-2 overflow-hidden rounded-lg pr-2 text-left transition-colors",
+        "group flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg px-2 py-1.5 text-left transition-colors",
         active ? "bg-primary text-primary-foreground" : "hover:bg-secondary/80",
       )}
       type="button"
       onClick={onSelect}
     >
-      <span className="flex min-w-0 flex-1 items-center py-2.5 pl-3">
-        <span className="block truncate text-sm font-medium leading-snug">{courseTitle(course)}</span>
-      </span>
-      {showImage && imageUrl ? (
-        <span className="relative h-11 w-14 shrink-0 overflow-hidden">
+      <span className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-secondary">
+        {showImage && imageUrl ? (
           <img
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="h-full w-full object-cover"
             loading="lazy"
             referrerPolicy="no-referrer"
             src={imageUrl}
             onError={() => setImageFailed(true)}
           />
-          {active ? <span aria-hidden className="absolute inset-0 bg-primary/35" /> : null}
-        </span>
-      ) : null}
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <ImageIcon aria-hidden className="size-5" />
+          </span>
+        )}
+        {active ? <span aria-hidden className="absolute inset-0 bg-primary/35" /> : null}
+      </span>
+      <span className="flex min-w-0 flex-1 items-center">
+        <span className="block truncate text-sm font-medium leading-snug">{courseTitle(course)}</span>
+      </span>
     </button>
   );
 }
@@ -218,11 +257,6 @@ export function MaterialGridCard({
   onOpenTask?: () => void;
   onSelect: () => void;
 }) {
-  const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
-  const isFile = Boolean(material.fileType) || hasExtension;
-  const isZip = material.fileType?.toLowerCase() === "zip" || /\.zip$/i.test(material.name);
-  const filename = material.fileType ? `${material.name}.${material.fileType}` : material.name;
-
   return (
     <div
       className={cn(
@@ -231,13 +265,7 @@ export function MaterialGridCard({
       )}
     >
       <button className="flex flex-col items-start gap-2 text-left" type="button" onClick={onSelect}>
-        {!isFile ? (
-          <Globe className="shrink-0 text-muted-foreground" size={28} />
-        ) : isZip ? (
-          <FileArchive className="shrink-0 text-muted-foreground" size={28} />
-        ) : (
-          <FileIcon className="shrink-0" filename={filename} size={28} />
-        )}
+        <MaterialFileIcon className="shrink-0 text-muted-foreground" material={material} size={28} />
         <span className="line-clamp-2 text-sm font-medium leading-snug break-words">{material.name}</span>
       </button>
       {onOpenTask ? (
@@ -283,12 +311,6 @@ export function MaterialRow({
   onOpenTask?: () => void;
   onSelect: () => void;
 }) {
-
-  const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
-  const isFile = Boolean(material.fileType) || hasExtension;
-  const isZip = material.fileType?.toLowerCase() === "zip" || /\.zip$/i.test(material.name);
-  const filename = material.fileType ? `${material.name}.${material.fileType}` : material.name;
-
   return (
     <div
       className={cn(
@@ -303,13 +325,7 @@ export function MaterialRow({
             active && "bg-primary-foreground/15",
           )}
         >
-          {!isFile ? (
-            <Globe className="text-muted-foreground" size={20} />
-          ) : isZip ? (
-            <FileArchive className="text-muted-foreground" size={20} />
-          ) : (
-            <FileIcon filename={filename} size={20} />
-          )}
+          <MaterialFileIcon className="text-muted-foreground" material={material} size={20} />
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{material.name}</span>
@@ -345,4 +361,27 @@ export function MaterialRow({
       ) : null}
     </div>
   );
+}
+
+export function MaterialFileIcon({
+  className,
+  material,
+  size,
+}: {
+  className?: string;
+  material: Material;
+  size: number;
+}) {
+  const hasExtension = /\.[a-z0-9]{2,4}$/i.test(material.name);
+  const isFile = Boolean(material.fileType) || hasExtension;
+  const isZip = material.fileType?.toLowerCase() === "zip" || /\.zip$/i.test(material.name);
+  const filename = material.fileType ? `${material.name}.${material.fileType}` : material.name;
+
+  if (!isFile) {
+    return <Globe aria-hidden className={className} size={size} />;
+  }
+  if (isZip) {
+    return <FileArchive aria-hidden className={className} size={size} />;
+  }
+  return <FileIcon aria-hidden className={className} filename={filename} size={size} />;
 }

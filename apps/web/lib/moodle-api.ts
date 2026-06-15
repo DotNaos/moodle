@@ -1,27 +1,45 @@
 import type { Course, Material } from "@/lib/dashboard-data";
 
 const MOODLE_API_BASE_URL = "/api/moodle";
+const API_REQUEST_TIMEOUT_MS = 20_000;
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${MOODLE_API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  const text = await response.text();
-  const payload = parseJSONResponse(text, response.headers.get("content-type"));
+  const controller = init?.signal ? null : new AbortController();
+  const timeout = controller
+    ? globalThis.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
+    : null;
 
-  if (!response.ok) {
-    throw new APIRequestError(
-      getAPIErrorMessage(payload, text, response.status),
-      response.status,
-      getAPIErrorCode(payload),
-    );
+  try {
+    const response = await fetch(`${MOODLE_API_BASE_URL}${path}`, {
+      ...init,
+      signal: init?.signal ?? controller?.signal,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+    const text = await response.text();
+    const payload = parseJSONResponse(text, response.headers.get("content-type"));
+
+    if (!response.ok) {
+      throw new APIRequestError(
+        getAPIErrorMessage(payload, text, response.status),
+        response.status,
+        getAPIErrorCode(payload),
+      );
+    }
+
+    return payload as T;
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new APIRequestError("Moodle request timed out. Try refreshing the page.", 408, "request_timeout");
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      globalThis.clearTimeout(timeout);
+    }
   }
-
-  return payload as T;
 }
 
 export class APIRequestError extends Error {

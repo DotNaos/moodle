@@ -4,12 +4,45 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { getClerkSigningKid, handshakeTokenKid } from "@/lib/clerk-signing-kid";
 
 const clerkHandler = clerkMiddleware();
+const LOCAL_DEV_BROWSER_COOKIE = "__clerk_db_jwt";
+const LOCAL_DEV_BROWSER_TOKEN = "local-dev-browser-check-disabled";
+
+function isDevelopment(): boolean {
+  return process.env.NODE_ENV === "development";
+}
+
+function hasLocalDevBrowserToken(request: NextRequest): boolean {
+  return (
+    request.cookies.has(LOCAL_DEV_BROWSER_COOKIE) ||
+    request.nextUrl.searchParams.has(LOCAL_DEV_BROWSER_COOKIE)
+  );
+}
+
+function bootstrapLocalDevBrowserToken(request: NextRequest): NextResponse | null {
+  if (!isDevelopment()) {
+    return null;
+  }
+
+  if (hasLocalDevBrowserToken(request)) {
+    return null;
+  }
+
+  const response = NextResponse.redirect(request.nextUrl);
+
+  response.cookies.set(LOCAL_DEV_BROWSER_COOKIE, LOCAL_DEV_BROWSER_TOKEN, {
+    path: "/",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+
+  return response;
+}
 
 function maybeBlockProductionDevRoute(request: NextRequest): NextResponse | null {
   if (!request.nextUrl.pathname.startsWith("/dev")) {
     return null;
   }
-  if (process.env.NODE_ENV === "development") {
+  if (isDevelopment()) {
     return NextResponse.next();
   }
   return new NextResponse("Not Found", {
@@ -21,7 +54,7 @@ function maybeBlockProductionDevRoute(request: NextRequest): NextResponse | null
 }
 
 async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextResponse | null> {
-  if (process.env.NODE_ENV !== "development") {
+  if (!isDevelopment()) {
     return null;
   }
 
@@ -63,6 +96,11 @@ async function maybeRedirectStaleHandshake(request: NextRequest): Promise<NextRe
 }
 
 export default async function proxy(request: NextRequest, event: NextFetchEvent) {
+  const localDevBrowserBootstrap = bootstrapLocalDevBrowserToken(request);
+  if (localDevBrowserBootstrap) {
+    return localDevBrowserBootstrap;
+  }
+
   const devRouteResponse = maybeBlockProductionDevRoute(request);
   if (devRouteResponse) {
     return devRouteResponse;

@@ -30,8 +30,8 @@ import { PdfViewerModal } from './src/components/PdfViewerModal';
 import { ScannerModal } from './src/components/ScannerModal';
 import { StatusBanner } from './src/components/StatusBanner';
 import { logDevError, logDevInfo } from './src/debug';
-import { getErrorDebugDetails, getSafeMessage } from './src/format';
-import { RefreshCw } from './src/icons';
+import { getErrorDebugDetails, getSafeMessage, sanitizeCourseName } from './src/format';
+import { ChevronLeft, RefreshCw } from './src/icons';
 import {
     completeMoodleBrowserSSO,
     createMoodleBrowserSSOLaunch,
@@ -633,10 +633,22 @@ function App() {
                                             alignItems: 'center',
                                         },
                                     ]}>
-                                    <Text style={styles.appTitle}>
-                                        {getScreenTitle(activeView)}
+                                    {activeView === 'courses' && currentCourse ? (
+                                        <Pressable
+                                            onPress={() => setSelectedCourseId(null)}
+                                            style={({ pressed }) => [
+                                                styles.backButton,
+                                                pressed && styles.pressed,
+                                            ]}>
+                                            <ChevronLeft color={palette.text} size={24} />
+                                        </Pressable>
+                                    ) : null}
+                                    <Text style={[styles.appTitle, { flex: 1 }]} numberOfLines={1}>
+                                        {activeView === 'courses' && currentCourse
+                                            ? sanitizeCourseName(currentCourse.fullName)
+                                            : getScreenTitle(activeView)}
                                     </Text>
-                                    {activeView === 'courses' ? (
+                                    {activeView === 'courses' && !currentCourse ? (
                                         <Pressable
                                             onPress={() => {
                                                 if (connection) {
