@@ -96,6 +96,9 @@ export function drillTo(state: NavigatorState, path: NavigatorPath): NavigatorSt
 // the full-width list), then walks the path towards home.
 export function parentOf(state: NavigatorState): NavigatorState | null {
   if (state.document) {
+    if (state.document.kind === "chat-session" || state.document.kind === "calendar-grid" || state.document.kind === "calendar-event") {
+      return homeState();
+    }
     return { path: state.path, document: null };
   }
   switch (state.path.kind) {
@@ -211,9 +214,9 @@ export function buildNavigatorURL(state: NavigatorState): string {
     case "course-mode":
       return `/courses/${encodeURIComponent(state.path.courseId)}/${state.path.mode}`;
     case "calendar":
-      return "/calendar";
+      return "/calendar/history";
     case "chat":
-      return "/chat";
+      return "/chat/history";
   }
 }
 
@@ -257,8 +260,14 @@ export function parseNavigatorLocation(pathname: string, search = ""): Navigator
   }
 
   if (segments[0] === "calendar") {
+    if (!segments[1]) {
+      return openDocument(homeState(), { kind: "calendar-grid" });
+    }
     if (segments[1] === "grid") {
       return openDocument(homeState(), { kind: "calendar-grid" });
+    }
+    if (segments[1] === "history") {
+      return { path: { kind: "calendar" }, document: null };
     }
     if (segments[1] === "events" && segments[2]) {
       return openDocument(homeState(), { kind: "calendar-event", eventUid: segments[2] });
@@ -269,6 +278,9 @@ export function parseNavigatorLocation(pathname: string, search = ""): Navigator
   if (segments[0] === "chat") {
     const courseId = cleanParam(params.get("course"));
     if (!segments[1]) {
+      return openDocument(homeState(), { kind: "chat-session", sessionId: null, courseId });
+    }
+    if (segments[1] === "history") {
       return { path: { kind: "chat" }, document: null };
     }
     const sessionId = segments[1] === "new" ? null : segments[1];
@@ -368,10 +380,14 @@ export function navigatorBreadcrumbs(
       });
       break;
     case "calendar":
-      crumbs.push({ id: "calendar", label: "Kalender", target: { path, document: null } });
+      if (document?.kind !== "calendar-grid" && document?.kind !== "calendar-event") {
+        crumbs.push({ id: "calendar", label: "Kalender", target: { path, document: null } });
+      }
       break;
     case "chat":
-      crumbs.push({ id: "chat", label: "Chat", target: { path, document: null } });
+      if (document?.kind !== "chat-session") {
+        crumbs.push({ id: "chat", label: "Chat", target: { path, document: null } });
+      }
       break;
   }
 

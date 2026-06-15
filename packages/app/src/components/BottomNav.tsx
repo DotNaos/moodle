@@ -25,7 +25,7 @@ type BottomNavProps = {
 
 export function BottomNav(props: BottomNavProps) {
     const insets = useSafeAreaInsets();
-    const bottomPadding = Math.max(insets.bottom - 20, 14);
+    const bottomPadding = Math.max(insets.bottom, 14) + 6;
     const activeView =
         props.activeView === 'videos' ? 'courses' : props.activeView;
 

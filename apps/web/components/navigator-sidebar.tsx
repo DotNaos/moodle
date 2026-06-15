@@ -599,7 +599,7 @@ function SidebarResizeHandle({
   return (
     <button
       aria-label="Sidebar-Breite anpassen"
-      className="group absolute right-0 top-0 h-full w-2 translate-x-1/2 cursor-col-resize touch-none"
+      className="group absolute right-0 top-0 h-full w-3 translate-x-1/2 !cursor-col-resize touch-none"
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -610,11 +610,10 @@ function SidebarResizeHandle({
           onResizeBy(16);
         }
       }}
-      onMouseDown={onPointerDown}
       onPointerDown={onPointerDown}
       type="button"
     >
-      <span className="mx-auto block h-full w-px bg-transparent transition-colors group-hover:bg-border" />
+      <span className="mx-auto block h-full w-px !cursor-col-resize bg-transparent transition-all group-hover:bg-gradient-to-b group-hover:from-transparent group-hover:via-border group-hover:to-transparent group-focus-visible:bg-gradient-to-b group-focus-visible:from-transparent group-focus-visible:via-border group-focus-visible:to-transparent" />
     </button>
   );
 }

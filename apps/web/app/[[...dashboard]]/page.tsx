@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, MessageSquare, X } from "lucide-react";
+import { AlertCircle, History, MessagesSquare, SquarePen, X } from "lucide-react";
 import { Show, useAuth } from "@clerk/nextjs";
 import {
   useCallback,
@@ -24,17 +24,20 @@ import {
 import { FullPageLoading, SignedOutHome } from "@/components/home-states";
 import { HeaderActionsMenu } from "@/components/header-actions-menu";
 import { CalendarPanel } from "@/components/course-calendar-panel";
+import { ChatHistoryModal } from "@/components/chat-history-modal";
 import { ChatPage } from "@/components/chat-page";
 import { CourseMainPanel } from "@/components/course-main-panel";
 import { CoursesHomePanel } from "@/components/courses-home-panel";
-import { MobileQuickChat } from "@/components/mobile-quick-chat";
+import { DesktopCourseSidebar } from "@/components/desktop-course-sidebar";
+import { HomeOverview } from "@/components/home-overview";
+import { MobileDrilldownBar } from "@/components/mobile-drilldown-bar";
+import { MobileTabBar, type MobileTab } from "@/components/mobile-tab-bar";
 import { MoodleConnectCard } from "@/components/moodle-connect-card";
 import {
   CalendarEventDetailPanel,
   CalendarEventsPanel,
   ChatSessionsPanel,
   CourseModesPanel,
-  LandingPanel,
 } from "@/components/navigator-panels";
 import { NavigatorSidebar } from "@/components/navigator-sidebar";
 import { TopBar } from "@/components/top-bar";
@@ -55,12 +58,10 @@ import {
   normalizeCourses,
   normalizeMaterials,
 } from "@/lib/dashboard-data";
-import type { HomeView } from "@/lib/home-navigation";
 import {
   navigatorBreadcrumbs,
   type CourseMode,
   type NavigatorLabelResolvers,
-  type NavigatorPath,
 } from "@/lib/navigator";
 import {
   apiRequest,
@@ -72,15 +73,19 @@ import {
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyChatContext, StudyTestContext } from "@/lib/codex-chat";
 import { readRecentChats } from "@/lib/recent-chat-storage";
+import { upsertRecentTask } from "@/lib/recent-task-storage";
 import { EMPTY_STUDY_OUTLINE, taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { buildTaskLinksByResourceId, taskIdForMaterial } from "@/lib/task-material-links";
 import { cn } from "@/lib/utils";
 
 const MOODLE_SERVICES_URL = process.env.NEXT_PUBLIC_MOODLE_SERVICES_URL ?? "https://moodle-services.os-home.net";
 const SIDEBAR_WIDTH_STORAGE_KEY = "moodle.dashboard.sidebarWidth";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "moodle.dashboard.sidebarCollapsed";
 const SIDEBAR_DEFAULT_WIDTH = 280;
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_COLLAPSE_THRESHOLD = 180;
+const SIDEBAR_EXPAND_THRESHOLD = SIDEBAR_MIN_WIDTH;
 const CHAT_SIDEBAR_WIDTH_STORAGE_KEY = "moodle.dashboard.chatSidebarWidth";
 const CHAT_SIDEBAR_DEFAULT_WIDTH = 400;
 const CHAT_SIDEBAR_MIN_WIDTH = 320;
@@ -94,6 +99,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [materialsByCourseId, setMaterialsByCourseId] = useState<Record<string, Material[]>>({});
+  const [loadedMaterialsByCourseId, setLoadedMaterialsByCourseId] = useState<Record<string, true>>({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -110,12 +116,18 @@ export default function Home() {
     const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
     return clampSidebarWidth(Number.isFinite(stored) ? stored : SIDEBAR_DEFAULT_WIDTH);
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  });
   const [chatSidebarOpen, setChatSidebarOpen] = useState(false);
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [newChatVersion, setNewChatVersion] = useState(0);
   // Mobile chat overlay: the chat opens as a bottom sheet over the current
   // screen, so getting back to the task is a single dismiss. The sheet stays
   // mounted after the first open so the conversation survives closing it.
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
-  const [mobileChatMounted, setMobileChatMounted] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(() => {
     if (typeof window === "undefined") {
       return CHAT_SIDEBAR_DEFAULT_WIDTH;
@@ -189,6 +201,8 @@ export default function Home() {
     Boolean(isSignedIn) &&
     !needsConnection &&
     (path.kind === "home" ||
+      path.kind === "course" ||
+      path.kind === "course-mode" ||
       path.kind === "calendar" ||
       activeDocument?.kind === "calendar-grid" ||
       activeDocument?.kind === "calendar-event");
@@ -202,20 +216,29 @@ export default function Home() {
   }, [sidebarWidth]);
 
   useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     window.localStorage.setItem(CHAT_SIDEBAR_WIDTH_STORAGE_KEY, String(chatSidebarWidth));
   }, [chatSidebarWidth]);
 
   const handleChatSidebarResizeStart = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      if ("pointerId" in event) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       const startX = event.clientX;
       const startWidth = chatSidebarWidth;
+      document.documentElement.dataset.panelResizing = "true";
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       const handlePointerMove = (moveEvent: PointerEvent) => {
         setChatSidebarWidth(clampChatSidebarWidth(startWidth - (moveEvent.clientX - startX)));
       };
       const handlePointerUp = () => {
+        delete document.documentElement.dataset.panelResizing;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         window.removeEventListener("pointermove", handlePointerMove);
@@ -232,14 +255,27 @@ export default function Home() {
   const handleSidebarResizeStart = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      if ("pointerId" in event) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       const startX = event.clientX;
       const startWidth = sidebarWidth;
+      document.documentElement.dataset.panelResizing = "true";
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       const handlePointerMove = (moveEvent: PointerEvent) => {
-        setSidebarWidth(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+        const nextWidth = startWidth + moveEvent.clientX - startX;
+        if (nextWidth < SIDEBAR_COLLAPSE_THRESHOLD) {
+          setSidebarCollapsed(true);
+          return;
+        }
+        if (nextWidth >= SIDEBAR_EXPAND_THRESHOLD) {
+          setSidebarCollapsed(false);
+        }
+        setSidebarWidth(clampSidebarWidth(nextWidth));
       };
       const handlePointerUp = () => {
+        delete document.documentElement.dataset.panelResizing;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         window.removeEventListener("pointermove", handlePointerMove);
@@ -265,6 +301,7 @@ export default function Home() {
     setUser(null);
     setCourses([]);
     setMaterialsByCourseId({});
+    setLoadedMaterialsByCourseId({});
     resetRecordings();
     setStudyOutline(EMPTY_STUDY_OUTLINE);
     setTaskView(null);
@@ -278,7 +315,8 @@ export default function Home() {
   const ensureCourseMaterials = useCallback(
     async (courseId: string): Promise<Material[]> => {
       const cached = dataRef.current.materialsByCourseId[courseId];
-      if (cached) {
+      if (cached && cached.length > 0) {
+        setLoadedMaterialsByCourseId((current) => ({ ...current, [courseId]: true }));
         return cached;
       }
       if (pendingMaterialsRef.current.has(courseId)) {
@@ -292,6 +330,7 @@ export default function Home() {
         );
         const nextMaterials = normalizeMaterials(response);
         setMaterialsByCourseId((current) => ({ ...current, [courseId]: nextMaterials }));
+        setLoadedMaterialsByCourseId((current) => ({ ...current, [courseId]: true }));
         if (userId) {
           writeDashboardCache(userId, {
             user: dataRef.current.user,
@@ -307,6 +346,7 @@ export default function Home() {
         if (isMoodleNotConnected(loadError)) {
           handleMoodleDisconnected(loadError);
         } else {
+          setLoadedMaterialsByCourseId((current) => ({ ...current, [courseId]: true }));
           setError(getErrorMessage(loadError));
         }
         return [];
@@ -319,6 +359,10 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [userId],
   );
+
+  const requestCourseMaterials = useCallback((courseId: string) => {
+    void ensureCourseMaterials(courseId);
+  }, [ensureCourseMaterials]);
 
   async function loadDashboard(options: { background?: boolean } = {}) {
     if (!userId) {
@@ -336,6 +380,7 @@ export default function Home() {
       ]);
       const courseList = normalizeCourses(coursesResponse);
       const nextMaterialsByCourseId = pruneMaterialCache(materialsByCourseId, courseList);
+      const nextLoadedMaterialsByCourseId = loadedMaterialsFor(nextMaterialsByCourseId);
       const nextSelectedCategory =
         selectedCategory === "all" || courseList.some((course) => courseCategoryKey(course) === selectedCategory)
           ? selectedCategory
@@ -344,6 +389,7 @@ export default function Home() {
       setUser(userResponse);
       setCourses(courseList);
       setMaterialsByCourseId(nextMaterialsByCourseId);
+      setLoadedMaterialsByCourseId(nextLoadedMaterialsByCourseId);
       setNeedsConnection(false);
       setConnectionMessage(null);
       setSelectedCategory(nextSelectedCategory);
@@ -380,6 +426,7 @@ export default function Home() {
       setUser(null);
       setCourses([]);
       setMaterialsByCourseId({});
+      setLoadedMaterialsByCourseId({});
       resetRecordings();
       setStudyOutline(EMPTY_STUDY_OUTLINE);
       setTaskView(null);
@@ -399,6 +446,7 @@ export default function Home() {
       setUser(cached.user);
       setCourses(cached.courses);
       setMaterialsByCourseId(cached.materialsByCourseId);
+      setLoadedMaterialsByCourseId(loadedMaterialsFor(cached.materialsByCourseId));
       setSelectedCategory(cached.selectedCategory);
       setNeedsConnection(false);
       setConnectionMessage(null);
@@ -410,11 +458,11 @@ export default function Home() {
 
   // Load materials whenever the navigator references a course.
   useEffect(() => {
-    if (!isSignedIn || !userId || needsConnection || !activeCourseId) {
+    if (!isSignedIn || needsConnection || !activeCourseId) {
       return;
     }
     void ensureCourseMaterials(activeCourseId);
-  }, [activeCourseId, ensureCourseMaterials, isSignedIn, needsConnection, userId]);
+  }, [activeCourseId, ensureCourseMaterials, isSignedIn, needsConnection]);
 
   // Load recordings when browsing the recordings list or opening a recording.
   const recordingsCourseId = studyMode === "recordings" ? activeCourseId : null;
@@ -428,12 +476,12 @@ export default function Home() {
 
   // Restore the selected recording for deep links.
   const recordingDocKey =
-    activeDocument?.kind === "recording" ? `${activeDocument.courseId} ${activeDocument.recordingId}` : null;
+    activeDocument?.kind === "recording" ? `${activeDocument.courseId}\0${activeDocument.recordingId}` : null;
   useEffect(() => {
     if (!recordingDocKey || !isSignedIn || needsConnection) {
       return;
     }
-    const [courseId, recordingId] = recordingDocKey.split(" ");
+    const [courseId, recordingId] = recordingDocKey.split("\0");
     void loadRecordings(courseId).then((recordings) => {
       const recording = recordings.find((item) => item.recordingUuid === recordingId);
       if (recording) {
@@ -460,6 +508,26 @@ export default function Home() {
     setStudyOutline(EMPTY_STUDY_OUTLINE);
     setTaskView(null);
   }, [activeCourseId]);
+
+  // Remember opened tasks so the home overview can show what the user is
+  // currently working on. Wait until the title resolves from the loaded data.
+  useEffect(() => {
+    if (activeDocument?.kind !== "task") {
+      return;
+    }
+    const title = taskTitleForId(activeDocument.taskId, studyOutline, taskView);
+    if (!title) {
+      return;
+    }
+    upsertRecentTask({
+      id: `${activeDocument.courseId}:${activeDocument.taskId}`,
+      courseId: activeDocument.courseId,
+      courseTitle: selectedCourse ? courseTitle(selectedCourse) : null,
+      taskId: activeDocument.taskId,
+      title,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [activeDocument, studyOutline, taskView, selectedCourse]);
 
   const { applyCodexActions } = useCodexMoodleActions({
     courses,
@@ -559,6 +627,16 @@ export default function Home() {
     return [{ key: "filtered-courses", label: "", courses: filteredCourses }];
   }, [filteredCourses, query, selectedCategory]);
 
+  const sidebarCourseListGroups = useMemo(
+    () =>
+      buildCourseGroups(courses).map((group) => ({
+        key: group.key,
+        label: group.label,
+        courses: group.courses,
+      })),
+    [courses],
+  );
+
   const materialsBySection = useMemo(() => {
     const groups = new Map<string, Material[]>();
     for (const material of materials) {
@@ -654,16 +732,34 @@ export default function Home() {
     }
   }
 
-  const upcomingEventCount = useMemo(
-    () => calendar.events.filter((event) => Date.parse(event.end ?? event.start) >= Date.now()).length,
-    [calendar.events],
-  );
+  const isChatDocument = activeDocument?.kind === "chat-session";
+
+  const openNewChat = useCallback(() => {
+    setChatHistoryOpen(false);
+    if (activeDocument?.kind === "chat-session" && activeDocument.sessionId === null && activeDocument.courseId === null) {
+      setNewChatVersion((current) => current + 1);
+      return;
+    }
+    navigator.open({ kind: "chat-session", sessionId: null, courseId: null });
+  }, [activeDocument, navigator]);
 
   if (!isLoaded) {
     return <FullPageLoading />;
   }
 
-  const showSplitSidebar = Boolean(activeDocument) && !sidebarHidden;
+  const showSplitSidebar = false;
+
+  // Which bottom tab reads as active on mobile, derived from the current view.
+  const mobileTab: MobileTab | null =
+    path.kind === "chat" || activeDocument?.kind === "chat-session"
+      ? "chat"
+      : path.kind === "calendar" ||
+          activeDocument?.kind === "calendar-grid" ||
+          activeDocument?.kind === "calendar-event"
+        ? "calendar"
+        : path.kind === "home" && !activeDocument
+          ? "home"
+          : null;
 
   const courseMainPanel = (
     <CourseMainPanel
@@ -756,6 +852,7 @@ export default function Home() {
         : activeDocument.kind === "chat-session"
           ? (
             <ChatPage
+              key={`chat:${activeDocument.sessionId ?? "new"}:${newChatVersion}`}
               courses={courses}
               loadMaterials={ensureCourseMaterials}
               materials={materials}
@@ -776,10 +873,19 @@ export default function Home() {
           : courseMainPanel
     : path.kind === "home"
       ? (
-        <LandingPanel
-          courseCount={courses.length > 0 ? courses.length : null}
-          eventCount={calendar.events.length > 0 ? upcomingEventCount : null}
-          onOpenSection={(section) => navigator.drill(sectionToPath(section))}
+        <HomeOverview
+          courseListGroups={courseListGroups}
+          coursesLoading={loading}
+          events={calendar.events}
+          eventsError={calendar.error}
+          eventsLoading={calendar.loading}
+          onOpenCalendar={() => navigator.open({ kind: "calendar-grid" })}
+          onOpenChat={(sessionId, courseId) => navigator.open({ kind: "chat-session", sessionId, courseId })}
+          onOpenNewChat={openNewChat}
+          onOpenCourses={() => navigator.drill({ kind: "courses" })}
+          onOpenEvent={(eventUid) => navigator.open({ kind: "calendar-event", eventUid })}
+          onOpenTask={(courseId, taskId) => navigator.open({ kind: "task", courseId, taskId })}
+          onSelectCourse={(courseId) => navigator.drill({ kind: "course", courseId })}
         />
       )
       : path.kind === "courses"
@@ -801,9 +907,29 @@ export default function Home() {
         : path.kind === "course"
           ? (
             <CourseModesPanel
+              calendarError={calendar.error}
+              calendarEvents={calendar.events}
+              calendarLoading={calendar.loading}
               course={selectedCourse}
               courseId={path.courseId}
-              materialsCount={materialsByCourseId[path.courseId] ? materialsByCourseId[path.courseId].length : null}
+              materials={materialsByCourseId[path.courseId] ?? []}
+              materialsReady={Boolean(loadedMaterialsByCourseId[path.courseId])}
+              onEnsureMaterials={requestCourseMaterials}
+              recordingsState={recordingsByCourseId[path.courseId]}
+              studyOutline={studyOutline}
+              onNewChat={() => navigator.open({ kind: "chat-session", sessionId: null, courseId: path.courseId })}
+              onOpenCalendar={() => navigator.open({ kind: "calendar-grid" })}
+              onOpenChat={(session) =>
+                navigator.open({ kind: "chat-session", sessionId: session.id, courseId: session.courseId ?? path.courseId })
+              }
+              onOpenEvent={(eventUid) => navigator.open({ kind: "calendar-event", eventUid })}
+              onOpenMaterial={(material) =>
+                navigator.open({ kind: "material", courseId: path.courseId, materialId: material.id })
+              }
+              onOpenRecording={(recordingId) =>
+                navigator.open({ kind: "recording", courseId: path.courseId, recordingId })
+              }
+              onOpenTask={(taskId) => navigator.open({ kind: "task", courseId: path.courseId, taskId })}
               onSelectMode={(mode) => openCourseMode(path.courseId, mode)}
             />
           )
@@ -839,17 +965,19 @@ export default function Home() {
       </Show>
 
       <Show when="signed-in">
-        {/* data-mobile-chat lets fixed HUD controls hide themselves via CSS
-            while the quick chat overlay is active. */}
-        <main
-          className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-background"
-          data-mobile-chat={mobileChatOpen ? "open" : "closed"}
-        >
+        <main className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-background">
+          {/* Desktop TopBar */}
+          <div className="hidden shrink-0 md:block">
           <TopBar
             actions={
               <div className="ml-1 flex items-center gap-1">
-                {activeDocument?.kind !== "chat-session" ? (
-                  // Mobile has the floating chat button instead.
+                {isChatDocument ? (
+                  <ChatTopActions
+                    onNewChat={openNewChat}
+                    onOpenHistory={() => setChatHistoryOpen(true)}
+                  />
+                ) : (
+                  // Desktop-only chat toggle; mobile uses the bottom tab bar.
                   <Button
                     aria-label={chatSidebarOpen ? "Chat schließen" : "Chat öffnen"}
                     className={cn("hidden shrink-0 md:inline-flex", chatSidebarOpen ? "bg-secondary text-foreground" : "")}
@@ -858,9 +986,9 @@ export default function Home() {
                     type="button"
                     variant="ghost"
                   >
-                    <MessageSquare aria-hidden />
+                    <MessagesSquare aria-hidden />
                   </Button>
-                ) : null}
+                )}
                 <HeaderActionsMenu
                   loading={loading}
                   refreshing={refreshing}
@@ -876,44 +1004,28 @@ export default function Home() {
             onForward={navigator.forward}
             onNavigate={navigator.navigate}
             onToggleSidebar={() => setSidebarHidden((current) => !current)}
-            showSidebarToggle={Boolean(activeDocument)}
+            showSidebarToggle={false}
           />
+          </div>
+
+          {/* Mobile-only back bar when drilled into a subview */}
+          {breadcrumbs.length > 1 ? (
+            <MobileDrilldownBar
+              actions={
+                isChatDocument ? (
+                  <ChatTopActions
+                    onNewChat={openNewChat}
+                    onOpenHistory={() => setChatHistoryOpen(true)}
+                  />
+                ) : undefined
+              }
+              breadcrumbs={breadcrumbs}
+              onNavigate={navigator.navigate}
+              title={isChatDocument ? "Chat" : undefined}
+            />
+          ) : null}
 
           {error ? <DashboardToast message={error} onDismiss={() => setError(null)} /> : null}
-
-          {/* Global mobile chat button: always at the thumb, on every screen.
-              Opens the chat as an overlay sheet, never the dedicated page. */}
-          {!needsConnection && activeDocument?.kind !== "chat-session" ? (
-            <>
-              {!mobileChatOpen ? (
-                <button
-                  aria-label="Chat öffnen"
-                  className="fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-4 z-30 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 md:hidden"
-                  onClick={() => {
-                    setMobileChatMounted(true);
-                    setMobileChatOpen(true);
-                  }}
-                  type="button"
-                >
-                  <MessageSquare aria-hidden className="size-5" />
-                </button>
-              ) : null}
-              {mobileChatMounted ? (
-                <MobileQuickChat
-                  courses={courses}
-                  materials={materials}
-                  open={mobileChatOpen}
-                  pdfState={pdfState}
-                  selectedCourseId={activeCourseId}
-                  selectedMaterial={selectedMaterial}
-                  studyContext={studyChatContext}
-                  user={user}
-                  onApplyActions={applyCodexActions}
-                  onClose={() => setMobileChatOpen(false)}
-                />
-              ) : null}
-            </>
-          ) : null}
 
           {needsConnection ? (
             <section className="min-h-0 flex-1 overflow-auto px-4 py-4">
@@ -928,6 +1040,19 @@ export default function Home() {
             </section>
           ) : (
             <div className="flex min-h-0 w-full flex-1">
+              <DesktopCourseSidebar
+                activeCourseId={activeCourseId}
+                collapsed={sidebarCollapsed}
+                courseListGroups={sidebarCourseListGroups}
+                loading={loading}
+                onResizeBy={resizeSidebarBy}
+                onResizeStart={handleSidebarResizeStart}
+                onSelectCourse={(courseId) =>
+                  navigator.navigate({ path: { kind: "course", courseId }, document: null })
+                }
+                onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+                width={sidebarWidth}
+              />
               {showSplitSidebar ? (
                 <div className="hidden shrink-0 md:block md:h-full" style={{ width: sidebarWidth }}>
                   <NavigatorSidebar
@@ -954,7 +1079,7 @@ export default function Home() {
               ) : null}
 
               <div className="flex min-h-0 min-w-0 flex-1">
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)] md:overflow-hidden md:pb-0">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] md:overflow-hidden md:pt-0 md:pb-0">
                   {mainContent}
                 </div>
                 {chatSidebarOpen && activeDocument?.kind !== "chat-session" ? (
@@ -964,7 +1089,7 @@ export default function Home() {
                   >
                     <button
                       aria-label="Chat-Breite anpassen"
-                      className="group absolute left-0 top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize touch-none"
+                      className="group absolute left-0 top-0 z-10 h-full w-3 -translate-x-1/2 !cursor-col-resize touch-none"
                       onKeyDown={(event) => {
                         if (event.key === "ArrowLeft") {
                           event.preventDefault();
@@ -975,11 +1100,10 @@ export default function Home() {
                           setChatSidebarWidth((current) => clampChatSidebarWidth(current - 16));
                         }
                       }}
-                      onMouseDown={handleChatSidebarResizeStart}
                       onPointerDown={handleChatSidebarResizeStart}
                       type="button"
                     >
-                      <span className="mx-auto block h-full w-px bg-transparent transition-colors group-hover:bg-border" />
+                      <span className="mx-auto block h-full w-px !cursor-col-resize bg-transparent transition-all group-hover:bg-gradient-to-b group-hover:from-transparent group-hover:via-border group-hover:to-transparent group-focus-visible:bg-gradient-to-b group-focus-visible:from-transparent group-focus-visible:via-border group-focus-visible:to-transparent" />
                     </button>
                     <ChatPage
                       courses={courses}
@@ -1001,20 +1125,76 @@ export default function Home() {
             </div>
           )}
 
+          {!needsConnection ? (
+            <ChatHistoryModal
+              activeSessionId={activeDocument?.kind === "chat-session" ? activeDocument.sessionId : null}
+              open={chatHistoryOpen}
+              onNewChat={openNewChat}
+              onOpenChange={setChatHistoryOpen}
+              onOpenSession={(session) =>
+                navigator.open({ kind: "chat-session", sessionId: session.id, courseId: session.courseId ?? null })
+              }
+            />
+          ) : null}
+
+          {!needsConnection ? (
+            <MobileTabBar
+              active={mobileTab}
+              loading={loading}
+              onRefresh={() => void loadDashboard()}
+              onSelectCalendar={() => navigator.open({ kind: "calendar-grid" })}
+              onSelectChat={openNewChat}
+              onSelectHome={() => navigator.navigate({ path: { kind: "home" }, document: null })}
+              refreshing={refreshing}
+              user={user}
+            />
+          ) : null}
+
         </main>
       </Show>
     </>
   );
 }
 
-function sectionToPath(section: HomeView): NavigatorPath {
-  if (section === "calendar") {
-    return { kind: "calendar" };
-  }
-  if (section === "chat") {
-    return { kind: "chat" };
-  }
-  return { kind: "courses" };
+function ChatTopActions({
+  onNewChat,
+  onOpenHistory,
+}: {
+  onNewChat: () => void;
+  onOpenHistory: () => void;
+}) {
+  return (
+    <>
+      <Button
+        aria-label="Chats suchen"
+        className="shrink-0 rounded-full"
+        onClick={onOpenHistory}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <History aria-hidden className="size-4" />
+      </Button>
+      <Button
+        aria-label="Neuer Chat"
+        className="shrink-0 rounded-full"
+        onClick={onNewChat}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <SquarePen aria-hidden className="size-4" />
+      </Button>
+    </>
+  );
+}
+
+function loadedMaterialsFor(materialsByCourseId: Record<string, Material[]>): Record<string, true> {
+  return Object.fromEntries(
+    Object.entries(materialsByCourseId)
+      .filter(([, materials]) => materials.length > 0)
+      .map(([courseId]) => [courseId, true]),
+  );
 }
 
 function clampSidebarWidth(width: number): number {

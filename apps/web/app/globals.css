@@ -139,6 +139,28 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-panel-resizing="true"],
+html[data-panel-resizing="true"] * {
+  cursor: col-resize !important;
+}
+
+html[data-panel-resizing="true"] body {
+  user-select: none;
+}
+
+html[data-panel-resizing="true"] body * {
+  pointer-events: none !important;
+}
+
 ::selection {
   background: #d8e5ff;
 }

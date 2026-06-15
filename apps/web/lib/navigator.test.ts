@@ -42,8 +42,6 @@ describe("navigator URL mapping", () => {
       { path: { kind: "course-mode", courseId: "42", mode: "materials" }, document: null },
       { path: { kind: "course-mode", courseId: "42", mode: "tasks" }, document: null },
       { path: { kind: "course-mode", courseId: "42", mode: "pipeline" }, document: null },
-      { path: { kind: "calendar" }, document: null },
-      { path: { kind: "chat" }, document: null },
     ];
     for (const state of states) {
       expect(navigatorStatesEqual(roundTrip(state), state)).toBe(true);
@@ -72,6 +70,26 @@ describe("navigator URL mapping", () => {
     expect(state.path.kind).toBe("home");
     expect(state.document).toBeNull();
     expect(navigatorLayout(state)).toBe("full");
+  });
+
+  test("chat URL opens a new chat directly", () => {
+    const state = parseNavigatorLocation("/chat");
+    expect(state.path).toEqual({ kind: "chat" });
+    expect(state.document).toEqual({ kind: "chat-session", sessionId: null, courseId: null });
+    expect(buildNavigatorURL(state)).toBe("/chat/new");
+
+    const history = parseNavigatorLocation("/chat/history");
+    expect(history).toEqual({ path: { kind: "chat" }, document: null });
+  });
+
+  test("calendar URL opens the calendar view directly", () => {
+    const state = parseNavigatorLocation("/calendar");
+    expect(state.path).toEqual({ kind: "calendar" });
+    expect(state.document).toEqual({ kind: "calendar-grid" });
+    expect(buildNavigatorURL(state)).toBe("/calendar/grid");
+
+    const history = parseNavigatorLocation("/calendar/history");
+    expect(history).toEqual({ path: { kind: "calendar" }, document: null });
   });
 
   test("documents imply split layout and their natural list path", () => {
@@ -162,6 +180,20 @@ describe("navigator transitions", () => {
     expect(home.path.kind).toBe("home");
     expect(parentOf(home)).toBeNull();
   });
+
+  test("chat documents go back to home instead of the hidden chat history list", () => {
+    const opened = openDocument(homeState(), { kind: "chat-session", sessionId: null, courseId: null });
+    const parent = parentOf(opened);
+    expect(parent).toEqual(homeState());
+  });
+
+  test("calendar documents go back to home instead of the hidden calendar history list", () => {
+    const grid = openDocument(homeState(), { kind: "calendar-grid" });
+    expect(parentOf(grid)).toEqual(homeState());
+
+    const event = openDocument(homeState(), { kind: "calendar-event", eventUid: "uid-1" });
+    expect(parentOf(event)).toEqual(homeState());
+  });
 });
 
 describe("navigator breadcrumbs", () => {
@@ -179,7 +211,25 @@ describe("navigator breadcrumbs", () => {
   test("falls back to generic labels without resolvers", () => {
     const state = openDocument(homeState(), { kind: "chat-session", sessionId: "abc", courseId: null });
     const labels = navigatorBreadcrumbs(state).map((crumb) => crumb.label);
-    expect(labels).toEqual(["Start", "Chat", "Chat"]);
+    expect(labels).toEqual(["Start", "Chat"]);
+  });
+
+  test("new chat breadcrumb skips the hidden history page", () => {
+    const state = openDocument(homeState(), { kind: "chat-session", sessionId: null, courseId: null });
+    const crumbs = navigatorBreadcrumbs(state);
+    expect(crumbs.map((crumb) => crumb.label)).toEqual(["Start", "Neuer Chat"]);
+    expect(crumbs[0]?.target).toEqual(homeState());
+  });
+
+  test("calendar breadcrumbs skip the hidden history page", () => {
+    const grid = openDocument(homeState(), { kind: "calendar-grid" });
+    expect(navigatorBreadcrumbs(grid).map((crumb) => crumb.label)).toEqual(["Start", "Kalenderansicht"]);
+
+    const event = openDocument(homeState(), { kind: "calendar-event", eventUid: "uid-1" });
+    expect(navigatorBreadcrumbs(event, { calendarEventTitle: () => "Abgabe" }).map((crumb) => crumb.label)).toEqual([
+      "Start",
+      "Abgabe",
+    ]);
   });
 
   test("landing has a single crumb", () => {

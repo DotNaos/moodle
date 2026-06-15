@@ -7,7 +7,9 @@ import {
   ChevronRight,
   Files,
   GitBranch,
+  MessageSquare,
   Plus,
+  Circle,
   Sigma,
   Video,
   type LucideIcon,
@@ -15,13 +17,16 @@ import {
 import { useEffect, useState } from "react";
 
 import { CourseHero } from "@/components/course-hero";
+import { MaterialFileIcon } from "@/components/dashboard-ui";
 import { StudyPipelineAction } from "@/components/study-pipeline-action";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import type { CalendarEventSummary } from "@/hooks/use-calendar-events";
-import type { Course } from "@/lib/dashboard-data";
-import { HOME_NAV_ITEMS, type HomeView } from "@/lib/home-navigation";
+import type { Course, Material, WebexRecordingState } from "@/lib/dashboard-data";
+import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
 import { COURSE_MODE_LABELS, type CourseMode } from "@/lib/navigator";
 import { readRecentChats, type RecentChatEntry } from "@/lib/recent-chat-storage";
+import { taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export type CourseModeItem = {
@@ -42,103 +47,446 @@ export const COURSE_MODE_ITEMS: CourseModeItem[] = [
 
 export type NavigatorListVariant = "full" | "sidebar";
 
-// ① Landing: the big-picture entry view; everything starts here.
-export function LandingPanel({
-  courseCount,
-  eventCount,
-  onOpenSection,
-}: {
-  courseCount: number | null;
-  eventCount: number | null;
-  onOpenSection: (section: HomeView) => void;
-}) {
-  const [chatCount, setChatCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    setChatCount(readRecentChats().length);
-  }, []);
-
-  const subtitles: Record<HomeView, string> = {
-    courses: courseCount !== null ? `${courseCount} Kurse` : "Materialien & Aufgaben",
-    calendar: eventCount !== null ? `${eventCount} kommende Termine` : "Termine & Abgaben",
-    chat: chatCount ? `${chatCount} letzte Verläufe` : "Fragen & Lernen",
-  };
-
-  return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-auto md:h-full">
-      <div className="mx-auto grid w-full max-w-3xl flex-1 content-center gap-6 px-4 py-10 md:px-6">
-        <h2 className="text-center text-xl font-semibold tracking-tight">Womit möchtest du starten?</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {HOME_NAV_ITEMS.map((item) => (
-            <button
-              className="group flex flex-col items-center gap-3 rounded-3xl bg-secondary/60 px-4 py-8 text-center transition-colors hover:bg-secondary"
-              key={item.id}
-              onClick={() => onOpenSection(item.id)}
-              type="button"
-            >
-              <span className="grid size-14 place-items-center rounded-full bg-background text-foreground transition-transform group-hover:scale-105">
-                <item.icon aria-hidden className="size-6" />
-              </span>
-              <span>
-                <span className="block text-base font-semibold">{item.label}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">{subtitles[item.id]}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+const COURSE_PREVIEW_SLOT_COUNT = 4;
 
 // ③ Course level: mode selection, full width. The course is drilled into,
 // not opened — no document yet.
 export function CourseModesPanel({
+  calendarError,
+  calendarEvents,
+  calendarLoading,
   course,
   courseId,
-  materialsCount,
+  materials,
+  materialsReady,
+  onEnsureMaterials,
+  onNewChat,
+  onOpenCalendar,
+  onOpenChat,
+  onOpenEvent,
+  onOpenMaterial,
+  onOpenRecording,
+  onOpenTask,
   onSelectMode,
+  recordingsState,
+  studyOutline,
 }: {
+  calendarError: string | null;
+  calendarEvents: CalendarEventSummary[];
+  calendarLoading: boolean;
   course: Course | null;
   courseId: string;
-  materialsCount: number | null;
+  materials: Material[];
+  materialsReady: boolean;
+  onEnsureMaterials: (courseId: string) => void;
+  onNewChat: () => void;
+  onOpenCalendar: () => void;
+  onOpenChat: (session: RecentChatEntry) => void;
+  onOpenEvent: (eventUid: string) => void;
+  onOpenMaterial: (material: Material) => void;
+  onOpenRecording: (recordingId: string) => void;
+  onOpenTask: (taskId: string) => void;
   onSelectMode: (mode: CourseMode) => void;
+  recordingsState?: WebexRecordingState;
+  studyOutline: StudyOutline;
 }) {
+  const [recentChats, setRecentChats] = useState<RecentChatEntry[]>([]);
+  useEffect(() => {
+    setRecentChats(readRecentChats().filter((chat) => chat.courseId === courseId).slice(0, 3));
+  }, [courseId]);
+
+  useEffect(() => {
+    if (!materialsReady) {
+      onEnsureMaterials(courseId);
+    }
+  }, [courseId, materialsReady, onEnsureMaterials]);
+
+  const courseEvents = course
+    ? relevantCourseEvents(calendarEvents, course)
+      .filter((event) => Date.parse(event.end ?? event.start) >= Date.now())
+      .slice(0, 3)
+    : [];
+  const recentMaterials = materials.filter(isPdfMaterial).sort(compareMaterialsByRecency).slice(0, COURSE_PREVIEW_SLOT_COUNT);
+  const taskMaterials = materials.filter(isTaskMaterial).slice(0, COURSE_PREVIEW_SLOT_COUNT);
+  const nextTasks = studyOutline.tasks
+    .filter((task) => !isDoneTaskStatus(task.status))
+    .slice(0, COURSE_PREVIEW_SLOT_COUNT);
+  const recordings = recordingsState?.recordings
+    ? [...recordingsState.recordings].sort(compareRecordingsByDate).slice(0, 3)
+    : [];
+  const showRecordingsPreview = Boolean(recordingsState?.loaded || recordings.length > 0 || recordingsState?.loading || recordingsState?.error);
+  const secondaryModeItems = COURSE_MODE_ITEMS.filter((item) => {
+    if (item.mode === "materials" || item.mode === "tasks") {
+      return false;
+    }
+    return item.mode !== "recordings" || !showRecordingsPreview;
+  });
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-full">
       <div className="min-h-0 flex-1 overflow-auto">
         {course ? <CourseHero course={course} /> : null}
-        <div className="mx-auto w-full max-w-3xl px-4 py-5 md:px-6 md:py-6">
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {COURSE_MODE_ITEMS.map((item) => (
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-4 py-5 md:px-6 md:py-6">
+          <CourseOverviewSection
+            icon={<Files aria-hidden className="size-4 text-muted-foreground" />}
+            onOpen={() => onSelectMode("materials")}
+            title="Materialien"
+          >
+            {recentMaterials.length > 0 ? (
+              <CoursePreviewGrid>
+                {recentMaterials.map((material) => (
+                  <CoursePreviewButton
+                    icon={<MaterialFileIcon material={material} size={18} />}
+                    key={material.id}
+                    meta={material.sectionName ?? material.type ?? "Material"}
+                    title={material.name}
+                    onOpen={() => onOpenMaterial(material)}
+                  />
+                ))}
+              </CoursePreviewGrid>
+            ) : (
+              materialsReady ? <CoursePreviewBlankGrid /> : <CoursePreviewSkeletonGrid />
+            )}
+          </CourseOverviewSection>
+
+          <CourseOverviewSection
+            icon={<CheckCircle2 aria-hidden className="size-4 text-muted-foreground" />}
+            onOpen={() => onSelectMode("tasks")}
+            title="Aufgaben"
+          >
+            {nextTasks.length > 0 ? (
+              <CoursePreviewGrid>
+                {nextTasks.map((task) => (
+                  <CoursePreviewButton
+                    icon={<TaskProgressIcon status={task.status} />}
+                    iconVariant="plain"
+                    key={task.id}
+                    meta={task.sheetTitle}
+                    title={taskDisplayTitle(task.sheetTitle, task.title)}
+                    onOpen={() => onOpenTask(task.id)}
+                  />
+                ))}
+              </CoursePreviewGrid>
+            ) : taskMaterials.length > 0 ? (
+              <CoursePreviewGrid>
+                {taskMaterials.map((material) => (
+                  <CoursePreviewButton
+                    icon={<TaskProgressIcon status="open" />}
+                    iconVariant="plain"
+                    key={material.id}
+                    meta={material.sectionName ?? "Aufgabenblatt"}
+                    title={material.name}
+                    onOpen={() => onOpenMaterial(material)}
+                  />
+                ))}
+              </CoursePreviewGrid>
+            ) : (
+              materialsReady ? <CoursePreviewBlankGrid /> : <CoursePreviewSkeletonGrid />
+            )}
+          </CourseOverviewSection>
+
+          <CourseOverviewSection
+            icon={<CalendarDays aria-hidden className="size-4 text-muted-foreground" />}
+            onOpen={onOpenCalendar}
+            title="Kalender"
+          >
+            {calendarLoading && courseEvents.length === 0 ? (
+              <ListLoading label="Termine laden" />
+            ) : calendarError && courseEvents.length === 0 ? (
+              <p className="px-1 text-sm text-muted-foreground">{calendarError}</p>
+            ) : courseEvents.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                {courseEvents.map((event) => (
+                  <CoursePreviewButton
+                    icon={<CalendarDays aria-hidden className="size-4" />}
+                    key={event.uid || `${event.start}-${event.summary}`}
+                    meta={formatEventTime(event.start, event.end)}
+                    title={event.summary}
+                    onOpen={() => onOpenEvent(event.uid)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="px-1 text-sm text-muted-foreground">Keine kommenden Termine für diesen Kurs.</p>
+            )}
+          </CourseOverviewSection>
+
+          <CourseOverviewSection
+            icon={<MessageSquare aria-hidden className="size-4 text-muted-foreground" />}
+            onOpen={onNewChat}
+            title="Chat"
+          >
+            {recentChats.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                {recentChats.map((chat) => (
+                  <CoursePreviewButton
+                    icon={<MessageSquare aria-hidden className="size-4" />}
+                    key={chat.id}
+                    meta={formatChatTime(chat.updatedAt)}
+                    title={chat.title}
+                    onOpen={() => onOpenChat(chat)}
+                  />
+                ))}
+              </div>
+            ) : (
               <button
-                className="group flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-4 text-left transition-colors hover:bg-secondary"
-                key={item.mode}
-                onClick={() => onSelectMode(item.mode)}
+                className="min-h-11 w-fit rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                onClick={onNewChat}
                 type="button"
               >
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-background">
-                  <item.icon aria-hidden className="size-4.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">{item.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {item.mode === "materials" && materialsCount !== null
-                      ? `${materialsCount} Ressourcen`
-                      : item.description}
-                  </span>
-                </span>
-                <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                Neuer Chat
               </button>
-            ))}
-          </div>
-          <div className="mt-6">
+            )}
+          </CourseOverviewSection>
+
+          {showRecordingsPreview ? (
+            <CourseOverviewSection
+              icon={<Video aria-hidden className="size-4 text-muted-foreground" />}
+              onOpen={() => onSelectMode("recordings")}
+              title="Aufzeichnungen"
+            >
+              {recordingsState?.loading && recordings.length === 0 ? (
+                <ListLoading label="Aufzeichnungen laden" />
+              ) : recordingsState?.error && recordings.length === 0 ? (
+                <p className="px-1 text-sm text-muted-foreground">{recordingsState.error}</p>
+              ) : recordings.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  {recordings.map((recording) => (
+                    <CoursePreviewButton
+                      icon={<Video aria-hidden className="size-4" />}
+                      key={recording.recordingUuid}
+                      meta={formatRecordingDate(recording.recordingDate)}
+                      title={recording.sessionTitle || recording.recordingName}
+                      onOpen={() => onOpenRecording(recording.recordingUuid)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="px-1 text-sm text-muted-foreground">Keine Aufzeichnungen gefunden.</p>
+              )}
+            </CourseOverviewSection>
+          ) : null}
+
+          <section className="flex flex-col gap-3">
+            <p className="px-1 text-base font-semibold tracking-tight">Weitere Bereiche</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {secondaryModeItems.map((item) => {
+                const presentation = courseModePresentation(item);
+                return (
+                  <button
+                    className="flex min-h-14 items-center gap-3 rounded-2xl bg-secondary/60 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
+                    key={item.mode}
+                    onClick={() => onSelectMode(item.mode)}
+                    type="button"
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-background">
+                      <item.icon aria-hidden className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{presentation.label}</span>
+                    </span>
+                    <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <div>
             <StudyPipelineAction courseId={courseId} />
           </div>
         </div>
       </div>
     </section>
   );
+}
+
+function CourseOverviewSection({
+  children,
+  icon,
+  onOpen,
+  title,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+  onOpen?: () => void;
+  title: string;
+}) {
+  const heading = (
+    <span className="flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight">
+      {icon}
+      <span className="truncate">{title}</span>
+      {onOpen ? <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" /> : null}
+    </span>
+  );
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="px-1">
+        {onOpen ? (
+          <button
+            className="flex max-w-full items-center text-foreground transition-colors hover:text-muted-foreground"
+            onClick={onOpen}
+            type="button"
+          >
+            {heading}
+          </button>
+        ) : (
+          heading
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CoursePreviewButton({
+  icon,
+  iconVariant = "badge",
+  meta,
+  onOpen,
+  title,
+}: {
+  icon?: React.ReactNode;
+  iconVariant?: "badge" | "plain";
+  meta?: string;
+  onOpen: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      className="flex h-12 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-secondary"
+      onClick={onOpen}
+      type="button"
+    >
+      {icon ? (
+        <span
+          className={cn(
+            "grid size-8 shrink-0 place-items-center text-muted-foreground",
+            iconVariant === "badge" && "rounded-full bg-secondary",
+          )}
+        >
+          {icon}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block line-clamp-1 text-sm font-semibold leading-snug">{title}</span>
+        {meta ? <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">{meta}</span> : null}
+      </span>
+    </button>
+  );
+}
+
+function TaskProgressIcon({ status }: { status: string }) {
+  return isDoneTaskStatus(status)
+    ? <CheckCircle2 aria-hidden className="size-5 text-emerald-500" />
+    : <Circle aria-hidden className="size-5" />;
+}
+
+function CoursePreviewGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="grid h-[13.5rem] grid-cols-1 grid-rows-4 gap-2 sm:h-[6.5rem] sm:grid-cols-2 sm:grid-rows-2"
+    >
+      {children}
+    </div>
+  );
+}
+
+function CoursePreviewSkeletonGrid() {
+  return (
+    <CoursePreviewGrid>
+      {Array.from({ length: COURSE_PREVIEW_SLOT_COUNT }, (_, index) => (
+        <div className="flex h-12 items-center gap-3 rounded-2xl px-3 py-2.5" key={index}>
+          <Skeleton className="size-8 shrink-0 rounded-full" />
+          <span className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-4 w-4/5 rounded-full" />
+            <Skeleton className="h-3 w-1/2 rounded-full" />
+          </span>
+        </div>
+      ))}
+    </CoursePreviewGrid>
+  );
+}
+
+function CoursePreviewBlankGrid() {
+  return (
+    <CoursePreviewGrid>
+      {Array.from({ length: COURSE_PREVIEW_SLOT_COUNT }, (_, index) => (
+        <div className="h-12" key={index} />
+      ))}
+    </CoursePreviewGrid>
+  );
+}
+
+function courseModePresentation(item: CourseModeItem): { label: string } {
+  if (item.mode === "script") {
+    return { label: item.label };
+  }
+  if (item.mode === "formula") {
+    return { label: item.description };
+  }
+  if (item.mode === "recordings") {
+    return { label: "Aufzeichnungen" };
+  }
+  return { label: item.label };
+}
+
+function compareMaterialsByRecency(left: Material, right: Material): number {
+  const leftDate = Date.parse(left.uploadedAt ?? "");
+  const rightDate = Date.parse(right.uploadedAt ?? "");
+  if (!Number.isNaN(leftDate) || !Number.isNaN(rightDate)) {
+    return (Number.isNaN(rightDate) ? 0 : rightDate) - (Number.isNaN(leftDate) ? 0 : leftDate);
+  }
+  return 0;
+}
+
+function compareRecordingsByDate(left: { recordingDate: string }, right: { recordingDate: string }): number {
+  const leftDate = Date.parse(left.recordingDate);
+  const rightDate = Date.parse(right.recordingDate);
+  return (Number.isNaN(rightDate) ? 0 : rightDate) - (Number.isNaN(leftDate) ? 0 : leftDate);
+}
+
+function formatRecordingDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Aufzeichnung";
+  }
+  return new Intl.DateTimeFormat("de-CH", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+  }).format(date);
+}
+
+function isDoneTaskStatus(status: string): boolean {
+  return status === "done" || status === "correct";
+}
+
+function isTaskMaterial(material: Material): boolean {
+  return /aufgabenblatt\s*\d+|assignment|exercise/i.test(material.name) && !/lösung|loesung|solution/i.test(material.name);
+}
+
+function isPdfMaterial(material: Material): boolean {
+  const candidates = [material.fileType, material.type, material.name, material.url].filter(Boolean).join(" ");
+  return /\.pdf(\?|#|$)/i.test(candidates) || /\bpdf\b|aufgabenblatt|lösung|loesung|folien|slides/i.test(candidates);
+}
+
+function relevantCourseEvents(events: CalendarEventSummary[], course: Course): CalendarEventSummary[] {
+  const title = normalizeCourseMatchText(courseTitle(course));
+  const subtitle = normalizeCourseMatchText(courseSubtitle(course));
+  return events.filter((event) => {
+    const eventCourse = normalizeCourseMatchText(event.courseName ?? "");
+    if (!eventCourse) {
+      return false;
+    }
+    return eventCourse === title || eventCourse === subtitle || title.includes(eventCourse) || eventCourse.includes(title);
+  });
+}
+
+function normalizeCourseMatchText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 // Calendar drill level: upcoming events plus the entry to the real calendar.
@@ -359,7 +707,7 @@ export function formatEventTime(startValue: string, endValue?: string): string {
   return `${day}, ${time}-${endTime}`;
 }
 
-function formatChatTime(value: string): string {
+export function formatChatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "Gerade eben";

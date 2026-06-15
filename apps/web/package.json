@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3008",
-    "dev:portless": "portless moodle sh -lc 'bun next dev --hostname 0.0.0.0 --port \"$PORT\"'",
+    "dev": "bash ./scripts/dev.sh",
     "build": "next build",
     "start": "next start --port 3008",
     "typecheck": "tsc --noEmit"
