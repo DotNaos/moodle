@@ -894,6 +894,21 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.jsonText).not.toContain("codex-improved");
   });
 
+  test("renders task-group array nodes as compact progress summaries instead of raw JSON", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView });
+    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    if (!taskGroupsNode || taskGroupsNode.type !== "blueprint") throw new Error("Task groups node missing");
+
+    const preview = buildPipelineNodePreview(taskGroupsNode.data);
+
+    expect(preview.kind).toBe("markdown");
+    if (preview.kind !== "markdown") throw new Error("Expected markdown preview");
+    expect(preview.text).toContain("Selected: Aufgabenblatt 01");
+    expect(preview.text).toContain("done:");
+    expect(preview.text).not.toContain('"title"');
+    expect(preview.text).not.toContain('"outputs"');
+  });
+
   test("renders Codex output previews as typed fields when the output is materialized", () => {
     const data = codexNodeData({
       activeRunIds: new Set(),
