@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { decodeMoodleSession, encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
 import { getMoodleInternalSecret, MOODLE_SERVICES_URL, proxyServiceResponse, readServiceJSON } from "@/lib/moodle-services";
+import { readStudyPipelineApiAuth, studyPipelineApiAuthHeaders } from "@/lib/study-pipeline-api-auth";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };
@@ -24,9 +25,23 @@ export async function POST(request: Request, context: RouteContext) {
 async function proxyStudyPipeline(request: Request, context: RouteContext) {
   const requestId = request.headers.get("x-request-id") ?? randomUUID();
   const startedAt = Date.now();
+  const params = await context.params;
+  const upstreamPath = params.path?.map(encodeURIComponent).join("/") ?? "";
+
+  const apiAuth = readStudyPipelineApiAuth(request.headers);
+  if (apiAuth) {
+    if (!isStudyPipelinePath(upstreamPath)) {
+      return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
+    }
+    return proxyStudyPipelineWithApiKey(request, upstreamPath, apiAuth, requestId, startedAt);
+  }
+
   const { userId } = await auth();
   if (!userId) {
     return withRequestId(pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401), requestId);
+  }
+  if (!isStudyPipelinePath(upstreamPath)) {
+    return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
   }
   const backendGate = await checkBackendPreflight(userId);
   if (backendGate.state === "blocked") {
@@ -42,12 +57,6 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
   const session = await resolveMoodleSession(userId);
   if (!session.ok) {
     return withRequestId(pipelineBlockedResponse(session.code, session.error), requestId);
-  }
-
-  const params = await context.params;
-  const upstreamPath = params.path?.map(encodeURIComponent).join("/") ?? "";
-  if (!isStudyPipelinePath(upstreamPath)) {
-    return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
   }
 
   const requestUrl = new URL(request.url);
@@ -161,6 +170,55 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
     request,
     requestId,
     retry: "restored-session",
+    startedAt,
+    upstreamPath,
+  });
+}
+
+async function proxyStudyPipelineWithApiKey(
+  request: Request,
+  upstreamPath: string,
+  apiAuth: { apiKey: string; clerkUserId: string },
+  requestId: string,
+  startedAt: number,
+) {
+  const requestUrl = new URL(request.url);
+  const upstreamUrl = new URL(`${MOODLE_SERVICES_URL}/api/${upstreamPath}`);
+  upstreamUrl.search = requestUrl.search;
+
+  const headers = studyPipelineApiAuthHeaders(apiAuth);
+  headers.set("X-Request-ID", requestId);
+  const accept = request.headers.get("accept");
+  if (accept) {
+    headers.set("accept", accept);
+  }
+  const contentType = request.headers.get("content-type");
+  if (contentType) {
+    headers.set("content-type", contentType);
+  }
+
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const body = hasBody ? await request.text() : undefined;
+  const upstreamResponse = await fetchStudyPipelineUpstream(upstreamUrl, {
+    body,
+    cache: "no-store",
+    headers,
+    method: request.method,
+  }, {
+    method: request.method,
+    requestId,
+    retry: "api-key",
+    startedAt,
+    upstreamPath,
+  });
+  if (upstreamResponse.kind === "error") {
+    return upstreamResponse.response;
+  }
+
+  return proxyStudyPipelineResponse(upstreamResponse.response, {
+    request,
+    requestId,
+    retry: "api-key",
     startedAt,
     upstreamPath,
   });

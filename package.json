@@ -19,6 +19,7 @@
     "web:dev:expo": "bun run --filter @moodle-clients/web dev:expo",
     "web:build": "bun run --filter @moodle-clients/web build",
     "study:import": "bun ./scripts/import-study-bundle.mjs",
+    "study:pipeline:cli": "bun ./scripts/study-pipeline-cli.ts",
     "study:pipeline:logs": "bun ./scripts/study-pipeline-logs.mjs",
     "mobile:dev": "node ./scripts/mobile-with-proxy-dev.cjs start",
     "mobile:start": "node ./scripts/mobile-with-proxy-dev.cjs start",
@@ -40,6 +41,7 @@
   "dependencies": {
     "@openai/codex-sdk": "0.125.0",
     "@react-native-cookies/cookies": "^6.2.1",
+    "commander": "^15.0.0",
     "ws": "^8.21.0"
   },
   "trustedDependencies": [
