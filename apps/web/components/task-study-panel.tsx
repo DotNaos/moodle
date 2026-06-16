@@ -6,6 +6,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { GeneratedUIContent } from "@/components/generated-ui-renderer";
 import {
   Dialog,
   DialogContent,
@@ -506,6 +507,7 @@ export function TaskStudyPanel({
       const feedback = await runCodex([
         "Check this student answer against the Moodle task.",
         "Return clear feedback: what is correct, what is wrong or missing, and what to do next.",
+        "If it makes the feedback easier to study, append one compact json-render UI with steps, facts, or a callout.",
         "Answer in the language of the task.",
         "",
         `Course: ${courseTitle(course)}`,
@@ -1314,7 +1316,10 @@ function TaskTestMode({
 
             {contextMarkdown ? (
               <div className="mb-6 rounded-2xl bg-secondary/50 px-4 py-3 text-sm">
-                <MarkdownBlock onCitationClick={onCitationClick} text={contextMarkdown} />
+                <GeneratedUIContent
+                  renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                  text={contextMarkdown}
+                />
               </div>
             ) : null}
             {step.label ? (
@@ -1322,7 +1327,10 @@ function TaskTestMode({
                 {step.label}
               </span>
             ) : null}
-            <MarkdownBlock onCitationClick={onCitationClick} text={step.prompt} />
+            <GeneratedUIContent
+              renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+              text={step.prompt}
+            />
 
             {feedbackMarkdown ? (
               <section className="mt-7 rounded-3xl bg-secondary px-5 py-4">
@@ -1330,7 +1338,10 @@ function TaskTestMode({
                   <MessageCircle aria-hidden className="size-4" />
                   Codex-Bewertung
                 </h4>
-                <MarkdownBlock onCitationClick={onCitationClick} text={feedbackMarkdown} />
+                <GeneratedUIContent
+                  renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                  text={feedbackMarkdown}
+                />
               </section>
             ) : null}
           </div>
@@ -1559,7 +1570,10 @@ function TaskTestMode({
                     expanded ? "min-h-0 flex-1" : "max-h-[50dvh]",
                   )}
                 >
-                  <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
+                  <GeneratedUIContent
+                    renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                    text={solutionMarkdown}
+                  />
                 </div>
               ) : null}
             </div>
@@ -1691,7 +1705,10 @@ function TaskSolutionPanel({
         </div>
       ) : solutionMarkdown ? (
         <div className="max-h-[50dvh] overflow-y-auto px-5 pb-4">
-          <MarkdownBlock onCitationClick={onCitationClick} text={solutionMarkdown} />
+          <GeneratedUIContent
+            renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+            text={solutionMarkdown}
+          />
         </div>
       ) : null}
     </section>

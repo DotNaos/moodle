@@ -23,7 +23,10 @@ export function buildCodexRunServicePayload(
       input.prompt,
       input.moodleContext,
       input.messages,
-      { responseMode: streaming ? "plain" : "structured" },
+      {
+        allowGeneratedUI: shouldAllowGeneratedUI(input.moodleContext),
+        responseMode: streaming ? "plain" : "structured",
+      },
     ),
     images: input.images,
     attachmentImages: input.attachmentImages,
@@ -32,4 +35,9 @@ export function buildCodexRunServicePayload(
     outputSchema: streaming ? undefined : codexOutputSchema,
     stream: streaming,
   };
+}
+
+function shouldAllowGeneratedUI(moodleContext: unknown): boolean {
+  const source = (moodleContext as { source?: unknown } | null)?.source;
+  return source === "moodle-web" || source === "task-study";
 }
