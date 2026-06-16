@@ -1,10 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 
-import {
-  codexOutputSchema,
-  type CodexChatMessage,
-} from "@/lib/codex-actions";
-import { withMoodlePrompt } from "@/lib/codex-prompt";
+import type { CodexChatMessage } from "@/lib/codex-actions";
+import { buildCodexRunServicePayload } from "@/lib/codex-run-request";
 import { codexRuntimeErrorMessage } from "@/lib/codex-runtime";
 import { MOODLE_SERVICES_URL, moodleInternalHeaders, proxyServiceResponse } from "@/lib/moodle-services";
 
@@ -44,6 +41,7 @@ export async function POST(request: Request) {
   const upstreamAccept = request.headers.get("accept")?.includes("application/x-ndjson")
     ? "application/x-ndjson"
     : "application/json";
+  const streaming = body.stream === true || upstreamAccept === "application/x-ndjson";
 
   try {
     const upstreamResponse = await fetch(`${MOODLE_SERVICES_URL}/api/codex/run`, {
@@ -54,15 +52,15 @@ export async function POST(request: Request) {
         "Accept": upstreamAccept,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        prompt: withMoodlePrompt(prompt, body.moodleContext, parseMessages(body.messages)),
+      body: JSON.stringify(buildCodexRunServicePayload({
+        prompt,
         images: parseImages(body.images),
         attachmentImages: parseAttachmentImages(body.attachmentImages),
+        messages: parseMessages(body.messages),
         model: parseOptionalString(body.model),
         reasoningEffort: parseOptionalString(body.reasoningEffort),
-        outputSchema: codexOutputSchema,
-        stream: body.stream === true,
-      }),
+        moodleContext: body.moodleContext,
+      }, streaming)),
     });
 
     return proxyServiceResponse(upstreamResponse, responseContentType(upstreamAccept));
