@@ -107,7 +107,9 @@ export type GeneratedUISpec = Spec;
 
 export type GeneratedUIChunk =
   | { type: "markdown"; text: string }
-  | { type: "spec"; spec: GeneratedUISpec; source: string };
+  | { type: "spec"; spec: GeneratedUISpec; source: string }
+  | { type: "pending" }
+  | { type: "error" };
 
 export function generatedUIPromptBlock(): string {
   return [
@@ -178,13 +180,13 @@ export function splitGeneratedUIContent(text: string): GeneratedUIChunk[] {
     if (parsed) {
       chunks.push({ type: "spec", spec: parsed, source: body });
     } else {
-      pushMarkdown(chunks, fullMatch);
+      chunks.push({ type: "error" });
     }
     cursor = end;
   }
 
   if (cursor < text.length) {
-    pushMarkdown(chunks, text.slice(cursor));
+    pushTrailingContent(chunks, text.slice(cursor));
   }
 
   return chunks.length > 0 ? chunks : [{ type: "markdown", text }];
@@ -193,6 +195,7 @@ export function splitGeneratedUIContent(text: string): GeneratedUIChunk[] {
 export function stripGeneratedUIBlocks(text: string): string {
   return text
     .replace(/```json-render[^\n]*\n[\s\S]*?```/gi, "")
+    .replace(/```json-render[^\n]*\n[\s\S]*$/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -284,4 +287,16 @@ function pushMarkdown(chunks: GeneratedUIChunk[], text: string): void {
     return;
   }
   chunks.push({ type: "markdown", text });
+}
+
+function pushTrailingContent(chunks: GeneratedUIChunk[], text: string): void {
+  const openFence = /```json-render[^\n]*\n/i.exec(text);
+  if (!openFence) {
+    pushMarkdown(chunks, text);
+    return;
+  }
+  if (openFence.index > 0) {
+    pushMarkdown(chunks, text.slice(0, openFence.index));
+  }
+  chunks.push({ type: "pending" });
 }
