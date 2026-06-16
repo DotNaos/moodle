@@ -5,6 +5,7 @@ import {
   describePendingActions,
   displayCodexText,
   materialCitation,
+  resolveCodexFinalText,
 } from "@/lib/codex-chat";
 import type { Course, Material } from "@/lib/dashboard-data";
 
@@ -100,5 +101,33 @@ describe("Codex chat Moodle context", () => {
 
     expect(visible).toBe("Ich öffne den Kurs nach deiner Bestätigung.");
     expect(displayCodexText("Antwort\n<moodle-actions>{")).toBe("Antwort");
+  });
+
+  test("keeps streamed generated UI when final response is the no-text fallback", () => {
+    const streamed = [
+      "```json-render",
+      JSON.stringify({
+        root: "quiz",
+        elements: {
+          quiz: {
+            type: "Quiz",
+            props: {
+              title: "Mini-Test",
+              questions: [
+                {
+                  prompt: "Was ist ein Cache?",
+                  type: "open",
+                  solution: ["Ein schneller Zwischenspeicher."],
+                },
+              ],
+            },
+            children: [],
+          },
+        },
+      }),
+      "```",
+    ].join("\n");
+
+    expect(resolveCodexFinalText("Codex finished without a text answer.", streamed)).toBe(streamed);
   });
 });

@@ -20,6 +20,7 @@ import {
   isCodexLifecycleNoise,
   mergeLoadedDocuments,
   mergeLoadedResources,
+  resolveCodexFinalText,
   shouldContinueAfterActions,
   toChatHistory,
   type CodexChatUIMessage,
@@ -321,7 +322,7 @@ export function useCodexChat({
         const actions = completeCodexActions(result.actions, text);
         updateAssistantMessage(
           assistantMessageId,
-          displayCodexText(result.finalResponse),
+          resolveCodexFinalText(result.finalResponse, streamedText),
         );
 
         if (actions.length === 0) {

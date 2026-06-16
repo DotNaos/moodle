@@ -433,11 +433,24 @@ export function displayCodexText(text: string): string {
   }
 }
 
+export function resolveCodexFinalText(finalResponse: string, streamedText: string): string {
+  const finalText = displayCodexText(finalResponse);
+  const streamed = displayCodexText(streamedText);
+  if (streamed.trim() && (!finalText.trim() || isNoTextFallback(finalText))) {
+    return streamed;
+  }
+  return finalText;
+}
+
 function stripMoodleActionBlock(text: string): string {
   return text.replace(
     /\s*<moodle-actions\b[\s\S]*?(?:<\/moodle-actions>|$)/gi,
     "",
   );
+}
+
+function isNoTextFallback(text: string): boolean {
+  return text.trim() === "Codex finished without a text answer.";
 }
 
 function asksToOpenPDF(prompt: string): boolean {

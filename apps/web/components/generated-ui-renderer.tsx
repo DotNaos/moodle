@@ -1,12 +1,13 @@
 "use client";
 
 import { ActionProvider, Renderer, StateProvider, VisibilityProvider, defineRegistry } from "@json-render/react";
-import { ArrowRight, CheckCircle2, Circle, Eye, RotateCcw } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Eye, FileQuestion, RotateCcw } from "lucide-react";
 import { Component, useMemo, useState, type ReactNode } from "react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThinkingDots } from "@/components/ui/thinking-dots";
 import { generatedUICatalog, splitGeneratedUIContent, type GeneratedUISpec } from "@/lib/generated-ui";
 import { cn } from "@/lib/utils";
 
@@ -150,12 +151,36 @@ export function GeneratedUIContent({ className, renderMarkdown, text }: Generate
             </div>
           );
         }
+        if (chunk.type === "pending") {
+          return <GeneratedUIPending key={`pending:${index}`} />;
+        }
+        if (chunk.type === "error") {
+          return <GeneratedUIUnavailable key={`error:${index}`} />;
+        }
         return (
-          <GeneratedUIBoundary fallback={renderMarkdown ? renderMarkdown(chunk.source) : <MarkdownRenderer className="text-sm leading-relaxed" text={chunk.source} />} key={`spec:${index}`}>
+          <GeneratedUIBoundary fallback={<GeneratedUIUnavailable />} key={`spec:${index}`}>
             <GeneratedUISpecView spec={chunk.spec} />
           </GeneratedUIBoundary>
         );
       })}
+    </div>
+  );
+}
+
+function GeneratedUIPending() {
+  return (
+    <div className="inline-flex items-center gap-2 py-1 text-muted-foreground" role="status">
+      <FileQuestion className="size-4" />
+      <ThinkingDots label="Creating Test" />
+    </div>
+  );
+}
+
+function GeneratedUIUnavailable() {
+  return (
+    <div className="inline-flex items-center gap-2 py-1 text-sm text-muted-foreground">
+      <FileQuestion className="size-4" />
+      <span>Test konnte nicht angezeigt werden.</span>
     </div>
   );
 }

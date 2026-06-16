@@ -41,7 +41,7 @@ describe("generated UI content", () => {
     expect(chunks[2]).toEqual({ type: "markdown", text: "\n\nWeiter so." });
   });
 
-  test("keeps invalid json-render blocks as markdown fallback", () => {
+  test("does not expose invalid json-render blocks as raw markdown", () => {
     const chunks = splitGeneratedUIContent([
       "Vorher",
       "",
@@ -55,8 +55,7 @@ describe("generated UI content", () => {
       "```",
     ].join("\n"));
 
-    expect(chunks.map((chunk) => chunk.type)).toEqual(["markdown", "markdown"]);
-    expect(chunks[1]?.type === "markdown" ? chunks[1].text : "").toContain("Unknown");
+    expect(chunks.map((chunk) => chunk.type)).toEqual(["markdown", "error"]);
   });
 
   test("accepts an interactive quiz spec", () => {
@@ -101,10 +100,16 @@ describe("generated UI content", () => {
     expect(spec?.elements.quiz.type).toBe("Quiz");
   });
 
-  test("does not hide incomplete streaming fences", () => {
+  test("hides incomplete streaming fences behind a pending chunk", () => {
     const chunks = splitGeneratedUIContent("Antwort\n\n```json-render\n{\"root\"");
 
-    expect(chunks).toEqual([{ type: "markdown", text: "Antwort\n\n```json-render\n{\"root\"" }]);
+    expect(chunks).toEqual([{ type: "markdown", text: "Antwort\n\n" }, { type: "pending" }]);
+  });
+
+  test("hides pure incomplete streaming fences", () => {
+    const chunks = splitGeneratedUIContent("```json-render\n{\"root\"");
+
+    expect(chunks).toEqual([{ type: "pending" }]);
   });
 
   test("strips json-render blocks for previews and chat history", () => {
@@ -115,6 +120,12 @@ describe("generated UI content", () => {
       JSON.stringify(validSpec),
       "```",
     ].join("\n"));
+
+    expect(stripped).toBe("Kurzfassung");
+  });
+
+  test("strips incomplete json-render blocks for previews and chat history", () => {
+    const stripped = stripGeneratedUIBlocks("Kurzfassung\n\n```json-render\n{\"root\"");
 
     expect(stripped).toBe("Kurzfassung");
   });
