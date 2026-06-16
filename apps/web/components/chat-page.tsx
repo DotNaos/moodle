@@ -33,7 +33,7 @@ import { ThinkingDots } from "@/components/ui/thinking-dots";
 import { WorkspaceFilePanel } from "@/components/workspace-file-panel";
 import { useCodexChat } from "@/hooks/use-codex-chat";
 import { useCodexModels } from "@/hooks/use-codex-models";
-import { useUserSettings } from "@/hooks/use-user-settings";
+import type { UserSettingsController } from "@/hooks/use-user-settings";
 import type { CodexActionResult } from "@/hooks/use-codex-moodle-actions";
 import type { MoodleUIAction } from "@/lib/codex-actions";
 import type { CodexAppliedAction, CodexChatUIMessage, CodexToolEvent, StudyChatContext } from "@/lib/codex-chat";
@@ -62,6 +62,7 @@ type ChatPageProps = {
   selectedCourseId: string | null;
   pdfState: PDFViewState | null;
   studyContext?: StudyChatContext;
+  userSettings: UserSettingsController;
   loadMaterials: (courseId: string) => Promise<Material[]>;
   onCourseChange: (courseId: string) => void;
   onApplyActions: (actions: MoodleUIAction[]) => Promise<CodexActionResult>;
@@ -84,6 +85,7 @@ export function ChatPage({
   selectedCourseId,
   pdfState,
   studyContext,
+  userSettings,
   loadMaterials,
   onCourseChange,
   onApplyActions,
@@ -202,7 +204,7 @@ export function ChatPage({
 
   // Persisted, DB-backed user settings: remember the chat course, model and
   // reasoning effort across sessions so they don't reset every time.
-  const { settings, loaded: settingsLoaded, update: updateSettings } = useUserSettings();
+  const { settings, loaded: settingsLoaded, update: updateSettings } = userSettings;
   const courseAppliedRef = useRef(false);
   const modelAppliedRef = useRef(false);
 
