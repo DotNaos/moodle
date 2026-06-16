@@ -25,7 +25,7 @@ import type { CalendarEventSummary } from "@/hooks/use-calendar-events";
 import type { Course, Material, WebexRecordingState } from "@/lib/dashboard-data";
 import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
 import { COURSE_MODE_LABELS, type CourseMode } from "@/lib/navigator";
-import { readRecentChats, type RecentChatEntry } from "@/lib/recent-chat-storage";
+import { readRecentChats, subscribeRecentChats, type RecentChatEntry } from "@/lib/recent-chat-storage";
 import { taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
@@ -92,7 +92,9 @@ export function CourseModesPanel({
 }) {
   const [recentChats, setRecentChats] = useState<RecentChatEntry[]>([]);
   useEffect(() => {
-    setRecentChats(readRecentChats().filter((chat) => chat.courseId === courseId).slice(0, 3));
+    const refresh = () => setRecentChats(readRecentChats().filter((chat) => chat.courseId === courseId).slice(0, 3));
+    refresh();
+    return subscribeRecentChats(refresh);
   }, [courseId]);
 
   useEffect(() => {
@@ -622,7 +624,9 @@ export function ChatSessionsPanel({
   const [sessions, setSessions] = useState<RecentChatEntry[]>([]);
 
   useEffect(() => {
-    setSessions(readRecentChats());
+    const refresh = () => setSessions(readRecentChats());
+    refresh();
+    return subscribeRecentChats(refresh);
   }, [activeSessionId]);
 
   return (

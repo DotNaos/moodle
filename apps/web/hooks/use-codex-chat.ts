@@ -134,6 +134,20 @@ export function useCodexChat({
     }
   }
 
+  function reset(nextMessages: CodexChatUIMessage[] = []) {
+    const controller = abortControllerRef.current;
+    if (controller) {
+      abortModesRef.current.set(activeRunIdRef.current, "stop");
+      controller.abort();
+    }
+    activeRunIdRef.current += 1;
+    abortControllerRef.current = null;
+    abortModesRef.current.clear();
+    setMessages(nextMessages);
+    setError(null);
+    setRunningState(false);
+  }
+
   async function submit(rawText: string, attachments: CodexAttachment[] = []) {
     const text = rawText.trim();
     if (!text && attachments.length === 0) {
@@ -267,7 +281,7 @@ export function useCodexChat({
 
   useEffect(() => () => stop("stop"), []);
 
-  return { messages, running, error, submit, stop, setError };
+  return { messages, running, error, reset, submit, stop, setError };
 }
 
 function lastRunningIndexByTitle(toolEvents: CodexChatUIMessage["toolEvents"], title: string): number {

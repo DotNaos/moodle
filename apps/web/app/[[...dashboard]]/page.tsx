@@ -859,6 +859,7 @@ export default function Home() {
               pdfState={pdfState}
               selectedCourseId={activeDocument.courseId}
               selectedMaterial={selectedMaterial}
+              sessionId={activeDocument.sessionId}
               studyContext={studyChatContext}
               user={user}
               onApplyActions={applyCodexActions}
@@ -866,6 +867,12 @@ export default function Home() {
                 navigator.navigate({
                   path: { kind: "chat" },
                   document: { ...activeDocument, courseId },
+                })
+              }
+              onSessionCreated={(sessionId) =>
+                navigator.navigate({
+                  path: { kind: "chat" },
+                  document: { ...activeDocument, sessionId },
                 })
               }
             />
