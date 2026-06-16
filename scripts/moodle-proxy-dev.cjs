@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { WebSocketServer } = require('ws');
 const {
     DEFAULT_PROXY_PORT,
     createMoodleProxyResponse,
@@ -12,6 +13,7 @@ const port = Number.parseInt(
     10,
 );
 const codexRunEnabled = process.env.DISABLE_CODEX_RUN !== '1';
+const codexRunWebSocketServer = new WebSocketServer({ noServer: true });
 
 const server = http.createServer(async (request, response) => {
     try {
@@ -93,6 +95,35 @@ const server = http.createServer(async (request, response) => {
     }
 });
 
+server.on('upgrade', (request, socket, head) => {
+    const host = request.headers.host || `localhost:${port}`;
+    const requestUrl = `http://${host}${request.url || ''}`;
+
+    if (!requestUrl.includes('/api/codex-run/ws') || !codexRunEnabled) {
+        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+
+    codexRunWebSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        codexRunWebSocketServer.emit('connection', webSocket, request);
+    });
+});
+
+codexRunWebSocketServer.on('connection', (webSocket, request) => {
+    const host = request.headers.host || `localhost:${port}`;
+    const requestUrl = `http://${host}${request.url || ''}`;
+    const { streamCodexRunWebSocket } = require('../proxy/codex-run.cjs');
+    void streamCodexRunWebSocket(
+        {
+            method: request.method,
+            headers: request.headers,
+            requestUrl,
+        },
+        webSocket,
+    );
+});
+
 server.listen(port, () => {
     console.log(
         `[moodle-proxy] listening on http://localhost:${port}/api/moodle-proxy`,
@@ -100,6 +131,9 @@ server.listen(port, () => {
     if (codexRunEnabled) {
         console.log(
             `[codex-run] listening on http://localhost:${port}/api/codex-run`,
+        );
+        console.log(
+            `[codex-run] listening on ws://localhost:${port}/api/codex-run/ws`,
         );
         console.log(
             `[codex-auth] listening on http://localhost:${port}/api/codex-auth`,
@@ -114,6 +148,7 @@ server.listen(port, () => {
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
+        codexRunWebSocketServer.close();
         server.close(() => process.exit(0));
     });
 }

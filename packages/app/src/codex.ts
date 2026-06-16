@@ -1,6 +1,10 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+import {
+  getCodexRunWebSocketUrl,
+  streamCodexTaskOverWebSocket,
+} from "./codexStreamTransport";
 import type { MoodleConnection } from "./moodle";
 import { loadCodexDeviceToken, storeCodexDeviceToken } from "./storage";
 
@@ -126,49 +130,18 @@ export type CodexPairingClaim =
   | { readonly status: "paired" };
 
 export type CodexAuthEvent =
-  | {
-      readonly type: "device_code";
-      readonly verificationUri: string;
-      readonly userCode: string;
-      readonly expiresInSeconds?: number;
-    }
-  | {
-      readonly type: "completed";
-    }
-  | {
-      readonly type: "error";
-      readonly error: string;
-    };
+  | { readonly type: "device_code"; readonly verificationUri: string; readonly userCode: string; readonly expiresInSeconds?: number }
+  | { readonly type: "completed" }
+  | { readonly type: "error"; readonly error: string };
 
 export type CodexStreamEvent =
-  | {
-      readonly type: "thread";
-      readonly threadId: string | null;
-    }
-  | {
-      readonly type: "message";
-      readonly text: string;
-    }
-  | {
-      readonly type: "tool";
-      readonly id?: string;
-      readonly title: string;
-      readonly status: "running" | "completed" | "failed";
-    }
-  | {
-      readonly type: "status";
-      readonly title: string;
-    }
-  | {
-      readonly type: "done";
-      readonly threadId: string | null;
-      readonly finalResponse: string;
-      readonly actions?: MoodleCodexAction[];
-    }
-  | {
-      readonly type: "error";
-      readonly error: string;
-    };
+  | { readonly type: "thread"; readonly threadId: string | null }
+  | { readonly type: "message"; readonly text: string }
+  | { readonly type: "delta"; readonly text: string }
+  | { readonly type: "tool"; readonly id?: string; readonly title: string; readonly status: "running" | "completed" | "failed" }
+  | { readonly type: "status"; readonly title: string }
+  | { readonly type: "done"; readonly threadId: string | null; readonly finalResponse: string; readonly actions?: MoodleCodexAction[] }
+  | { readonly type: "error"; readonly error: string };
 
 export async function runCodexTask(
   request: CodexRunRequest,
@@ -208,6 +181,30 @@ export async function streamCodexTask(
   request: CodexRunRequest,
   onEvent: (event: CodexStreamEvent) => void,
 ): Promise<CodexRunResponse> {
+  const webSocketUrl = getCodexRunWebSocketUrl({
+    runUrl: getCodexRunUrl(),
+    useVpsCodex: shouldUseVpsCodex(),
+  });
+  if (webSocketUrl) {
+    let emittedOutput = false;
+    try {
+      return await streamCodexTaskOverWebSocket(request, (event) => {
+        if (
+          (event.type === "message" && event.text.length > 0) ||
+          (event.type === "delta" && event.text.length > 0) ||
+          event.type === "tool"
+        ) {
+          emittedOutput = true;
+        }
+        onEvent(event);
+      }, webSocketUrl);
+    } catch (error) {
+      if (emittedOutput) {
+        throw error;
+      }
+    }
+  }
+
   const response = await fetch(getCodexRunUrl(), {
     method: "POST",
     headers: {
@@ -264,6 +261,8 @@ export async function streamCodexTask(
       onEvent(event);
       if (event.type === "thread") {
         threadId = event.threadId;
+      } else if (event.type === "delta") {
+        finalResponse += event.text;
       } else if (event.type === "message") {
         finalResponse = event.text;
       } else if (event.type === "done") {
@@ -284,6 +283,8 @@ export async function streamCodexTask(
         threadId = event.threadId;
         finalResponse = event.finalResponse;
         actions = event.actions ?? [];
+      } else if (event.type === "delta") {
+        finalResponse += event.text;
       }
     }
   }
