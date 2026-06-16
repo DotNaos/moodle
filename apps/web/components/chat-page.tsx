@@ -14,6 +14,7 @@ import {
   Mic,
   Paperclip,
   Plus,
+  Square,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -246,6 +247,7 @@ export function ChatPage({
   const stickRef = useRef(true);
   const followRafRef = useRef<number | null>(null);
   const autoScrollingRef = useRef(false);
+  const touchStartYRef = useRef<number | null>(null);
 
   const setStick = useCallback((value: boolean) => {
     stickRef.current = value;
@@ -299,7 +301,7 @@ export function ChatPage({
     if (!el) {
       return;
     }
-    setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+    setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 12);
   }
 
   function handleFeedWheel(event: { deltaY: number }) {
@@ -311,8 +313,10 @@ export function ChatPage({
 
   // Touch devices have no wheel event, so without this the follow loop fights
   // every upward swipe while a response streams in.
-  function handleFeedTouchMove() {
-    if (stickRef.current) {
+  function handleFeedTouchMove(event: React.TouchEvent<HTMLDivElement>) {
+    const startY = touchStartYRef.current;
+    const currentY = event.touches[0]?.clientY ?? null;
+    if (stickRef.current && startY != null && currentY != null && currentY - startY > 4) {
       setStick(false);
       stopFollow();
     }
@@ -320,6 +324,10 @@ export function ChatPage({
 
   function scrollToBottom() {
     setStick(true);
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
     ensureFollow();
   }
 
@@ -333,10 +341,10 @@ export function ChatPage({
 
   async function handleSend() {
     const text = prompt.trim();
-    if ((!text && pending.length === 0) || chat.running || uploading) {
+    if ((!text && pending.length === 0) || uploading) {
       return;
     }
-    setStickToBottom(true);
+    scrollToBottom();
 
     const attachments: CodexAttachment[] = [];
     const files = pending.filter((item): item is PendingFile => item.kind === "file");
@@ -381,6 +389,7 @@ export function ChatPage({
         onPromptChange={setPrompt}
         onRemove={removePending}
         onSend={handleSend}
+        onStop={() => chat.stop()}
       />
     </div>
   );
@@ -422,7 +431,11 @@ export function ChatPage({
             ref={scrollRef}
             className={cn("h-full overflow-auto", isSidebar ? "p-3" : "p-4 md:p-8")}
             onScroll={handleFeedScroll}
+            onTouchStart={(event) => {
+              touchStartYRef.current = event.touches[0]?.clientY ?? null;
+            }}
             onTouchMove={handleFeedTouchMove}
+            onWheel={handleFeedWheel}
           >
             <div className={cn("mx-auto flex w-full flex-col gap-4", contentWidth)}>
               {chat.messages.length === 0 ? (
@@ -448,7 +461,7 @@ export function ChatPage({
           {!stickToBottom && chat.messages.length > 0 ? (
             <button
               aria-label="Nach unten scrollen"
-              className="absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 bg-background text-foreground shadow-md transition-colors hover:bg-secondary"
+              className="absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full bg-foreground text-background shadow-md transition-transform hover:scale-105"
               type="button"
               onClick={() => scrollToBottom()}
             >
@@ -613,9 +626,8 @@ export function ChatMessageBubble({ message }: { message: CodexChatUIMessage }) 
         <ToolEventRow key={event.id} event={event} />
       ))}
       {isPending ? (
-        <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-          <ThinkingDots />
-          {message.toolEvents.some((event) => event.status === "running") ? "Arbeitet" : "Denkt nach"}
+        <div className="py-1 text-muted-foreground">
+          <ThinkingDots label={message.toolEvents.some((event) => event.status === "running") ? "Working" : "Thinking"} />
         </div>
       ) : (
         <MarkdownRenderer className="text-sm leading-relaxed" text={message.text} />
@@ -785,6 +797,7 @@ function ChatComposer({
   onPromptChange,
   onRemove,
   onSend,
+  onStop,
 }: {
   loadMaterials: (courseId: string) => Promise<Material[]>;
   modelsHook: ReturnType<typeof useCodexModels>;
@@ -798,13 +811,14 @@ function ChatComposer({
   onPromptChange: (value: string) => void;
   onRemove: (id: string) => void;
   onSend: () => void;
+  onStop: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
   const [resourceModalOpen, setResourceModalOpen] = useState(false);
   const compact = useIsCompactViewport();
-  const busy = running || uploading;
+  const busy = uploading;
   const canSend = (prompt.trim().length > 0 || pending.length > 0) && !busy;
 
   useEffect(() => {
@@ -851,7 +865,7 @@ function ChatComposer({
 
   const sendButton = (
     <button
-      aria-label="Senden"
+      aria-label={running ? "Steering senden" : "Senden"}
       className={cn(
         "flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
         canSend ? "bg-neutral-500 text-white hover:bg-neutral-600" : "bg-secondary text-muted-foreground",
@@ -863,6 +877,17 @@ function ChatComposer({
       {busy ? <Spinner aria-hidden className="size-4" /> : <ArrowUp className="size-4" />}
     </button>
   );
+
+  const stopButton = running ? (
+    <button
+      aria-label="Antwort stoppen"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      type="button"
+      onClick={onStop}
+    >
+      <Square className="size-3.5 fill-current" />
+    </button>
+  ) : null;
 
   const handleTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -905,6 +930,7 @@ function ChatComposer({
               onKeyDown={handleTextareaKeyDown}
             />
             {micButton}
+            {stopButton}
             {sendButton}
           </div>
         </>
@@ -933,6 +959,7 @@ function ChatComposer({
             <div className="flex shrink-0 items-center gap-1">
               <ComposerModelSelector modelsHook={modelsHook} />
               {micButton}
+              {stopButton}
               {sendButton}
             </div>
           </div>

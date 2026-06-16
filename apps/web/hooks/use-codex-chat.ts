@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { CodexActionResult } from "@/hooks/use-codex-moodle-actions";
 import type { MoodleUIAction } from "@/lib/codex-actions";
@@ -55,6 +55,15 @@ export function useCodexChat({
   const [messages, setMessages] = useState<CodexChatUIMessage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runningRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeRunIdRef = useRef(0);
+  const abortModesRef = useRef(new Map<number, "steer" | "stop">());
+
+  function setRunningState(value: boolean) {
+    runningRef.current = value;
+    setRunning(value);
+  }
 
   function updateAssistantMessage(messageId: string, text: string) {
     setMessages((current) =>
@@ -112,11 +121,31 @@ export function useCodexChat({
     );
   }
 
-  async function submit(rawText: string, attachments: CodexAttachment[] = []) {
-    const text = rawText.trim();
-    if ((!text && attachments.length === 0) || running) {
+  function stop(mode: "steer" | "stop" = "stop") {
+    const controller = abortControllerRef.current;
+    if (!controller) {
+      setRunningState(false);
       return;
     }
+    abortModesRef.current.set(activeRunIdRef.current, mode);
+    controller.abort();
+    if (mode === "stop") {
+      setRunningState(false);
+    }
+  }
+
+  async function submit(rawText: string, attachments: CodexAttachment[] = []) {
+    const text = rawText.trim();
+    if (!text && attachments.length === 0) {
+      return;
+    }
+    if (runningRef.current) {
+      stop("steer");
+    }
+    const abortController = new AbortController();
+    const runId = activeRunIdRef.current + 1;
+    activeRunIdRef.current = runId;
+    abortControllerRef.current = abortController;
     const backendPrompt = buildAttachmentPrompt(text, attachments);
     // Image attachments are passed by basename so the backend can attach them
     // to `codex exec -i` (vision over the uploaded file).
@@ -139,7 +168,7 @@ export function useCodexChat({
       userMessage,
       { id: assistantMessageId, role: "assistant", text: "Thinking...", toolEvents: [], actions: [], attachments: [] },
     ]);
-    setRunning(true);
+    setRunningState(true);
     setError(null);
 
     try {
@@ -178,6 +207,7 @@ export function useCodexChat({
             // "status" events — and lifecycle noise mislabeled as "tool" by older
             // backends — are intentionally ignored (hidden in UI).
           },
+          { signal: abortController.signal },
         );
 
         const actions = completeCodexActions(result.actions, text);
@@ -216,14 +246,28 @@ export function useCodexChat({
         setError("Codex needed too many Moodle UI steps. Try asking for a more specific course or file.");
       }
     } catch (submitError) {
+      if (isAbortError(submitError)) {
+        finalizeAbortedAssistantMessage(
+          assistantMessageId,
+          abortModesRef.current.get(runId) ?? "stop",
+          setMessages,
+        );
+        return;
+      }
       setMessages((current) => current.filter((message) => message.id !== assistantMessageId));
       setError(submitError instanceof Error ? submitError.message : "Codex failed.");
     } finally {
-      setRunning(false);
+      abortModesRef.current.delete(runId);
+      if (activeRunIdRef.current === runId) {
+        abortControllerRef.current = null;
+        setRunningState(false);
+      }
     }
   }
 
-  return { messages, running, error, submit, setError };
+  useEffect(() => () => stop("stop"), []);
+
+  return { messages, running, error, submit, stop, setError };
 }
 
 function lastRunningIndexByTitle(toolEvents: CodexChatUIMessage["toolEvents"], title: string): number {
@@ -233,4 +277,29 @@ function lastRunningIndexByTitle(toolEvents: CodexChatUIMessage["toolEvents"], t
     }
   }
   return -1;
+}
+
+function finalizeAbortedAssistantMessage(
+  messageId: string,
+  mode: "steer" | "stop",
+  setMessages: Dispatch<SetStateAction<CodexChatUIMessage[]>>,
+) {
+  setMessages((current) =>
+    current.flatMap((message) => {
+      if (message.id !== messageId) {
+        return [message];
+      }
+      if (message.text !== "Thinking...") {
+        return [message];
+      }
+      if (mode === "steer") {
+        return [];
+      }
+      return [{ ...message, text: "Gestoppt." }];
+    }),
+  );
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }

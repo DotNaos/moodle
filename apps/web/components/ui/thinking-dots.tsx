@@ -1,13 +1,11 @@
 import { cn } from "@/lib/utils";
 
-// A subtle three-dot "typing" indicator used for the assistant's thinking /
-// working state, in place of a spinning loader.
-function ThinkingDots({ className }: { className?: string }) {
+// Kept as `ThinkingDots` for compatibility with existing imports, but the
+// visual treatment is now the Codex-style visor text animation.
+function ThinkingDots({ className, label = "Thinking" }: { className?: string; label?: string }) {
   return (
-    <span aria-label="Loading" className={cn("inline-flex items-center gap-1", className)} role="status">
-      <span className="thinking-dot size-1.5 rounded-full bg-current" />
-      <span className="thinking-dot size-1.5 rounded-full bg-current [animation-delay:0.15s]" />
-      <span className="thinking-dot size-1.5 rounded-full bg-current [animation-delay:0.3s]" />
+    <span aria-label={label} className={cn("thinking-visor inline-block text-sm font-medium", className)} role="status">
+      {label}
     </span>
   );
 }
