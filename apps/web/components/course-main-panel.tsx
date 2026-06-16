@@ -13,6 +13,8 @@ import { buildScriptPDFMapping, TaskStudyPanel, type TaskViewResponse } from "@/
 import { WebexRecordingsPanel } from "@/components/webex-recordings-panel";
 import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material, WebexRecording, WebexRecordingState } from "@/lib/dashboard-data";
+import type { CourseResourcesLayout } from "@/lib/material-display-preferences";
+import type { MaterialTypeFilter } from "@/lib/material-filters";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyOutline } from "@/lib/study-outline";
 import type { StudyMode } from "@/components/study-mode-actions";
@@ -23,6 +25,8 @@ export function CourseMainPanel({
   courseHubOpen,
   courseId,
   material,
+  materialLayout,
+  materialTypeFilter,
   materials,
   materialsBySection,
   materialsLoading,
@@ -34,6 +38,8 @@ export function CourseMainPanel({
   onPDFStateChange,
   onOpenResource,
   onLoadRecordings,
+  onMaterialLayoutChange,
+  onMaterialTypeFilterChange,
   onPlayRecording,
   onSelectMaterial,
   onSelectScriptSection,
@@ -53,6 +59,8 @@ export function CourseMainPanel({
   courseHubOpen: boolean;
   courseId: string | null;
   material: Material | null;
+  materialLayout: CourseResourcesLayout;
+  materialTypeFilter: MaterialTypeFilter;
   materials: Material[];
   materialsBySection: [string, Material[]][];
   materialsLoading: boolean;
@@ -67,6 +75,8 @@ export function CourseMainPanel({
   onOpenResource: (resourceId: string) => void;
   onPDFStateChange: (state: PDFViewState | null) => void;
   onLoadRecordings: () => void;
+  onMaterialLayoutChange: (layout: CourseResourcesLayout) => void;
+  onMaterialTypeFilterChange: (filter: MaterialTypeFilter) => void;
   onPlayRecording: (recording: WebexRecording) => void;
   onSelectMaterial: (material: Material) => void;
   onSelectScriptSection: (sectionId: string) => void;
@@ -183,13 +193,17 @@ export function CourseMainPanel({
     return (
       <CoursePanelShell course={course}>
         <MaterialsOutline
+          layout={materialLayout}
           materials={materials}
           materialsBySection={materialsBySection}
           materialsLoading={materialsLoading}
           selectedMaterialId={null}
           taskIdForMaterial={(candidate) => taskIdForMaterial(candidate, taskLinksByResourceId)}
+          typeFilter={materialTypeFilter}
+          onLayoutChange={onMaterialLayoutChange}
           onOpenTask={onSelectTask}
           onSelectMaterial={onSelectMaterial}
+          onTypeFilterChange={onMaterialTypeFilterChange}
         />
       </CoursePanelShell>
     );

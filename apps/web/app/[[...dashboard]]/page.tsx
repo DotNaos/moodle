@@ -46,6 +46,7 @@ import type { TaskViewResponse } from "@/components/task-study-panel";
 import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import { useCodexMoodleActions } from "@/hooks/use-codex-moodle-actions";
 import { useNavigator } from "@/hooks/use-navigator";
+import { useUserSettings } from "@/hooks/use-user-settings";
 import { useWebexRecordings } from "@/hooks/use-webex-recordings";
 import { clearDashboardCache, readDashboardCache, writeDashboardCache } from "@/lib/dashboard-cache";
 import type { Course, Material, User } from "@/lib/dashboard-data";
@@ -70,6 +71,10 @@ import {
   isMoodleNotConnected,
   pruneMaterialCache,
 } from "@/lib/moodle-api";
+import {
+  courseResourcesLayoutFromSettings,
+  courseResourcesTypeFilterFromSettings,
+} from "@/lib/material-display-preferences";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyChatContext, StudyTestContext } from "@/lib/codex-chat";
 import { readRecentChats } from "@/lib/recent-chat-storage";
@@ -94,6 +99,7 @@ const CHAT_SIDEBAR_MAX_WIDTH = 640;
 export default function Home() {
   const { isLoaded, isSignedIn, userId } = useAuth();
   const navigator = useNavigator();
+  const userSettings = useUserSettings();
   const { path, document: activeDocument } = navigator.state;
 
   const [user, setUser] = useState<User | null>(null);
@@ -650,6 +656,8 @@ export default function Home() {
     () => buildTaskLinksByResourceId(studyOutline.tasks, taskView),
     [studyOutline.tasks, taskView],
   );
+  const materialLayout = courseResourcesLayoutFromSettings(userSettings.settings.courseResourcesLayout);
+  const materialTypeFilter = courseResourcesTypeFilterFromSettings(userSettings.settings.courseResourcesTypeFilter);
 
   const studyChatContext = useMemo<StudyChatContext>(() => {
     const context: NonNullable<StudyChatContext> = {
@@ -766,6 +774,8 @@ export default function Home() {
       course={selectedCourse}
       courseHubOpen={false}
       courseId={activeCourseId}
+      materialLayout={materialLayout}
+      materialTypeFilter={materialTypeFilter}
       materials={materials}
       materialsBySection={materialsBySection}
       materialsLoading={materialsLoading}
@@ -796,6 +806,8 @@ export default function Home() {
       }}
       onPDFStateChange={setPDFState}
       onLoadRecordings={() => activeCourseId && void loadRecordings(activeCourseId, { refresh: true })}
+      onMaterialLayoutChange={(layout) => userSettings.update({ courseResourcesLayout: layout })}
+      onMaterialTypeFilterChange={(filter) => userSettings.update({ courseResourcesTypeFilter: filter })}
       onPlayRecording={(recording) => {
         if (!activeCourseId) {
           return;
@@ -861,6 +873,7 @@ export default function Home() {
               selectedMaterial={selectedMaterial}
               sessionId={activeDocument.sessionId}
               studyContext={studyChatContext}
+              userSettings={userSettings}
               user={user}
               onApplyActions={applyCodexActions}
               onCourseChange={(courseId) =>
@@ -1120,6 +1133,7 @@ export default function Home() {
                       selectedCourseId={activeCourseId}
                       selectedMaterial={selectedMaterial}
                       studyContext={studyChatContext}
+                      userSettings={userSettings}
                       user={user}
                       variant="sidebar"
                       onApplyActions={applyCodexActions}

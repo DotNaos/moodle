@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { EmptyState, LoadingRows, MaterialGridCard, MaterialRow } from "@/components/dashboard-ui";
 import { GroupedItemsView, type GroupedItemsLayout } from "@/components/grouped-items-view";
@@ -21,25 +21,30 @@ import { taskDisplayTitle, type ScriptSectionOutline, type StudyOutline, type St
 import { cn } from "@/lib/utils";
 
 export function MaterialsOutline({
+  layout,
   materials,
   materialsBySection,
   materialsLoading,
   selectedMaterialId,
   taskIdForMaterial,
+  typeFilter,
+  onLayoutChange,
   onOpenTask,
   onSelectMaterial,
+  onTypeFilterChange,
 }: {
+  layout: GroupedItemsLayout;
   materials: Material[];
   materialsBySection: [string, Material[]][];
   materialsLoading: boolean;
   selectedMaterialId: string | null;
   taskIdForMaterial?: (material: Material) => string | null;
+  typeFilter: MaterialTypeFilter;
+  onLayoutChange: (layout: GroupedItemsLayout) => void;
   onOpenTask?: (taskId: string) => void;
   onSelectMaterial: (material: Material) => void;
+  onTypeFilterChange: (filter: MaterialTypeFilter) => void;
 }) {
-  const [layout, setLayout] = useState<GroupedItemsLayout>("list");
-  const [typeFilter, setTypeFilter] = useState<MaterialTypeFilter>("all");
-
   const filteredSections = useMemo(
     () => filterMaterialsBySection(materialsBySection, typeFilter),
     [materialsBySection, typeFilter],
@@ -66,7 +71,7 @@ export function MaterialsOutline({
       header={
         <MaterialTypeFilterSelect
           filter={typeFilter}
-          onFilterChange={setTypeFilter}
+          onFilterChange={onTypeFilterChange}
         />
       }
       layout={layout}
@@ -76,7 +81,7 @@ export function MaterialsOutline({
         items: sectionMaterials,
       }))}
       getItemKey={(material) => material.id}
-      onLayoutChange={setLayout}
+      onLayoutChange={onLayoutChange}
       renderGridItem={(material) => (
         <MaterialGridCard
           active={material.id === selectedMaterialId}
