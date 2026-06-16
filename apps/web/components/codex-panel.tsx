@@ -33,7 +33,7 @@ import {
   toChatHistory,
   type LoadedResourceContext,
 } from "@/lib/codex-chat";
-import { readCodexStream } from "@/lib/codex-stream-client";
+import { runCodexStream } from "@/lib/codex-stream-client";
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
 import { buildPDFImageInputs, type PDFViewState } from "@/lib/pdf-context";
@@ -53,13 +53,6 @@ type CodexMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
-};
-
-type CodexResponse = {
-  threadId?: string | null;
-  finalResponse?: string;
-  actions?: MoodleUIAction[];
-  error?: string;
 };
 
 type CodexAuthStatus = "checking" | "missing" | "connecting" | "connected";
@@ -260,13 +253,8 @@ export function CodexPanel({
       let reachedActionLimit = false;
 
       for (let turn = 0; turn < MAX_CODEX_ACTION_TURNS; turn += 1) {
-        const response = await fetch("/api/codex/run", {
-          method: "POST",
-          headers: {
-            accept: "application/x-ndjson",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
+        const result = await runCodexStream(
+          {
             prompt: text,
             images: buildPDFImageInputs(pdfState),
             messages: chatHistory,
@@ -280,24 +268,20 @@ export function CodexPanel({
               pdfState,
               loadedResources,
             }),
-          }),
-        });
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as CodexResponse;
-          throw new Error(payload.error ?? `Codex failed with ${response.status}.`);
-        }
-
-        const result = await readCodexStream(response, (event) => {
-          if (event.type === "message") {
-            updateAssistantMessage(assistantMessageId, displayCodexText(event.text));
-          } else if (event.type === "tool") {
-            updateAssistantMessage(
-              assistantMessageId,
-              event.status === "running" ? `Working: ${event.title}` : "Finishing...",
-            );
-          }
-        });
+          },
+          (event) => {
+            if (event.type === "message") {
+              updateAssistantMessage(assistantMessageId, displayCodexText(event.text));
+            } else if (event.type === "delta") {
+              appendAssistantMessage(assistantMessageId, displayCodexText(event.text));
+            } else if (event.type === "tool") {
+              updateAssistantMessage(
+                assistantMessageId,
+                event.status === "running" ? `Working: ${event.title}` : "Finishing...",
+              );
+            }
+          },
+        );
 
         const actions = completeCodexActions(result.actions, text);
         updateAssistantMessage(assistantMessageId, result.finalResponse);
@@ -357,6 +341,19 @@ export function CodexPanel({
           ? {
               ...message,
               text,
+            }
+          : message,
+      ),
+    );
+  }
+
+  function appendAssistantMessage(messageId: string, delta: string) {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              text: message.text === "Thinking..." ? delta : `${message.text}${delta}`,
             }
           : message,
       ),

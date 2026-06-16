@@ -105,10 +105,6 @@ async function streamCodexRun(input, response) {
     }
 
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-    const threadId =
-        typeof body.threadId === 'string' && body.threadId.trim()
-            ? body.threadId.trim()
-            : null;
 
     if (!prompt) {
         writeStreamEvent(response, headers, {
@@ -122,48 +118,7 @@ async function streamCodexRun(input, response) {
     response.writeHead(200, headers);
 
     try {
-        const { thread } = await createCodexThread(threadId);
-        const streamed = await thread.runStreamed(withMoodleToolsPrompt(prompt, body.moodleContext));
-        let finalResponse = '';
-
-        for await (const event of streamed.events) {
-            if (event.type === 'thread.started') {
-                writeStreamEvent(response, null, {
-                    type: 'thread',
-                    threadId: event.thread_id,
-                });
-            } else if (
-                event.type === 'item.started' ||
-                event.type === 'item.updated' ||
-                event.type === 'item.completed'
-            ) {
-                const item = event.item;
-                if (item.type === 'agent_message') {
-                    finalResponse = item.text;
-                    writeStreamEvent(response, null, {
-                        type: 'message',
-                        text: item.text,
-                    });
-                } else if (item.type === 'command_execution') {
-                    writeStreamEvent(response, null, {
-                        type: 'tool',
-                        title: compactCommand(item.command),
-                        status:
-                            item.status === 'completed'
-                                ? 'completed'
-                                : item.status === 'failed'
-                                  ? 'failed'
-                                  : 'running',
-                    });
-                }
-            }
-        }
-
-        writeStreamEvent(response, null, {
-            type: 'done',
-            threadId: thread.id,
-            finalResponse,
-        });
+        await streamCodexRunEvents(body, (event) => writeStreamEvent(response, null, event));
     } catch (error) {
         writeStreamEvent(response, null, {
             type: 'error',
@@ -175,6 +130,97 @@ async function streamCodexRun(input, response) {
     } finally {
         response.end();
     }
+}
+
+async function streamCodexRunWebSocket(input, socket) {
+    let body;
+    try {
+        body = await readWebSocketRequestBody(socket);
+    } catch (error) {
+        writeSocketEvent(socket, {
+            type: 'error',
+            error:
+                error instanceof Error
+                    ? error.message
+                    : 'Request body must be JSON.',
+        });
+        socket.close();
+        return;
+    }
+
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    if (!prompt) {
+        writeSocketEvent(socket, {
+            type: 'error',
+            error: 'Prompt is required.',
+        });
+        socket.close();
+        return;
+    }
+
+    try {
+        await streamCodexRunEvents(body, (event) => writeSocketEvent(socket, event));
+    } catch (error) {
+        writeSocketEvent(socket, {
+            type: 'error',
+            error:
+                error instanceof Error
+                    ? error.message
+                    : 'Codex failed before returning a result.',
+        });
+    } finally {
+        socket.close();
+    }
+}
+
+async function streamCodexRunEvents(body, onEvent) {
+    const threadId =
+        typeof body.threadId === 'string' && body.threadId.trim()
+            ? body.threadId.trim()
+            : null;
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    const { thread } = await createCodexThread(threadId);
+    const streamed = await thread.runStreamed(withMoodleToolsPrompt(prompt, body.moodleContext));
+    let finalResponse = '';
+
+    for await (const event of streamed.events) {
+        if (event.type === 'thread.started') {
+            onEvent({
+                type: 'thread',
+                threadId: event.thread_id,
+            });
+        } else if (
+            event.type === 'item.started' ||
+            event.type === 'item.updated' ||
+            event.type === 'item.completed'
+        ) {
+            const item = event.item;
+            if (item.type === 'agent_message') {
+                finalResponse = item.text;
+                onEvent({
+                    type: 'message',
+                    text: item.text,
+                });
+            } else if (item.type === 'command_execution') {
+                onEvent({
+                    type: 'tool',
+                    title: compactCommand(item.command),
+                    status:
+                        item.status === 'completed'
+                            ? 'completed'
+                            : item.status === 'failed'
+                              ? 'failed'
+                              : 'running',
+                });
+            }
+        }
+    }
+
+    onEvent({
+        type: 'done',
+        threadId: thread.id,
+        finalResponse,
+    });
 }
 
 async function streamCodexAuth(input, response) {
@@ -405,6 +451,39 @@ function writeStreamEvent(response, headers, event) {
     response.write(`${JSON.stringify(event)}\n`);
 }
 
+function writeSocketEvent(socket, event) {
+    if (socket.readyState === 1) {
+        socket.send(JSON.stringify(event));
+    }
+}
+
+function readWebSocketRequestBody(socket) {
+    return new Promise((resolve, reject) => {
+        const fail = (error) => {
+            cleanup();
+            reject(error);
+        };
+        const receive = (message) => {
+            cleanup();
+            try {
+                resolve(JSON.parse(String(message || '{}')));
+            } catch {
+                reject(new Error('Request body must be JSON.'));
+            }
+        };
+        const close = () => fail(new Error('Codex WebSocket closed before a request arrived.'));
+        const cleanup = () => {
+            socket.off('message', receive);
+            socket.off('error', fail);
+            socket.off('close', close);
+        };
+
+        socket.once('message', receive);
+        socket.once('error', fail);
+        socket.once('close', close);
+    });
+}
+
 function compactCommand(command) {
     const normalized = String(command || '').replace(/\s+/g, ' ').trim();
     if (!normalized) {
@@ -434,4 +513,5 @@ module.exports = {
     createCodexRunResponse,
     streamCodexAuth,
     streamCodexRun,
+    streamCodexRunWebSocket,
 };

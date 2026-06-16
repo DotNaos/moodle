@@ -49,7 +49,7 @@ export type MoodleUIAction =
     };
 
 export type CodexRunResult = {
-  threadId: null;
+  threadId: string | null;
   finalResponse: string;
   actions: MoodleUIAction[];
 };
@@ -64,6 +64,10 @@ export type CodexStreamEvent =
       text: string;
     }
   | {
+      type: "delta";
+      text: string;
+    }
+  | {
       type: "tool";
       id?: string;
       title: string;
@@ -75,7 +79,7 @@ export type CodexStreamEvent =
     }
   | {
       type: "done";
-      threadId: null;
+      threadId: string | null;
       finalResponse: string;
       actions: MoodleUIAction[];
     }
