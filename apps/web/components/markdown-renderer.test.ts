@@ -34,4 +34,22 @@ describe("MarkdownRenderer", () => {
     expect(html).toContain("<li>Fang mit den älteren Teilen an.</li>");
     expect(html).not.toContain("<li>## Mein kurzer Tipp</li>");
   });
+
+  test("renders unindented numbered outline headings without repeated ordered list markers", () => {
+    const html = renderMarkdownTextToHtml(
+      [
+        "**Empfohlener Start**",
+        "1. **Überblick holen**",
+        "- Einführung in Deep Learning",
+        "- Einführungsfolien",
+        "1. **Grundlagen aufbauen**",
+        "- Tensors",
+      ].join("\n"),
+    ).join("");
+
+    expect(html).toContain('<p class="mt-3 font-semibold text-foreground"><strong>Überblick holen</strong></p>');
+    expect(html).toContain('<p class="mt-3 font-semibold text-foreground"><strong>Grundlagen aufbauen</strong></p>');
+    expect(html).toContain("<ul");
+    expect(html).not.toContain("<ol");
+  });
 });

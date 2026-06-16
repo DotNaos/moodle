@@ -61,13 +61,15 @@ function responseShapeBlock(mode: MoodlePromptOptions["responseMode"]): string {
     return `- Reply in plain Markdown text only.
 - Do not output JSON, XML, code fences containing actions, or any structured envelope.
 - If a dashboard action would help, describe what should be opened or loaded in the answer instead of returning UI actions.
-- Use normal Markdown formatting: headings on their own lines (for example "## Kurzer Tipp"), short paragraphs, and lists only when they are actually useful.
+- Prefer short prose paragraphs. Use headings when they help, but avoid turning the whole answer into bullet points.
+- Use at most one short list by default, with no more than 3 items, unless the user explicitly asks for a checklist, plan, or exhaustive list.
 - Do not prefix every line with "-" or combine ordered and unordered markers like "1. - Text".`;
   }
 
   return `- Return a concise answer plus optional UI actions.
 - The host will convert your structured response into chat text and dashboard actions.
-- Use normal Markdown formatting for the answer text: headings on their own lines (for example "## Kurzer Tipp"), short paragraphs, and lists only when they are actually useful.
+- Prefer short prose paragraphs in the answer text. Use headings when they help, but avoid turning the whole answer into bullet points.
+- Use at most one short list by default, with no more than 3 items, unless the user explicitly asks for a checklist, plan, or exhaustive list.
 - Do not prefix every line with "-" or combine ordered and unordered markers like "1. - Text".`;
 }
 

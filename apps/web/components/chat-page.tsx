@@ -9,6 +9,7 @@ import {
   FileText,
   FolderOpen,
   GraduationCap,
+  History,
   ImageIcon,
   MessageSquare,
   Mic,
@@ -45,7 +46,12 @@ import {
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseImageUrl, courseTitle } from "@/lib/dashboard-data";
 import type { PDFViewState } from "@/lib/pdf-context";
-import { upsertRecentChat } from "@/lib/recent-chat-storage";
+import {
+  readRecentChat,
+  readRecentChats,
+  upsertRecentChat,
+  type RecentChatEntry,
+} from "@/lib/recent-chat-storage";
 import { cn } from "@/lib/utils";
 
 type ChatPageProps = {
@@ -59,9 +65,11 @@ type ChatPageProps = {
   loadMaterials: (courseId: string) => Promise<Material[]>;
   onCourseChange: (courseId: string) => void;
   onApplyActions: (actions: MoodleUIAction[]) => Promise<CodexActionResult>;
+  sessionId?: string | null;
   // "page" = full chat view; "sidebar" = compact right-hand panel.
   variant?: "page" | "sidebar";
   onClose?: () => void;
+  onSessionCreated?: (sessionId: string) => void;
 };
 
 type PendingFile = { kind: "file"; id: string; file: File; previewUrl?: string };
@@ -79,12 +87,17 @@ export function ChatPage({
   loadMaterials,
   onCourseChange,
   onApplyActions,
+  sessionId,
   variant = "page",
   onClose,
+  onSessionCreated,
 }: ChatPageProps) {
   const isSidebar = variant === "sidebar";
-  const chatIdRef = useRef<string | null>(null);
+  const chatIdRef = useRef<string | null>(sessionId ?? null);
+  const loadedSessionIdRef = useRef<string | null | undefined>(undefined);
   const [prompt, setPrompt] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySessions, setHistorySessions] = useState<RecentChatEntry[]>([]);
   const modelsHook = useCodexModels(selectedCourseId ?? undefined);
   const selectedCourse = courses.find((course) => String(course.id) === selectedCourseId) ?? null;
 
@@ -103,6 +116,47 @@ export function ChatPage({
 
   const hasMessages = chat.messages.length > 0;
 
+  function startNewChat() {
+    chatIdRef.current = null;
+    chat.reset([]);
+    setPrompt("");
+    setPending([]);
+    setHistoryOpen(false);
+    setStick(true);
+    ensureFollow();
+  }
+
+  function openStoredSession(session: RecentChatEntry) {
+    chatIdRef.current = session.id;
+    chat.reset(messagesForRecentChat(session));
+    setPrompt("");
+    setPending([]);
+    setHistoryOpen(false);
+    setStick(true);
+    ensureFollow();
+  }
+
+  useEffect(() => {
+    if (sessionId === undefined || loadedSessionIdRef.current === sessionId) {
+      return;
+    }
+    loadedSessionIdRef.current = sessionId;
+    if (sessionId === null) {
+      startNewChat();
+      return;
+    }
+    const storedSession = readRecentChat(sessionId);
+    if (storedSession) {
+      openStoredSession(storedSession);
+      return;
+    }
+    chatIdRef.current = sessionId;
+    chat.reset([]);
+    // The external session id is the reload boundary. Course/model/context
+    // changes must not wipe the current transcript.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   useEffect(() => {
     const visibleMessages = chat.messages.filter(
       (message) => message.text.trim().length > 0 && message.text !== "Thinking...",
@@ -110,6 +164,7 @@ export function ChatPage({
     if (visibleMessages.length === 0) {
       return;
     }
+    const created = !chatIdRef.current;
     chatIdRef.current ??= crypto.randomUUID();
     const firstUserMessage = visibleMessages.find((message) => message.role === "user");
     const lastMessage = visibleMessages[visibleMessages.length - 1];
@@ -119,12 +174,20 @@ export function ChatPage({
       id: chatIdRef.current,
       courseId: selectedCourseId,
       courseTitle: selectedCourse ? courseTitle(selectedCourse) : null,
+      messages: visibleMessages,
       messageCount: visibleMessages.length,
       preview: compactChatText(lastMessage.text),
       title,
       updatedAt: new Date().toISOString(),
     });
-  }, [chat.messages, selectedCourse, selectedCourseId]);
+    if (created && chatIdRef.current) {
+      loadedSessionIdRef.current = chatIdRef.current;
+      onSessionCreated?.(chatIdRef.current);
+    }
+    if (historyOpen) {
+      setHistorySessions(readRecentChats());
+    }
+  }, [chat.messages, historyOpen, onSessionCreated, selectedCourse, selectedCourseId]);
 
   // Refresh the workspace file panel whenever a Codex run finishes (files may
   // have changed).
@@ -503,6 +566,55 @@ export function ChatPage({
               <h2 className="flex-1 text-sm font-semibold">Chat</h2>
             </>
           )}
+          <button
+            aria-label="Neuer Chat"
+            className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            type="button"
+            onClick={startNewChat}
+          >
+            <Plus className="size-4" />
+          </button>
+          <div className="relative">
+            <button
+              aria-expanded={historyOpen}
+              aria-label="Chatverläufe öffnen"
+              className={cn(
+                "flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                historyOpen ? "bg-secondary text-foreground" : "",
+              )}
+              type="button"
+              onClick={() => {
+                setHistorySessions(readRecentChats());
+                setHistoryOpen((current) => !current);
+              }}
+            >
+              <History className="size-4" />
+            </button>
+            {historyOpen ? (
+              <div className="absolute right-0 top-9 z-50 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-2xl bg-popover p-2 text-popover-foreground shadow-xl">
+                {historySessions.length > 0 ? (
+                  historySessions.map((session) => (
+                    <button
+                      className={cn(
+                        "rounded-xl px-3 py-2 text-left transition-colors hover:bg-secondary",
+                        chatIdRef.current === session.id ? "bg-secondary" : "",
+                      )}
+                      key={session.id}
+                      type="button"
+                      onClick={() => openStoredSession(session)}
+                    >
+                      <span className="block truncate text-sm font-semibold">{session.title}</span>
+                      <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">
+                        {session.preview}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">Noch keine Chatverläufe.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
           {onClose ? (
             <button
               aria-label="Chat schließen"
@@ -575,6 +687,26 @@ function compactChatText(value: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 77).trim()}...`;
+}
+
+function messagesForRecentChat(session: RecentChatEntry): CodexChatUIMessage[] {
+  if (session.messages && session.messages.length > 0) {
+    return session.messages;
+  }
+  return [
+    {
+      id: `${session.id}:legacy-preview`,
+      role: "assistant",
+      text: [
+        "Dieser Chat wurde gespeichert, bevor vollständige Verläufe verfügbar waren.",
+        "",
+        session.preview ? `Letzte Vorschau: ${session.preview}` : "Für diesen alten Eintrag gibt es nur die Vorschau.",
+      ].join("\n"),
+      toolEvents: [],
+      actions: [],
+      attachments: [],
+    },
+  ];
 }
 
 export function ChatMessageBubble({ message }: { message: CodexChatUIMessage }) {

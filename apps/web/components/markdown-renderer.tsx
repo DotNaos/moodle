@@ -73,6 +73,13 @@ function renderLineMarkdown(block: string): string[] {
       continue;
     }
 
+    const orderedHeading = line.match(/^\d+\.\s+(.+)$/);
+    if (orderedHeading && lines[index + 1]?.trim().match(/^[-*]\s+/)) {
+      html.push(renderOutlineHeading(normalizeListItemText(orderedHeading[1])));
+      index += 1;
+      continue;
+    }
+
     if (/^\d+\.\s+/.test(line)) {
       const items: string[] = [];
       while (index < lines.length) {
@@ -133,6 +140,10 @@ function renderHeading(marker: string, text: string): string {
 function renderList(kind: "ol" | "ul", items: string[]): string {
   const listClass = kind === "ol" ? "ml-5 list-decimal space-y-1" : "ml-5 list-disc space-y-1";
   return `<${kind} class="${listClass}">${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${kind}>`;
+}
+
+function renderOutlineHeading(text: string): string {
+  return `<p class="mt-3 font-semibold text-foreground">${inlineMarkdown(text)}</p>`;
 }
 
 function normalizeListItemText(text: string): string {
