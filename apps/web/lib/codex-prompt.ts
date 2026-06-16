@@ -1,10 +1,16 @@
 import type { CodexChatMessage } from "@/lib/codex-actions";
 
+type MoodlePromptOptions = {
+  responseMode?: "structured" | "plain";
+};
+
 export function withMoodlePrompt(
   prompt: string,
   moodleContext: unknown,
   messages: CodexChatMessage[] = [],
+  options: MoodlePromptOptions = {},
 ): string {
+  const responseMode = options.responseMode ?? "structured";
   return `You are Codex inside the signed-in Moodle web dashboard.
 ${tutorModeBlock(moodleContext)}
 
@@ -38,8 +44,7 @@ UI control:
 - If PDF context is present, use the extracted page text and attached page screenshots as the source for explaining the PDF.
 
 Response shape:
-- Return a concise answer plus optional UI actions.
-- The host will convert your structured response into chat text and dashboard actions.
+${responseShapeBlock(responseMode)}
 
 Recent chat:
 ${formatMessages(messages)}
@@ -49,6 +54,17 @@ ${formatMoodleContext(moodleContext)}
 
 User question:
 ${prompt}`;
+}
+
+function responseShapeBlock(mode: MoodlePromptOptions["responseMode"]): string {
+  if (mode === "plain") {
+    return `- Reply in plain Markdown text only.
+- Do not output JSON, XML, code fences containing actions, or any structured envelope.
+- If a dashboard action would help, describe what should be opened or loaded in the answer instead of returning UI actions.`;
+  }
+
+  return `- Return a concise answer plus optional UI actions.
+- The host will convert your structured response into chat text and dashboard actions.`;
 }
 
 function tutorModeBlock(moodleContext: unknown): string {
