@@ -1,6 +1,8 @@
 import type { CodexChatMessage } from "@/lib/codex-actions";
+import { generatedUIPromptBlock } from "@/lib/generated-ui";
 
 type MoodlePromptOptions = {
+  allowGeneratedUI?: boolean;
   responseMode?: "structured" | "plain";
 };
 
@@ -46,7 +48,8 @@ UI control:
 - If PDF context is present, use the extracted page text and attached page screenshots as the source for explaining the PDF.
 
 Response shape:
-${responseShapeBlock(responseMode)}
+${responseShapeBlock(responseMode, options.allowGeneratedUI === true)}
+${generatedUIResponseBlock(options.allowGeneratedUI === true)}
 
 Recent chat:
 ${formatMessages(messages)}
@@ -58,13 +61,17 @@ User question:
 ${prompt}`;
 }
 
-function responseShapeBlock(mode: MoodlePromptOptions["responseMode"]): string {
+function responseShapeBlock(mode: MoodlePromptOptions["responseMode"], allowGeneratedUI: boolean): string {
   if (mode === "plain") {
-    return `- Reply in plain Markdown text only.
-- If no dashboard action is needed, do not output JSON, XML, code fences containing actions, or any structured envelope.
+    const jsonRule = allowGeneratedUI
+      ? "- If no dashboard action is needed, do not output JSON, XML, code fences containing actions, or any structured envelope except for the optional fenced ```json-render block described below."
+      : "- If no dashboard action is needed, do not output JSON, XML, code fences containing actions, or any structured envelope.";
+    return `- Reply with the normal user-facing Markdown answer first.
+${jsonRule}
 - If a dashboard action is needed, write the normal user-facing Markdown answer first, then append exactly one final action block in this format: <moodle-actions>{"answer":"same user-facing answer","actions":[...]}</moodle-actions>
 - The chat UI hides the moodle-actions block while streaming and uses it only to ask the user for confirmation.
 - Never put the moodle-actions block in a code fence. Do not mention the hidden block to the user.
+- If both a json-render block and a moodle-actions block are needed, put the json-render block before the final moodle-actions block.
 - Prefer short prose paragraphs. Use headings when they help, but avoid turning the whole answer into bullet points.
 - Use at most one short list by default, with no more than 3 items, unless the user explicitly asks for a checklist, plan, or exhaustive list.
 - Do not prefix every line with "-" or combine ordered and unordered markers like "1. - Text".`;
@@ -75,6 +82,14 @@ function responseShapeBlock(mode: MoodlePromptOptions["responseMode"]): string {
 - Prefer short prose paragraphs in the answer text. Use headings when they help, but avoid turning the whole answer into bullet points.
 - Use at most one short list by default, with no more than 3 items, unless the user explicitly asks for a checklist, plan, or exhaustive list.
 - Do not prefix every line with "-" or combine ordered and unordered markers like "1. - Text".`;
+}
+
+function generatedUIResponseBlock(allowGeneratedUI: boolean): string {
+  if (!allowGeneratedUI) {
+    return "";
+  }
+  return `
+${generatedUIPromptBlock()}`;
 }
 
 function tutorModeBlock(moodleContext: unknown): string {

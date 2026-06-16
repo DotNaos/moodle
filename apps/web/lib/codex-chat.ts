@@ -3,6 +3,7 @@ import type { CodexChatMessage, MoodleUIAction } from "@/lib/codex-actions";
 import type { CodexAttachment } from "@/lib/codex-files";
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
+import { stripGeneratedUIBlocks } from "@/lib/generated-ui";
 import { buildPDFPromptContext, type PDFViewState } from "@/lib/pdf-context";
 
 export type CodexChatRole = "user" | "assistant";
@@ -300,6 +301,7 @@ export function buildActionFollowUpMessage(actions: MoodleUIAction[], loadedReso
 
 export function toChatHistory(messages: Array<Pick<CodexChatUIMessage, "role" | "text">>): CodexChatMessage[] {
   return messages
+    .map((message) => ({ ...message, text: stripGeneratedUIBlocks(message.text) }))
     .filter((message) => message.text.trim() && message.text !== "Thinking...")
     .map((message) => ({
       role: message.role,

@@ -26,6 +26,7 @@ import { ChatCoursePickerModal } from "@/components/chat-course-picker-modal";
 import { ComposerModelSelector } from "@/components/composer-model-selector";
 import { CourseResourcePickerModal } from "@/components/course-resource-picker-modal";
 import { CourseThumbnail } from "@/components/dashboard-ui";
+import { GeneratedUIContent } from "@/components/generated-ui-renderer";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Spinner } from "@/components/ui/spinner";
@@ -45,6 +46,7 @@ import {
 } from "@/lib/codex-files";
 import type { Course, Material, User } from "@/lib/dashboard-data";
 import { courseImageUrl, courseTitle } from "@/lib/dashboard-data";
+import { stripGeneratedUIBlocks } from "@/lib/generated-ui";
 import type { PDFViewState } from "@/lib/pdf-context";
 import {
   readRecentChat,
@@ -171,14 +173,14 @@ export function ChatPage({
     const firstUserMessage = visibleMessages.find((message) => message.role === "user");
     const lastMessage = visibleMessages[visibleMessages.length - 1];
     const fallbackTitle = selectedCourse ? courseTitle(selectedCourse) : "Chat";
-    const title = compactChatText(firstUserMessage?.text ?? fallbackTitle);
+    const title = compactChatText(stripGeneratedUIBlocks(firstUserMessage?.text ?? fallbackTitle));
     upsertRecentChat({
       id: chatIdRef.current,
       courseId: selectedCourseId,
       courseTitle: selectedCourse ? courseTitle(selectedCourse) : null,
       messages: visibleMessages,
       messageCount: visibleMessages.length,
-      preview: compactChatText(lastMessage.text),
+      preview: compactChatText(stripGeneratedUIBlocks(lastMessage.text)),
       title,
       updatedAt: new Date().toISOString(),
     });
@@ -779,7 +781,7 @@ export function ChatMessageBubble({
           <ThinkingDots label={message.toolEvents.some((event) => event.status === "running") ? "Working" : "Thinking"} />
         </div>
       ) : (
-        <MarkdownRenderer className="text-sm leading-relaxed" text={message.text} />
+        <GeneratedUIContent text={message.text} />
       )}
       {message.actions.map((action) => (
         <ActionRow
