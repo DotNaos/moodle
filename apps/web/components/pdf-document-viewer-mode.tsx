@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, FileText, Maximize2, Minimize2, Monitor, X } from "lucide-react";
+import { ExternalLink, FileText, Maximize2, Minimize2, Monitor } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -88,7 +88,6 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
     return (
       <NativeBrowserPDFViewer
         allowFloat={allowFloat}
-        embedded={embedded}
         expanded={expanded}
         externalUrl={externalUrl}
         onExpandedChange={onExpandedChange}
@@ -175,7 +174,6 @@ function ModeButton({
 
 function NativeBrowserPDFViewer({
   allowFloat,
-  embedded,
   expanded,
   externalUrl,
   onExpandedChange,
@@ -185,7 +183,6 @@ function NativeBrowserPDFViewer({
   url,
 }: {
   allowFloat: boolean;
-  embedded: boolean;
   expanded: boolean;
   externalUrl?: string;
   onExpandedChange?: (expanded: boolean) => void;
@@ -230,28 +227,6 @@ function NativeBrowserPDFViewer({
             : "relative h-full",
         )}
       >
-        {!embedded ? (
-          <>
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-muted via-muted/70 to-transparent"
-            />
-            <div className={cn("pointer-events-none absolute inset-x-0 top-0 z-20 flex items-baseline gap-2 px-4 pt-3", panelFloating && "pr-14")}>
-              <h3 className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">{title}</h3>
-              <span className="shrink-0 text-xs text-muted-foreground">Browser viewer</span>
-            </div>
-          </>
-        ) : null}
-        {panelFloating ? (
-          <button
-            aria-label="Großansicht schließen"
-            className="absolute right-3 top-2.5 z-30 grid size-8 place-items-center rounded-full bg-background/90 text-muted-foreground shadow-md backdrop-blur-md transition-colors hover:text-foreground"
-            onClick={() => setFloating(false)}
-            type="button"
-          >
-            <X aria-hidden />
-          </button>
-        ) : null}
         <iframe
           key={iframeKey}
           className="min-h-0 flex-1 bg-card"
