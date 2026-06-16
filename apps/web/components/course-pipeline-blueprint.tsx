@@ -16,13 +16,16 @@ import {
   CheckCircle2,
   ClipboardList,
   Database,
+  ExternalLink,
   Eye,
   FileText,
   GitCompareArrows,
   GitBranch,
   ImageOff,
   Layers,
+  LoaderCircle,
   Maximize2,
+  Play,
   RotateCw,
   Search,
   type LucideIcon,
@@ -42,7 +45,10 @@ import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { Spinner } from "@/components/ui/spinner";
 import {
   buildBlueprintGraph,
+  validateBlueprintGraph,
   type BlueprintExtractionVariant,
+  type BlueprintFunctionKind,
+  type BlueprintCodexConfig,
   type BlueprintGraphNode,
   type BlueprintNode,
   type BlueprintRunScope,
@@ -64,7 +70,6 @@ import { cn } from "@/lib/utils";
 import {
   LiveStatePanel,
   NodeLiveIndicator,
-  PipelineStatusBadge,
   liveNodeClass,
 } from "@/components/course-pipeline-live-ui";
 import { buildUpstreamTrace, type BlueprintTraceStep } from "@/components/course-pipeline-trace";
@@ -76,10 +81,11 @@ import {
   type PipelineNodePreview,
 } from "@/components/course-pipeline-node-preview";
 
-export { buildBlueprintGraph };
+export { buildBlueprintGraph, validateBlueprintGraph };
 export type { PipelineRunRecord, PipelineRunsResponse };
 
 type CoursePipelineBlueprintProps = {
+  codexConfig?: BlueprintCodexConfig;
   extractedDocuments: ExtractedDocumentsResponse | null;
   inventory: CourseInventoryResponse | null;
   runs: PipelineRunsResponse | null;
@@ -110,6 +116,7 @@ const edgeTypes = {
 };
 
 export function CoursePipelineBlueprint({
+  codexConfig,
   extractedDocuments,
   inventory,
   runs,
@@ -125,14 +132,18 @@ export function CoursePipelineBlueprint({
   unavailable,
 }: CoursePipelineBlueprintProps) {
   const [edgeStyle, setEdgeStyle] = useState<"rounded" | "square">("rounded");
+  const [functionView, setFunctionView] = useState<BlueprintFunctionKind | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedTaskGroupIds, setSelectedTaskGroupIds] = useState<string[]>([]);
   const graph = useMemo(
-    () => buildBlueprintGraph({ extractedDocuments, inventory, runs, status, taskView, unavailable }),
-    [extractedDocuments, inventory, runs, status, taskView, unavailable],
+    () => buildBlueprintGraph({ extractedDocuments, inventory, runs, selectedTaskGroupIds, status, taskView, unavailable }),
+    [extractedDocuments, inventory, runs, selectedTaskGroupIds, status, taskView, unavailable],
   );
-  const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
+  const compileIssues = useMemo(() => validateBlueprintGraph(graph), [graph]);
+  const rawNodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
   const visibleEdges = useMemo(
     () => graph.edges.map((edge) => {
-      const stroke = edgeColor(edge, nodeById);
+      const stroke = edgeColor(edge, rawNodeById);
       return {
         ...edge,
         label: undefined,
@@ -147,14 +158,41 @@ export function CoursePipelineBlueprint({
         type: "pipeline",
       };
     }),
-    [edgeStyle, graph.edges, nodeById],
+    [edgeStyle, graph.edges, rawNodeById],
   );
-  const selectableNodes = useMemo(() => graph.nodes.filter(isBlueprintNode), [graph.nodes]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(selectableNodes[0]?.id ?? null);
+  const interactiveNodes = useMemo(
+    () => graph.nodes.map((node) => ({
+      ...node,
+      data: node.type === "blueprint"
+        ? {
+            ...node.data,
+            codexConfig: isCodexNodeData(node.data) ? codexConfig : undefined,
+            onOpenFunction: setFunctionView,
+            onRunFromNode: onRunNode,
+            onSelect: setSelectedNodeId,
+            onToggleHiddenItem: (itemId: string) => {
+              setSelectedTaskGroupIds([itemId]);
+            },
+            runActionDisabled: Boolean(runningNodeAction),
+            runActionRunning: Boolean(runningNodeAction),
+          }
+        : node.data,
+      selected: node.id === selectedNodeId,
+    })),
+    [codexConfig, graph.nodes, onRunNode, runningNodeAction, selectedNodeId],
+  );
+  const displayGraph = useMemo(
+    () => buildDisplayGraph({ edges: visibleEdges, functionView, nodes: interactiveNodes }),
+    [functionView, interactiveNodes, visibleEdges],
+  );
+  const selectableNodes = useMemo<BlueprintNode[]>(
+    () => displayGraph.nodes.filter((node): node is BlueprintNode => isBlueprintNode(node)),
+    [displayGraph.nodes],
+  );
   const selectedNode = selectableNodes.find((node) => node.id === selectedNodeId) ?? selectableNodes[0];
   const selectedTrace = useMemo(
-    () => buildUpstreamTrace({ edges: graph.edges, nodes: graph.nodes, selectedNodeId: selectedNode?.id }),
-    [graph.edges, graph.nodes, selectedNode?.id],
+    () => buildUpstreamTrace({ edges: displayGraph.edges, nodes: displayGraph.nodes, selectedNodeId: selectedNode?.id }),
+    [displayGraph.edges, displayGraph.nodes, selectedNode?.id],
   );
   const selectedRunScope = selectedNode?.data.runScope ?? null;
   const selectedRunScopeKey = selectedRunScope
@@ -164,48 +202,69 @@ export function CoursePipelineBlueprint({
     onSelectedScopeChange?.(selectedRunScope);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onSelectedScopeChange, selectedRunScopeKey]);
-  const interactiveNodes = useMemo(
-    () => graph.nodes.map((node) => ({
-      ...node,
-      data: node.type === "blueprint"
-        ? {
-            ...node.data,
-            onRunFromNode: onRunNode,
-            onSelect: setSelectedNodeId,
-            runActionDisabled: Boolean(runningNodeAction),
-            runActionRunning: Boolean(runningNodeAction),
-          }
-        : node.data,
-      selected: node.id === selectedNode?.id,
-    })),
-    [graph.nodes, onRunNode, runningNodeAction, selectedNode?.id],
-  );
+  useEffect(() => {
+    if (!selectableNodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(selectableNodes[0]?.id ?? null);
+    }
+  }, [selectableNodes, selectedNodeId]);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="relative h-[calc(100dvh-10.5rem)] min-h-[560px] overflow-hidden rounded-3xl bg-secondary/45">
-        <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
-          <LegendPill kind="transform" label="1 -> 1 Transform" />
-          <LegendPill kind="split" label="1 -> N Split" />
-          <LegendPill kind="collect" label="N -> 1 Collect" />
-        </div>
+        {functionView ? (
+          <div className="absolute left-4 top-4 z-20 flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full bg-background/95 px-2 py-2 shadow-sm shadow-black/10">
+            <Button
+              className="h-8 rounded-full px-3 text-xs font-semibold"
+              onClick={() => setFunctionView(null)}
+              type="button"
+              variant="secondary"
+            >
+              Zurück
+            </Button>
+            <span className="truncate px-2 text-xs font-semibold text-muted-foreground">
+              {functionViewLabel(functionView)}
+            </span>
+          </div>
+        ) : null}
+        {!functionView ? (
+          <div className="pointer-events-none absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2 rounded-full bg-background/90 px-3 py-2 shadow-sm shadow-black/10">
+            <LegendPill kind="transform" label="1 -> 1 Transform" />
+            <LegendPill kind="split" label="1 -> N Split" />
+            <LegendPill kind="collect" label="N -> 1 Collect" />
+          </div>
+        ) : null}
         <div className="absolute right-4 top-4 z-10 flex rounded-full bg-background/90 p-1 shadow-sm shadow-black/10">
           <EdgeStyleButton active={edgeStyle === "rounded"} label="Rund" onClick={() => setEdgeStyle("rounded")} />
           <EdgeStyleButton active={edgeStyle === "square"} label="Eckig" onClick={() => setEdgeStyle("square")} />
         </div>
+        {compileIssues.length > 0 ? (
+          <div className="absolute inset-x-4 top-20 z-10 rounded-3xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive shadow-sm shadow-destructive/10">
+            Workflow contract invalid: {compileIssues[0]?.detail}
+          </div>
+        ) : null}
         <ReactFlow
           className="pipeline-blueprint-flow"
           colorMode="light"
-          defaultViewport={{ x: 20, y: -280, zoom: 0.72 }}
-          edges={visibleEdges}
+          defaultViewport={functionView ? { x: 32, y: 12, zoom: 0.82 } : { x: -360, y: -700, zoom: 1 }}
+          edges={displayGraph.edges}
           edgeTypes={edgeTypes}
+          key={functionView ?? "overview"}
           maxZoom={1.4}
           minZoom={0.2}
           nodeTypes={nodeTypes}
-          nodes={interactiveNodes}
+          nodes={displayGraph.nodes}
           nodesConnectable={false}
           nodesDraggable={false}
-          onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+          onNodeClick={(event, node) => {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            const functionSlot = target?.closest<HTMLElement>("[data-function-kind]");
+            const nextFunctionView = functionSlot?.dataset.functionKind;
+            if (nextFunctionView === "task-output-map" || nextFunctionView === "script-output-map") {
+              setFunctionView(nextFunctionView);
+              return;
+            }
+            setSelectedNodeId(node.id);
+          }}
           panOnScroll
           proOptions={{ hideAttribution: true }}
         >
@@ -231,6 +290,298 @@ export function CoursePipelineBlueprint({
       </aside>
     </div>
   );
+}
+
+export function buildDisplayGraph({
+  edges,
+  functionView,
+  nodes,
+}: {
+  edges: Edge[];
+  functionView: BlueprintFunctionKind | null;
+  nodes: BlueprintGraphNode[];
+}): { edges: Edge[]; nodes: BlueprintGraphNode[] } {
+  if (!functionView) {
+    return { edges, nodes };
+  }
+
+  const boundary = functionBoundaryFor(functionView);
+  const hiddenFunctionNodeIds = new Set(boundary.hiddenFunctionNodeIds);
+  const innerNodes = nodes
+    .filter((node): node is BlueprintNode => isBlueprintNode(node) && Boolean(node.hidden) && isFunctionInternalNode(functionView, node.id))
+    .filter((node) => !isHiddenFunctionNode(functionView, hiddenFunctionNodeIds, node.id))
+    .map((node) => ({ ...node, hidden: false }));
+  const firstBodyNodeId = firstFunctionBodyNodeId(boundary, innerNodes);
+  const boundaryNodes = buildFunctionBoundaryNodes(boundary, innerNodes, firstBodyNodeId);
+  const graphNodes = [...boundaryNodes, ...innerNodes];
+  const innerIds = new Set(graphNodes.map((node) => node.id));
+  const normalizedNodes = normalizeFunctionNodePositions(graphNodes);
+  const innerEdges = edges
+    .filter((edge) => innerIds.has(edge.source) && innerIds.has(edge.target))
+    .filter((edge) => !isHiddenFunctionNode(functionView, hiddenFunctionNodeIds, edge.source) && !isHiddenFunctionNode(functionView, hiddenFunctionNodeIds, edge.target))
+    .map((edge) => ({ ...edge, hidden: false }));
+  const normalizedEdges = [
+    ...(firstBodyNodeId
+      ? [functionBoundaryEdge({
+          id: `${boundary.argumentNodeId}->${firstBodyNodeId}`,
+          source: boundary.argumentNodeId,
+          target: firstBodyNodeId,
+          sourceHandle: "out-2",
+          targetHandle: "in-2",
+          tone: "argument",
+        })]
+      : []),
+    ...innerEdges,
+    ...terminalFunctionEdges({
+      edgeTone: boundary.returnEdgeTone,
+      returnNodeId: boundary.returnNodeId,
+      terminalPrefix: boundary.terminalPrefix,
+      terminalSuffix: boundary.terminalSuffix,
+      nodes: innerNodes,
+    }),
+  ];
+
+  return { edges: normalizedEdges, nodes: normalizedNodes };
+}
+
+function isFunctionInternalNode(kind: BlueprintFunctionKind, id: string): boolean {
+  if (kind === "task-output-map") {
+    return id === "task-groups-collection"
+      || id === "task-groups-iterator"
+      || id.startsWith("task-group-");
+  }
+  return id === "script-groups-collection" || /^script-[^-]+/.test(id);
+}
+
+function isHiddenFunctionNode(kind: BlueprintFunctionKind, hiddenNodeIds: Set<string>, id: string): boolean {
+  if (hiddenNodeIds.has(id)) return true;
+  if (kind === "task-output-map") return id === "task-groups-iterator";
+  return id.startsWith("script-") && id.endsWith("-iterator");
+}
+
+type FunctionBoundaryDefinition = {
+  argumentNodeId: string;
+  argumentOutput: BlueprintPort;
+  hiddenFunctionNodeIds: string[];
+  returnInput: BlueprintPort;
+  returnNodeId: string;
+  returnEdgeTone: "script" | "task";
+  terminalPrefix: string;
+  terminalSuffix: string;
+};
+
+function functionBoundaryFor(kind: BlueprintFunctionKind): FunctionBoundaryDefinition {
+  if (kind === "task-output-map") {
+    return {
+      argumentNodeId: "function-task-arguments",
+      argumentOutput: {
+        cardinality: "single",
+        detail: "Current map item passed into BuildTaskOutput",
+        label: "task group",
+        valueType: "TaskGroup",
+      },
+      hiddenFunctionNodeIds: ["task-groups-collection", "task-groups-iterator"],
+      returnInput: {
+        cardinality: "single",
+        detail: "Single value returned by BuildTaskOutput for the current map item",
+        label: "task output",
+        valueType: "TaskOutput",
+      },
+      returnNodeId: "function-task-return",
+      returnEdgeTone: "task",
+      terminalPrefix: "task-group-",
+      terminalSuffix: "-output",
+    };
+  }
+
+  return {
+    argumentNodeId: "function-script-arguments",
+    argumentOutput: {
+      cardinality: "single",
+      detail: "Current map item passed into BuildScriptSection",
+      label: "script group",
+      valueType: "ScriptGroup",
+    },
+    hiddenFunctionNodeIds: ["script-groups-collection"],
+    returnInput: {
+      cardinality: "single",
+      detail: "Single value returned by BuildScriptSection for the current map item",
+      label: "script section",
+      valueType: "ScriptSection",
+    },
+    returnNodeId: "function-script-return",
+    returnEdgeTone: "script",
+    terminalPrefix: "script-",
+    terminalSuffix: "-output",
+  };
+}
+
+function firstFunctionBodyNodeId(boundary: FunctionBoundaryDefinition, nodes: BlueprintNode[]): string | null {
+  if (boundary.terminalPrefix === "task-group-") {
+    return nodes.find((node) => {
+      const inputLabels = node.data.inputs.map((input) => input.label);
+      const outputLabels = node.data.outputs.map((output) => output.label);
+      return inputLabels.includes("task group") && outputLabels.includes("sheet pdf");
+    })?.id ?? null;
+  }
+  return nodes.find((node) => {
+    const inputLabels = node.data.inputs.map((input) => input.label);
+    const outputLabels = node.data.outputs.map((output) => output.label);
+    return inputLabels.includes("script group") && outputLabels.includes("script pdf");
+  })?.id ?? null;
+}
+
+function buildFunctionBoundaryNodes(
+  boundary: FunctionBoundaryDefinition,
+  bodyNodes: BlueprintNode[],
+  firstBodyNodeId: string | null,
+): BlueprintNode[] {
+  const firstBodyNode = bodyNodes.find((node) => node.id === firstBodyNodeId) ?? bodyNodes[0] ?? null;
+  const terminalNodes = bodyNodes.filter((node) => node.id.startsWith(boundary.terminalPrefix) && node.id.endsWith(boundary.terminalSuffix));
+  const lastBodyNode = terminalNodes[terminalNodes.length - 1] ?? bodyNodes[bodyNodes.length - 1] ?? firstBodyNode;
+  const minX = bodyNodes.length > 0 ? Math.min(...bodyNodes.map((node) => node.position.x)) : 0;
+  const maxX = bodyNodes.length > 0 ? Math.max(...bodyNodes.map((node) => node.position.x)) : 920;
+  const argumentY = firstBodyNode?.position.y ?? 0;
+  const returnY = lastBodyNode?.position.y ?? argumentY;
+
+  return [
+    {
+      id: boundary.argumentNodeId,
+      position: { x: minX - 680, y: argumentY },
+      type: "blueprint",
+      data: {
+        title: "Arguments",
+        subtitle: "function input",
+        detail: "Current map item passed into the function. The outer MAP owns the collection loop; this body receives exactly one item.",
+        evidence: [
+          "Function arguments are explicit single-item values.",
+          "The array iteration belongs to the outer MAP node.",
+          "No internal node may read external values directly.",
+        ],
+        inputs: [],
+        outputs: [boundary.argumentOutput],
+        outputPreview: `${boundary.argumentOutput.label}\n${boundary.argumentOutput.detail}`,
+        stepKind: "transform",
+        tone: "source",
+        status: "provided",
+        meta: [
+          { label: "Boundary", value: "arguments" },
+          { label: "Output", value: `${boundary.argumentOutput.label} : ${boundary.argumentOutput.valueType ?? "unknown"}` },
+        ],
+        bodyData: {
+          type: "function_boundary",
+          boundary: "arguments",
+        },
+      },
+    },
+    {
+      id: boundary.returnNodeId,
+      position: { x: maxX + 680, y: returnY },
+      type: "blueprint",
+      data: {
+        title: "Return",
+        subtitle: "function output",
+        detail: "Values returned by the function. This node only accepts input sockets, like a Blender group output node.",
+        evidence: [
+          "Function return values are explicit.",
+          "Anything not connected here is not returned from this function view.",
+        ],
+        inputs: [boundary.returnInput],
+        outputs: [],
+        outputPreview: `${boundary.returnInput.label}\n${boundary.returnInput.detail}`,
+        stepKind: "collect",
+        tone: "output",
+        status: "returned",
+        meta: [
+          { label: "Boundary", value: "return" },
+          { label: "Input", value: `${boundary.returnInput.label} : ${boundary.returnInput.valueType ?? "unknown"}` },
+        ],
+        bodyData: {
+          type: "function_boundary",
+          boundary: "return",
+        },
+      },
+    },
+  ];
+}
+
+function terminalFunctionEdges({
+  edgeTone,
+  nodes,
+  returnNodeId,
+  terminalPrefix,
+  terminalSuffix,
+}: {
+  edgeTone: "script" | "task";
+  nodes: BlueprintNode[];
+  returnNodeId: string;
+  terminalPrefix: string;
+  terminalSuffix: string;
+}): Edge[] {
+  return nodes
+    .filter((node) => node.id.startsWith(terminalPrefix) && node.id.endsWith(terminalSuffix))
+    .map((node) => functionBoundaryEdge({
+      id: `${node.id}->${returnNodeId}`,
+      source: node.id,
+      target: returnNodeId,
+      sourceHandle: "out-2",
+      targetHandle: "in-2",
+      tone: edgeTone,
+    }));
+}
+
+function functionBoundaryEdge({
+  id,
+  source,
+  sourceHandle,
+  target,
+  targetHandle,
+  tone,
+}: {
+  id: string;
+  source: string;
+  sourceHandle: string;
+  target: string;
+  targetHandle: string;
+  tone: "argument" | "script" | "task";
+}): Edge {
+  const stroke = tone === "script" ? "#8b5cf6" : "#10b981";
+  return {
+    id,
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+    hidden: false,
+    style: {
+      stroke,
+      strokeLinecap: "round",
+      strokeWidth: 2.5,
+    },
+    data: { renderStyle: "rounded" },
+    type: "pipeline",
+  };
+}
+
+function normalizeFunctionNodePositions(nodes: BlueprintNode[]): BlueprintNode[] {
+  if (nodes.length === 0) return nodes;
+  const uniqueX = [...new Set(nodes.map((node) => node.position.x))].sort((left, right) => left - right);
+  const minY = Math.min(...nodes.map((node) => node.position.y));
+  const xByOriginal = new Map(uniqueX.map((x, index) => [x, 40 + index * 680]));
+
+  return nodes.map((node) => ({
+    ...node,
+    position: {
+      x: xByOriginal.get(node.position.x) ?? node.position.x,
+      y: node.position.y - minY + 48,
+    },
+  }));
+}
+
+function functionViewLabel(kind: BlueprintFunctionKind): string {
+  return kind === "task-output-map"
+    ? "Funktion: BuildTaskOutput"
+    : "Funktion: BuildScriptSection";
 }
 
 function NodeInspector({
@@ -262,15 +613,7 @@ function NodeInspector({
   const showExtractionActions = data.title === "Extraction Variants" && onRerunExtraction;
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", stepKindBadgeClass(data.stepKind))}>
-          {stepKindLabel(data.stepKind)}
-        </span>
-        <Badge variant={data.tone === "warning" ? "destructive" : "secondary"}>{data.tone}</Badge>
-        <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
-      </div>
-
-      <h2 className="mt-4 text-lg font-semibold tracking-tight">{data.title}</h2>
+      <h2 className="text-lg font-semibold tracking-tight">{data.title}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{data.subtitle}</p>
       <p className="mt-4 text-sm leading-6 text-foreground/80">{data.detail}</p>
 
@@ -469,11 +812,16 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
   const primaryProblem = blockingProblems[0] ?? data.problems?.[0] ?? null;
   const failed = data.status === "failed" || data.live?.status === "failed" || blockingProblems.length > 0;
   const runStage = runStageForNode(data);
+  const codexConfig = data.codexConfig;
+  const codexBlocked = runStage === "curated" && codexConfig ? !codexConfig.connected || !codexConfig.selectedModel : false;
   const showRunAction = Boolean(data.onRunFromNode && runStage && data.runScope && (selected || failed));
+  const boundaryKind = functionBoundaryKind(data.bodyData);
   return (
     <div
       className={cn(
-        "relative min-h-[286px] w-[320px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
+        "relative min-h-[300px] w-[560px] rounded-3xl bg-background shadow-lg shadow-black/10 transition-shadow",
+        boundaryKind === "arguments" ? "bg-sky-50 shadow-sky-900/10 ring-2 ring-sky-300/80" : "",
+        boundaryKind === "return" ? "bg-emerald-50 shadow-emerald-900/10 ring-2 ring-emerald-300/80" : "",
         failed ? "bg-destructive/5 shadow-destructive/20 ring-2 ring-destructive/55" : "",
         liveNodeClass(data.live),
         selected ? "outline outline-2 outline-primary/60" : "",
@@ -493,9 +841,9 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
     >
       <div className="relative z-10 h-full overflow-visible rounded-3xl px-4 py-3">
         <NodeLiveIndicator live={data.live} />
-        <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", stepKindStripeClass(data.stepKind))} />
+        <span aria-hidden className={cn("absolute inset-x-6 top-0 h-1 rounded-b-full", boundaryStripeClass(boundaryKind) ?? stepKindStripeClass(data.stepKind))} />
         <div className="flex items-start gap-3">
-          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", nodeToneClass(data.tone))}>
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", boundaryIconClass(boundaryKind) ?? nodeToneClass(data.tone))}>
             <Icon aria-hidden className="size-4" />
           </span>
           <div className="min-w-0">
@@ -503,50 +851,58 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
             <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{data.subtitle}</p>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", stepKindBadgeClass(data.stepKind))}>
-            {stepKindLabel(data.stepKind)}
-          </span>
-          <PipelineStatusBadge active={data.active} live={data.live} status={data.status} />
-        </div>
         <ChannelRows inputs={data.inputs} outputs={data.outputs} />
 
-        {primaryProblem ? (
-          <div className="mt-3 rounded-2xl bg-destructive/10 px-3 py-2 text-destructive">
-            <div className="flex items-start gap-2">
-              <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold leading-4">{primaryProblem.label}</p>
-                <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-destructive/85">
-                  {primaryProblem.detail}
-                </p>
-              </div>
-            </div>
-          </div>
+        {data.progressItems?.length ? (
+          <NodeProgressList
+            className="mt-3"
+            items={data.progressItems}
+            onSelect={data.onToggleHiddenItem}
+          />
         ) : null}
 
-        {showRunAction ? (
-          <Button
-            className={cn(
-              "mt-3 h-8 w-full justify-center rounded-full text-xs font-semibold",
-              failed ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "",
-            )}
-            disabled={data.runActionDisabled}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              data.onRunFromNode?.({
-                mode: "from",
-                scope: data.runScope!,
-                startStage: runStage!,
-              });
-            }}
-            type="button"
-            variant={failed ? "destructive" : "secondary"}
-          >
-            {data.runActionRunning ? <Spinner aria-hidden /> : <RotateCw aria-hidden className="size-3.5" />}
-            {failed ? "Ab Fehler neu starten" : "Ab hier starten"}
-          </Button>
+        <FunctionSlot className="mt-3 w-full" data={data} />
+        <CodexNodeConfig data={data} />
+        {primaryProblem || showRunAction ? (
+          <div className="mt-3 flex flex-wrap gap-3">
+            {primaryProblem ? (
+              <div className="min-w-[250px] flex-[1_1_250px] rounded-2xl bg-destructive/10 px-3 py-2 text-destructive">
+                <div className="flex items-start gap-2">
+                  <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold leading-4">{primaryProblem.label}</p>
+                    <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-destructive/85">
+                      {primaryProblem.detail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {showRunAction ? (
+              <Button
+                className={cn(
+                  "h-8 min-w-[250px] flex-[1_1_250px] justify-center rounded-full text-xs font-semibold",
+                  failed ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "",
+                )}
+                disabled={data.runActionDisabled || codexBlocked}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  data.onRunFromNode?.({
+                    mode: "from",
+                    scope: data.runScope!,
+                    startStage: runStage!,
+                  });
+                }}
+                type="button"
+                variant={failed ? "destructive" : "secondary"}
+              >
+                {data.runActionRunning ? <Spinner aria-hidden /> : failed ? <RotateCw aria-hidden className="size-3.5" /> : <Play aria-hidden className="size-3.5" />}
+                {failed ? "Ab Fehler neu starten" : "Ab hier starten"}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="mt-3 rounded-2xl bg-secondary/45 px-3 py-2">
@@ -560,7 +916,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
               ) : null}
               <button
                 aria-label="Open output preview"
-                className="grid size-6 place-items-center rounded-full bg-background/80 text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
+                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-background/80 px-2.5 text-[11px] font-semibold text-muted-foreground shadow-sm shadow-black/10 transition hover:text-foreground"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -569,6 +925,7 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
                 type="button"
               >
                 <Maximize2 aria-hidden className="size-3.5" />
+                Anschauen
               </button>
             </div>
           </div>
@@ -576,7 +933,6 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
             <NodePreviewContent preview={preview} size="node" />
           </div>
         </div>
-        {data.hiddenItems?.length ? <HiddenItemsDisclosure items={data.hiddenItems} /> : null}
       </div>
       <NodePreviewDialog
         onOpenChange={setPreviewOpen}
@@ -586,6 +942,186 @@ function BlueprintNodeCard({ data, id, selected }: NodeProps<BlueprintNode>) {
       />
     </div>
   );
+}
+
+function FunctionSlot({ className, data }: { className?: string; data: BlueprintNode["data"] }) {
+  const functionKind = functionKindForNode(data);
+  const bodyData = functionBodyData(data.bodyData);
+  if (!functionKind || !bodyData) return null;
+
+  const bodySteps = bodyData.contract.body.slice(0, 3);
+  const inputPort = bodyData.contract.inputNode.outputs[0];
+  const outputPort = bodyData.contract.outputNode.inputs[0];
+
+  return (
+    <button
+      className={cn(
+        "block rounded-3xl bg-secondary/35 p-2 text-left shadow-inner shadow-black/[0.03] transition hover:bg-secondary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        className,
+      )}
+      data-function-kind={functionKind}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        data.onOpenFunction?.(functionKind);
+      }}
+      type="button"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+          Function body
+        </p>
+        <span className="shrink-0 rounded-full bg-background px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm shadow-black/10">
+          Öffnen
+        </span>
+      </div>
+      <div className="relative rounded-2xl bg-background px-3 py-2 shadow-sm shadow-black/10">
+        <span aria-hidden className="absolute left-0 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500 ring-4 ring-background" />
+        <span aria-hidden className="absolute right-0 top-1/2 size-3 translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500 ring-4 ring-background" />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-[10px] font-semibold text-muted-foreground">
+          <span className="truncate">{inputPort?.label ?? "input"}</span>
+          <ArrowRight aria-hidden className="size-3.5 text-foreground/40" />
+          <span className="truncate text-right">{outputPort?.label ?? "output"}</span>
+        </div>
+        <div className="mt-2 rounded-2xl bg-secondary/45 px-3 py-2">
+          <p className="truncate font-mono text-[12px] font-semibold text-foreground">
+            {bodyData.name}(item) -&gt; output
+          </p>
+          <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">
+            {bodySteps.join(" -> ")}
+          </p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function CodexNodeConfig({ data }: { data: BlueprintNode["data"] }) {
+  const config = data.codexConfig;
+  if (!config) return null;
+
+  const selectedModelKnown = config.modelOptions.some((model) => model.id === config.selectedModel);
+  const modelOptions = config.modelOptions.length > 0
+    ? config.modelOptions.map((model) => ({ label: model.label || model.id, value: model.id }))
+    : [{ label: config.loading ? "Modelle laden" : "Default Codex", value: "" }];
+  if (config.modelOptions.length > 0 && !selectedModelKnown) {
+    modelOptions.unshift({ label: "Modell wählen", value: "" });
+  }
+  const selectedModel = selectedModelKnown ? config.selectedModel : "";
+  const ready = config.connected && Boolean(config.selectedModel);
+
+  return (
+    <div
+      className="mt-3 rounded-3xl bg-secondary/35 px-3 py-3"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="grid min-w-0 flex-1 gap-1">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">
+            Codex model
+          </span>
+          <select
+            className="h-9 min-w-0 rounded-full bg-background px-3 text-xs font-semibold text-foreground outline-none transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={config.loading}
+            onChange={(event) => config.onModelChange(event.target.value)}
+            value={selectedModel}
+          >
+            {modelOptions.map((option) => (
+              <option key={option.value || option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!ready ? (
+          <Button
+            className="h-9 shrink-0 justify-center rounded-full px-3 text-xs"
+            disabled={config.connecting || config.loading}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              config.onConnect();
+            }}
+            type="button"
+            variant="secondary"
+          >
+            {config.connecting || config.loading ? <Spinner aria-hidden /> : null}
+            {config.connecting ? "Login offen" : "ChatGPT verbinden"}
+          </Button>
+        ) : null}
+      </div>
+      {config.error ? (
+        <p className="mt-2 text-[11px] leading-4 text-destructive">{config.error}</p>
+      ) : null}
+      {config.deviceCode ? (
+        <div className="mt-2 flex flex-col gap-2 rounded-2xl bg-background/70 px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Code</p>
+            <p className="font-mono text-sm font-semibold tracking-wide text-foreground">{config.deviceCode.userCode}</p>
+          </div>
+          <Button asChild className="h-8 rounded-full px-3 text-xs" type="button" variant="secondary">
+            <a href={config.deviceCode.verificationUri} rel="noreferrer" target="_blank">
+              Öffnen
+              <ExternalLink aria-hidden className="size-3.5" />
+            </a>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type FunctionBodyData = {
+  contract: {
+    body: string[];
+    inputNode: {
+      outputs: BlueprintPort[];
+      title: string;
+    };
+    outputNode: {
+      inputs: BlueprintPort[];
+      title: string;
+    };
+  };
+  name: string;
+  type: "map_function";
+};
+
+function functionBodyData(value: unknown): FunctionBodyData | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<FunctionBodyData>;
+  if (record.type !== "map_function" || typeof record.name !== "string") return null;
+  if (!record.contract || !Array.isArray(record.contract.body)) return null;
+  if (!record.contract.inputNode || !Array.isArray(record.contract.inputNode.outputs)) return null;
+  if (!record.contract.outputNode || !Array.isArray(record.contract.outputNode.inputs)) return null;
+  return record as FunctionBodyData;
+}
+
+function functionBoundaryKind(value: unknown): "arguments" | "return" | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { boundary?: unknown; type?: unknown };
+  if (record.type !== "function_boundary") return null;
+  return record.boundary === "arguments" || record.boundary === "return" ? record.boundary : null;
+}
+
+function boundaryStripeClass(kind: "arguments" | "return" | null): string | null {
+  if (kind === "arguments") return "bg-sky-500";
+  if (kind === "return") return "bg-emerald-500";
+  return null;
+}
+
+function boundaryIconClass(kind: "arguments" | "return" | null): string | null {
+  if (kind === "arguments") return "bg-sky-100 text-sky-700";
+  if (kind === "return") return "bg-emerald-100 text-emerald-700";
+  return null;
+}
+
+function functionKindForNode(data: BlueprintNode["data"]): BlueprintFunctionKind | null {
+  const bodyData = functionBodyData(data.bodyData);
+  if (!bodyData) return null;
+  if (bodyData.name === "BuildTaskOutput") return "task-output-map";
+  if (bodyData.name === "BuildScriptSection") return "script-output-map";
+  return null;
 }
 
 function runStageForNode(data: BlueprintNode["data"]): BlueprintRunStage | null {
@@ -598,6 +1134,11 @@ function runStageForNode(data: BlueprintNode["data"]): BlueprintRunStage | null 
   if (/raw|import|material/.test(combined)) return "raw";
   if (/inventory|resource set|course/.test(combined)) return "inventory";
   return null;
+}
+
+function isCodexNodeData(data: BlueprintNode["data"]): boolean {
+  const combined = `${data.title} ${data.subtitle} ${data.detail}`.toLowerCase();
+  return /\bcodex\b|curated|curation/.test(combined);
 }
 
 function NodePreviewDialog({
@@ -667,7 +1208,7 @@ function NodePreviewContent({
       className={cn(
         "break-words text-foreground",
         size === "node"
-          ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+          ? "space-y-1.5 text-[12px] leading-5 text-foreground/85 [&_.katex-display]:my-1 [&_code]:text-[11px] [&_h3]:!mt-0 [&_h3]:text-[13px] [&_h4]:!mt-0 [&_h4]:text-[12px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[11px] [&_ul]:ml-4"
           : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
       )}
       text={size === "node" ? compactNodeMarkdownPreview(preview.text) : preview.text}
@@ -698,7 +1239,7 @@ function RenderedPreviewField({
           className={cn(
             "break-words text-foreground",
             size === "node"
-              ? "space-y-1 text-[11px] leading-4 text-foreground/80 [&_.katex-display]:my-1 [&_code]:text-[10px] [&_h3]:!mt-0 [&_h3]:text-[12px] [&_h4]:!mt-0 [&_h4]:text-[11px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[10px] [&_ul]:ml-4"
+              ? "space-y-1.5 text-[12px] leading-5 text-foreground/85 [&_.katex-display]:my-1 [&_code]:text-[11px] [&_h3]:!mt-0 [&_h3]:text-[13px] [&_h4]:!mt-0 [&_h4]:text-[12px] [&_ol]:ml-4 [&_pre]:rounded-xl [&_pre]:p-2 [&_pre]:text-[11px] [&_ul]:ml-4"
               : "max-w-none space-y-4 text-sm leading-6 [&_.katex-display]:overflow-auto [&_pre]:rounded-2xl [&_pre]:p-3",
           )}
           text={size === "node" ? compactNodeMarkdownPreview(field.value) : field.value}
@@ -746,7 +1287,7 @@ function JsonPreviewText({
     <pre
       className={cn(
         "overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/80",
-        size === "node" ? "text-[10px] leading-4" : "text-xs leading-5",
+        size === "node" ? "text-[11px] leading-5" : "text-xs leading-5",
       )}
     >
       {displayText}
@@ -769,25 +1310,83 @@ function compactNodeJsonPreview(text: string): string {
   return compact;
 }
 
-function HiddenItemsDisclosure({ items }: { items: string[] }) {
+function NodeProgressList({
+  className,
+  items,
+  onSelect,
+}: {
+  className?: string;
+  items: NonNullable<BlueprintNode["data"]["progressItems"]>;
+  onSelect?: (itemId: string) => void;
+}) {
   return (
-    <details
-      className="mt-2 rounded-2xl bg-secondary/55 px-3 py-1.5 text-[11px] leading-4 text-foreground/80"
+    <div
+      className={cn("max-h-44 overflow-auto rounded-2xl bg-secondary/45 px-2 py-1.5", className)}
       onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
-      <summary className="cursor-pointer list-none truncate font-semibold text-foreground/75">
-        {items.length} more task group{items.length === 1 ? "" : "s"}
-      </summary>
-      <div className="mt-1 grid max-h-14 gap-1 overflow-auto pr-1">
-        {items.map((item) => (
-          <label className="flex min-w-0 items-center gap-1.5" key={item}>
-            <input className="size-3 accent-emerald-500" readOnly type="checkbox" />
-            <span className="truncate">{item}</span>
-          </label>
-        ))}
+      <div className="mb-1 flex items-center justify-between gap-2 px-1">
+        <span className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Items</span>
+        <span className="rounded-full bg-background/75 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          {items.length}
+        </span>
       </div>
-    </details>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => {
+          const StatusIcon = progressStatusIcon(item.status);
+          return (
+          <button
+            className={cn(
+              "grid min-w-[154px] flex-[1_1_154px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-xl px-1.5 py-1 text-left transition-colors",
+              item.selected ? "bg-background text-foreground shadow-sm shadow-black/10" : "text-foreground/80 hover:bg-background/70",
+            )}
+            key={item.id}
+            onClick={() => onSelect?.(item.id)}
+            type="button"
+          >
+            <span className={cn("grid size-4 place-items-center rounded-full", progressStatusClass(item.status))}>
+              <StatusIcon aria-hidden className={cn("size-2.5", item.status === "loading" ? "animate-spin" : "")} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[10px] font-semibold leading-3">{item.title}</span>
+              {item.detail && (item.status === "failed" || item.status === "needs_review") ? (
+                <span className="block truncate text-[9px] leading-3 text-muted-foreground">{item.detail}</span>
+              ) : null}
+            </span>
+            <span className="rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-muted-foreground">
+              {progressStatusLabel(item.status)}
+            </span>
+          </button>
+          );
+        })}
+      </div>
+    </div>
   );
+}
+
+function progressStatusLabel(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]): string {
+  if (status === "done") return "done";
+  if (status === "failed") return "error";
+  if (status === "loading") return "run";
+  if (status === "needs_review") return "review";
+  if (status === "missing") return "missing";
+  return "open";
+}
+
+function progressStatusIcon(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]) {
+  if (status === "done") return CheckCircle2;
+  if (status === "failed") return AlertCircle;
+  if (status === "loading") return LoaderCircle;
+  return Activity;
+}
+
+function progressStatusClass(status: NonNullable<BlueprintNode["data"]["progressItems"]>[number]["status"]): string {
+  if (status === "done") return "bg-emerald-100 text-emerald-700";
+  if (status === "failed") return "bg-destructive/10 text-destructive";
+  if (status === "loading") return "bg-blue-100 text-blue-700";
+  if (status === "needs_review") return "bg-amber-100 text-amber-700";
+  if (status === "missing") return "bg-rose-100 text-rose-700";
+  return "bg-background text-muted-foreground";
 }
 
 const HANDLE_POSITIONS = [16, 30, 44, 58, 72, 86] as const;
@@ -838,9 +1437,10 @@ function ChannelLabel({
     <span
       className={cn(
         "relative min-w-0 truncate rounded-full px-2 py-0.5",
+        portCardinality(port) === "array" ? "font-bold" : "",
         direction === "output" ? "justify-self-end text-right" : "justify-self-start",
       )}
-      title={[port.label, port.detail, port.state].filter(Boolean).join(" · ")}
+      title={[port.label, port.valueType, portCardinality(port), port.detail, port.state].filter(Boolean).join(" · ")}
     >
       {port.label}
     </span>
@@ -856,6 +1456,7 @@ function ChannelPortMarker({
   port: BlueprintPort;
   slot: number;
 }) {
+  const cardinality = portCardinality(port);
   const edgePosition = direction === "input"
     ? { left: 0, transform: "translate(-50%, -50%)" }
     : { right: 0, transform: "translate(50%, -50%)" };
@@ -865,14 +1466,19 @@ function ChannelPortMarker({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute top-1/2 z-50 size-5 rounded-full border-[5px] border-background shadow-md shadow-black/25",
+          "pointer-events-none absolute top-1/2 z-50 size-5 border-[5px] border-background shadow-md shadow-black/25",
+          cardinality === "array" ? "rounded-md" : "rounded-full",
+          cardinality === "optional" ? "ring-2 ring-background/80 ring-offset-2 ring-offset-background" : "",
           portColorClass(port),
         )}
         data-channel-marker="true"
         style={edgePosition}
       />
       <Handle
-        className="pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !rounded-full !border-0 !bg-transparent !opacity-0"
+        className={cn(
+          "pointer-events-auto !absolute !top-1/2 !z-40 !size-5 !border-0 !bg-transparent !opacity-0",
+          cardinality === "array" ? "!rounded-md" : "!rounded-full",
+        )}
         id={`${direction === "input" ? "in" : "out"}-${slot}`}
         position={direction === "input" ? Position.Left : Position.Right}
         style={edgePosition}
@@ -914,6 +1520,13 @@ function portColorHex(port: BlueprintPort | null | undefined): string {
   if (/page/.test(value)) return "#0ea5e9";
   if (/pdf|file|resource|course/.test(value)) return "#f59e0b";
   return "#737373";
+}
+
+function portCardinality(port: BlueprintPort): NonNullable<BlueprintPort["cardinality"]> {
+  if (port.cardinality) return port.cardinality;
+  if (/\[\]/.test(port.label)) return "array";
+  if (/\?|optional/i.test(`${port.label} ${port.detail ?? ""}`)) return "optional";
+  return "single";
 }
 
 function edgeColor(edge: Pick<Edge, "label" | "source" | "sourceHandle">, nodeById: Map<string, BlueprintGraphNode>): string {
@@ -1053,8 +1666,12 @@ function PortPanel({ items, title }: { items: BlueprintPort[]; title: string }) 
           <div className="rounded-2xl bg-secondary/60 px-3 py-2" key={`${title}:${item.label}:${item.detail ?? ""}`}>
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 text-xs font-medium text-foreground">{item.label}</p>
-              {item.state ? <Badge variant={item.state === "missing" || item.state === "failed" ? "destructive" : "outline"}>{item.state}</Badge> : null}
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                <Badge variant="outline">{portCardinality(item)}</Badge>
+                {item.state ? <Badge variant={item.state === "missing" || item.state === "failed" ? "destructive" : "outline"}>{item.state}</Badge> : null}
+              </div>
             </div>
+            {item.valueType ? <p className="mt-1 font-mono text-[10px] leading-4 text-muted-foreground">{item.valueType}</p> : null}
             {item.detail ? <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{item.detail}</p> : null}
           </div>
         ))}

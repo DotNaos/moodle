@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 
+import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
 import {
   getMoodleInternalSecret,
@@ -20,7 +21,24 @@ type QRExchangeResponse = {
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return Response.json(
+      {
+        code: "app_session_missing",
+        error: "Sign in before connecting Moodle.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const backendGate = await checkBackendPreflight(userId);
+  if (backendGate.state === "blocked") {
+    return Response.json(
+      {
+        code: backendGate.code,
+        error: backendGate.error ?? "Moodle backend is not ready for login.",
+      },
+      { status: backendGate.status },
+    );
   }
 
   let internalSecret: string;
@@ -62,9 +80,15 @@ export async function POST(request: Request) {
 
   const payload = await readServiceJSON<QRExchangeResponse>(upstreamResponse);
   if (!upstreamResponse.ok || !payload.apiKey) {
+    const loginFailed = usesCredentials && upstreamResponse.status === 401;
     return Response.json(
-      { error: payload.error ?? "Could not connect Moodle account." },
-      { status: upstreamResponse.status || 502 },
+      {
+        code: loginFailed ? "moodle_login_failed" : "moodle_connect_failed",
+        error: loginFailed
+          ? "Moodle login failed. Check your FHGR username and password, then try again."
+          : payload.error ?? "Could not connect Moodle account.",
+      },
+      { status: loginFailed ? 400 : upstreamResponse.status || 502 },
     );
   }
 

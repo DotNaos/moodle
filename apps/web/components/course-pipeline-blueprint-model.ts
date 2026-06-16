@@ -3,6 +3,7 @@ import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type {
   CourseInventoryNode,
   CourseInventoryResponse,
+  CourseInventoryTaskGroup,
   StudyPipelineStatusResponse,
 } from "@/components/study-pipeline-preview";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
@@ -10,7 +11,9 @@ import type { TaskViewResponse } from "@/components/task-study-panel";
 import {
   addReviewLane,
   addScriptLane,
+  addScriptGroupCollection,
   addTaskGroupLane,
+  buildTaskGroupProgressItems,
   buildRunLookup,
   buildWarnings,
 } from "@/components/course-pipeline-blueprint-lanes";
@@ -112,9 +115,34 @@ export type BlueprintProblem = {
 };
 
 export type BlueprintPort = {
+  cardinality?: "array" | "optional" | "single";
   label: string;
   detail?: string;
   state?: string;
+  valueType?: string;
+};
+
+export type BlueprintCompileIssue = {
+  detail: string;
+  edgeId: string;
+  label: string;
+  severity: BlueprintProblemSeverity;
+  sourceId: string;
+  targetId: string;
+};
+
+export type BlueprintHiddenItem = {
+  id: string;
+  title: string;
+  selected: boolean;
+};
+
+export type BlueprintProgressItem = {
+  id: string;
+  title: string;
+  detail?: string;
+  status: "done" | "failed" | "loading" | "missing" | "needs_review" | "pending";
+  selected?: boolean;
 };
 
 export type BlueprintRenderedField = {
@@ -160,6 +188,28 @@ export type BlueprintRunRequest = {
   startStage: BlueprintRunStage;
 };
 
+export type BlueprintFunctionKind = "script-output-map" | "task-output-map";
+
+export type BlueprintCodexModelOption = {
+  id: string;
+  label?: string;
+};
+
+export type BlueprintCodexConfig = {
+  connected: boolean;
+  connecting: boolean;
+  deviceCode: {
+    userCode: string;
+    verificationUri: string;
+  } | null;
+  error: string | null;
+  loading: boolean;
+  modelOptions: BlueprintCodexModelOption[];
+  onConnect: () => void;
+  onModelChange: (model: string) => void;
+  selectedModel: string;
+};
+
 export type BlueprintNodeData = {
   title: string;
   subtitle: string;
@@ -172,12 +222,16 @@ export type BlueprintNodeData = {
   bodyData?: unknown;
   config?: Array<{ label: string; value: string }>;
   evidence?: string[];
-  hiddenItems?: string[];
+  hiddenItems?: BlueprintHiddenItem[];
+  progressItems?: BlueprintProgressItem[];
   inputs: BlueprintPort[];
   meta: Array<{ label: string; value: string }>;
   live?: BlueprintLiveState;
+  codexConfig?: BlueprintCodexConfig;
   onSelect?: (nodeId: string) => void;
+  onToggleHiddenItem?: (itemId: string) => void;
   onRunFromNode?: (request: BlueprintRunRequest) => void;
+  onOpenFunction?: (kind: BlueprintFunctionKind) => void;
   outputPreview?: string;
   outputs: BlueprintPort[];
   problems?: BlueprintProblem[];
@@ -228,6 +282,7 @@ type CoursePipelineBlueprintModelInput = {
   runs: PipelineRunsResponse | null;
   status: StudyPipelineStatusResponse | null;
   taskView: TaskViewResponse | null;
+  selectedTaskGroupIds?: string[];
   unavailable?: {
     extractedDocuments?: string;
     inventory?: string;
@@ -236,7 +291,6 @@ type CoursePipelineBlueprintModelInput = {
   };
 };
 
-const MAX_TASK_GROUPS = 4;
 const MAX_SCRIPT_GROUPS = 3;
 
 const STAGE_LABELS: Record<string, string> = {
@@ -253,33 +307,38 @@ export function buildBlueprintGraph({
   inventory,
   runs,
   status,
+  selectedTaskGroupIds,
   taskView,
   unavailable,
 }: CoursePipelineBlueprintModelInput): { nodes: BlueprintGraphNode[]; edges: Edge[] } {
   const nodes: BlueprintGraphNode[] = [];
   const edges: Edge[] = [];
   const activeRunIds = new Set((runs?.activeSelections ?? []).map((selection) => selection.activeRunId));
-  const runLookup = buildRunLookup(runs?.runs ?? []);
+  const runLookup = buildRunLookup(runs?.runs ?? [], runs?.activeSelections ?? []);
   const extractedLookup = buildExtractedLookup(extractedDocuments);
   const outputLookup = buildOutputLookup(taskView);
   const derivedInventory = inventory ?? inventoryFromStatus(status);
   const usingDerivedInventory = !inventory && Boolean(derivedInventory);
   const taskGroups = sortTaskGroups(derivedInventory?.taskGroups ?? []);
   const scriptResources = sortInventoryNodes(derivedInventory?.lectureMaterial ?? []);
-  const visibleTaskGroups = visibleBoundaryItems(taskGroups, MAX_TASK_GROUPS);
-  const hiddenTaskGroups = hiddenBoundaryItems(taskGroups, MAX_TASK_GROUPS);
+  const visibleTaskGroups = visibleTaskGroupItems(taskGroups, selectedTaskGroupIds ?? []);
   const visibleScriptResources = scriptResources.slice(0, MAX_SCRIPT_GROUPS);
+  const selectedTaskGroup = visibleTaskGroups[0] ?? null;
+  const taskGroupProgressItems = selectedTaskGroup
+    ? buildTaskGroupProgressItems({
+        extractedLookup,
+        groups: taskGroups,
+        outputLookup,
+        runLookup,
+        selectedGroupId: selectedTaskGroup.id,
+      })
+    : [];
+  const scriptProgressItems = buildScriptProgressItems({ outputLookup, resources: scriptResources, runLookup });
   const totalResources = status?.summary.totalResources ?? derivedInventory?.summary.totalResources ?? 0;
   const centerY = 760;
   const taskLaneGap = 720;
   const taskLaneStartY = centerY - ((Math.max(visibleTaskGroups.length, 1) - 1) * taskLaneGap) / 2;
   const scriptLaneY = taskLaneStartY + Math.max(visibleTaskGroups.length, 1) * taskLaneGap + 200;
-  const stageTopY = taskLaneStartY - 120;
-  const stageHeight = Math.max(visibleTaskGroups.length, 1) * taskLaneGap
-    + Math.max(visibleScriptResources.length, 1) * 420
-    + 520;
-
-  addStageFrames(nodes, { height: stageHeight, y: stageTopY });
 
   addNode(nodes, {
     id: "course",
@@ -328,7 +387,7 @@ export function buildBlueprintGraph({
 
   addNode(nodes, {
     id: "resource-set",
-    position: { x: 420, y: centerY },
+    position: { x: 680, y: centerY },
     data: {
       title: "Resource Set",
       subtitle: `${totalResources} resources`,
@@ -356,9 +415,9 @@ export function buildBlueprintGraph({
           ? `Task groups: ${derivedInventory.summary.taskGroups}\nLecture resources: ${derivedInventory.summary.lectureMaterial}\nUnknown: ${derivedInventory.summary.unknown}\nSource: derived from status`
           : "No inventory response loaded yet.",
       outputs: [
-        { label: "task groups[]", detail: String(derivedInventory?.summary.taskGroups ?? 0) },
-        { label: "script groups[]", detail: String(derivedInventory?.summary.lectureMaterial ?? 0) },
-        { label: "review items[]", detail: String(buildWarnings(derivedInventory, runs).length) },
+        { cardinality: "array", label: "task groups[]", detail: String(derivedInventory?.summary.taskGroups ?? 0), valueType: "TaskGroup" },
+        { cardinality: "array", label: "script groups[]", detail: String(derivedInventory?.summary.lectureMaterial ?? 0), valueType: "ScriptGroup" },
+        { cardinality: "array", label: "review items[]", detail: String(buildWarnings(derivedInventory, runs).length), valueType: "ReviewItem" },
       ],
       problems: inventory || derivedInventory
         ? usingDerivedInventory
@@ -391,13 +450,13 @@ export function buildBlueprintGraph({
 
   addFrame(nodes, {
     id: "task-groups-frame",
-    position: { x: 780, y: taskLaneStartY - 64 },
+    position: { x: 1360, y: taskLaneStartY - 64 },
     data: frameData({
       height: Math.max(visibleTaskGroups.length, 1) * taskLaneGap - 120,
       subtitle: `${taskGroups.length} task groups`,
       title: "Task groups[]",
       variant: "group",
-      width: 3720,
+      width: 4600,
     }),
   });
 
@@ -412,21 +471,35 @@ export function buildBlueprintGraph({
       outputLookup,
       runLookup,
       y: taskLaneStartY + index * taskLaneGap,
-      hiddenSiblingTitles: index === 0 ? hiddenTaskGroups.map((hiddenGroup) => hiddenGroup.title) : undefined,
+      hiddenSiblingItems: index === 0 ? taskGroups.map((hiddenGroup) => ({
+        id: hiddenGroup.id,
+        selected: hiddenGroup.id === group.id,
+        title: hiddenGroup.title,
+      })) : undefined,
+      progressItems: index === 0
+        ? taskGroupProgressItems
+        : undefined,
+      taskGroupCount: taskGroups.length,
     });
   });
 
   if (visibleScriptResources.length > 0) {
     addFrame(nodes, {
       id: "script-groups-frame",
-      position: { x: 780, y: scriptLaneY - 64 },
+      position: { x: 1360, y: scriptLaneY - 64 },
       data: frameData({
         height: Math.max(visibleScriptResources.length, 1) * 420 - 16,
         subtitle: `${scriptResources.length} script resources`,
         title: "Script groups[]",
         variant: "group",
-        width: 3720,
+        width: 4600,
       }),
+    });
+    addScriptGroupCollection({
+      edges,
+      nodes,
+      resourceCount: scriptResources.length,
+      y: scriptLaneY,
     });
   }
 
@@ -445,8 +518,79 @@ export function buildBlueprintGraph({
   });
 
   addReviewLane({ edges, inventory: derivedInventory, nodes, runs, y: scriptLaneY + visibleScriptResources.length * 420 + 120 });
+  hideExpandedWorkflow(nodes, edges);
+  addFunctionSummaryLanes({
+    edges,
+    nodes,
+    outputLookup,
+    scriptProgressItems,
+    scriptResources,
+    selectedTaskGroup,
+    taskGroupProgressItems,
+    taskGroups,
+    y: centerY - 120,
+  });
 
   return { nodes, edges };
+}
+
+export function validateBlueprintGraph({
+  edges,
+  nodes,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+}): BlueprintCompileIssue[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const issues: BlueprintCompileIssue[] = [];
+
+  for (const edge of edges) {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    if (!source || !target || source.type !== "blueprint" || target.type !== "blueprint") {
+      continue;
+    }
+
+    const sourcePort = portForHandle(source.data.outputs, edge.sourceHandle, "out");
+    const targetPort = portForHandle(target.data.inputs, edge.targetHandle, "in");
+    if (!sourcePort || !targetPort) {
+      issues.push({
+        detail: `Edge "${edge.label ?? edge.id}" references a missing typed port.`,
+        edgeId: edge.id,
+        label: "Missing port contract",
+        severity: "error",
+        sourceId: edge.source,
+        targetId: edge.target,
+      });
+      continue;
+    }
+
+    const cardinalityIssue = validatePortCardinality(sourcePort, targetPort);
+    if (cardinalityIssue) {
+      issues.push({
+        detail: cardinalityIssue,
+        edgeId: edge.id,
+        label: "Invalid cardinality",
+        severity: "error",
+        sourceId: edge.source,
+        targetId: edge.target,
+      });
+    }
+
+    const typeIssue = validatePortType(sourcePort, targetPort);
+    if (typeIssue) {
+      issues.push({
+        detail: typeIssue,
+        edgeId: edge.id,
+        label: "Invalid value type",
+        severity: "error",
+        sourceId: edge.source,
+        targetId: edge.target,
+      });
+    }
+  }
+
+  return issues;
 }
 
 function addNode(nodes: BlueprintGraphNode[], node: BlueprintNodeInput) {
@@ -457,35 +601,371 @@ function addFrame(nodes: BlueprintGraphNode[], node: BlueprintFrameInput) {
   nodes.push({ ...node, selectable: false, type: "frame", zIndex: -1 });
 }
 
-function addStageFrames(nodes: BlueprintGraphNode[], { height, y }: { height: number; y: number }) {
-  const stages = [
-    { id: "stage-course", title: "Course", subtitle: "source", width: 360, x: -20 },
-    { id: "stage-resources", title: "Resources", subtitle: "inventory", width: 360, x: 380 },
-    { id: "stage-groups", title: "Groups", subtitle: "task/script arrays", width: 360, x: 780 },
-    { id: "stage-pdfs", title: "PDFs", subtitle: "sheet + solution", width: 380, x: 1220 },
-    { id: "stage-pages", title: "Pages", subtitle: "1 -> N", width: 380, x: 1700 },
-    { id: "stage-sections", title: "Sections", subtitle: "blocks", width: 380, x: 2180 },
-    { id: "stage-extraction", title: "Extraction", subtitle: "OCR variants", width: 400, x: 2660 },
-    { id: "stage-collect", title: "Collect", subtitle: "N -> 1", width: 380, x: 3180 },
-    { id: "stage-codex", title: "Codex", subtitle: "curation", width: 380, x: 3640 },
-    { id: "stage-output", title: "Outputs", subtitle: "website-ready", width: 400, x: 4100 },
-  ];
-  for (const stage of stages) {
-    nodes.push({
-      id: stage.id,
-      position: { x: stage.x, y },
-      selectable: false,
-      type: "frame",
-      zIndex: -3,
-      data: frameData({
-        height,
-        subtitle: stage.subtitle,
-        title: stage.title,
-        variant: "stage",
-        width: stage.width,
-      }),
+function addFunctionSummaryLanes({
+  edges,
+  nodes,
+  outputLookup,
+  scriptProgressItems,
+  scriptResources,
+  selectedTaskGroup,
+  taskGroupProgressItems,
+  taskGroups,
+  y,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+  outputLookup: OutputLookup;
+  scriptProgressItems: BlueprintProgressItem[];
+  scriptResources: CourseInventoryNode[];
+  selectedTaskGroup: CourseInventoryTaskGroup | null;
+  taskGroupProgressItems: BlueprintProgressItem[];
+  taskGroups: CourseInventoryTaskGroup[];
+  y: number;
+}) {
+  if (taskGroups.length > 0) {
+    addTaskOutputMapFunction({
+      edges,
+      nodes,
+      outputLookup,
+      progressItems: taskGroupProgressItems,
+      selectedGroup: selectedTaskGroup ?? taskGroups[0]!,
+      taskGroups,
+      y,
     });
   }
+
+  if (scriptResources.length > 0) {
+    addScriptOutputMapFunction({
+      edges,
+      nodes,
+      outputLookup,
+      progressItems: scriptProgressItems,
+      resources: scriptResources,
+      y: y + 800,
+    });
+  }
+}
+
+function addTaskOutputMapFunction({
+  edges,
+  nodes,
+  outputLookup,
+  progressItems,
+  selectedGroup,
+  taskGroups,
+  y,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+  outputLookup: OutputLookup;
+  progressItems: BlueprintProgressItem[];
+  selectedGroup: CourseInventoryTaskGroup;
+  taskGroups: CourseInventoryTaskGroup[];
+  y: number;
+}) {
+  const summary = summarizeProgressItems(progressItems);
+  const failed = (summary?.failed ?? 0) > 0;
+  const selectedProgress = progressItems.find((item) => item.selected) ?? progressItems[0] ?? null;
+  const selectedOutputs = taskOutputsForGroup(outputLookup, selectedGroup);
+  const mapId = "map-build-task-output";
+  const outputId = "task-outputs-collection";
+  const runScope = taskGroupRunScope(selectedGroup);
+
+  addNode(nodes, {
+    id: mapId,
+    position: { x: 1360, y },
+    data: {
+      title: "MAP BuildTaskOutput",
+      subtitle: `TaskGroup[] -> TaskOutput[] · selected ${selectedGroup.title}`,
+      detail: "Runs the BuildTaskOutput function for every task group. The function boundary makes the array loop explicit instead of hiding a for-loop inside a normal node.",
+      evidence: [
+        `Input collection: ${taskGroups.length} task groups`,
+        `Selected magazine item: ${selectedGroup.title}`,
+        "Internal function: INPUT -> split sheet/solution -> extract -> collect -> Codex -> OUTPUT",
+      ],
+      inputs: [{ cardinality: "array", label: "task groups[]", detail: `${taskGroups.length} task groups`, valueType: "TaskGroup" }],
+      outputs: [{ cardinality: "array", label: "task outputs[]", detail: `${outputLookup.totalTasks} website tasks`, valueType: "TaskOutput" }],
+      progressItems,
+      hiddenItems: taskGroups.map((group) => ({
+        id: group.id,
+        selected: group.id === selectedGroup.id,
+        title: group.title,
+      })),
+      bodyData: {
+        type: "map_function",
+        name: "BuildTaskOutput",
+        contract: {
+          inputNode: {
+            title: "INPUT",
+            outputs: [{ label: "task group", valueType: "TaskGroup", cardinality: "single" }],
+          },
+          body: [
+            "Split task group into sheet pdf and solution pdf",
+            "Extract pages and semantic sections",
+            "Collect sheet and solution extraction into one input bundle",
+            "Codex curates one website task draft",
+          ],
+          outputNode: {
+            title: "OUTPUT",
+            inputs: [{ label: "task output", valueType: "TaskOutput", cardinality: "single" }],
+          },
+        },
+        selectedItem: {
+          id: selectedGroup.id,
+          title: selectedGroup.title,
+          sheet: selectedGroup.sheet.name,
+          solution: selectedGroup.solution?.name ?? null,
+          status: selectedProgress?.status ?? "pending",
+          detail: selectedProgress?.detail ?? null,
+          outputs: selectedOutputs.map((output) => ({
+            id: output.taskId,
+            title: output.title,
+            status: output.status,
+          })),
+        },
+        progress: summary,
+      },
+      outputPreview: [
+        "function BuildTaskOutput(input: TaskGroup) -> TaskOutput",
+        "",
+        "INPUT",
+        "  out task group",
+        "",
+        "BODY",
+        "  split sheet + solution",
+        "  extract pages + sections",
+        "  collect extraction pair",
+        "  codex curate task",
+        "",
+        "OUTPUT",
+        "  in task output",
+        "",
+        `Selected: ${selectedGroup.title}`,
+        `done: ${summary?.done ?? 0} · failed: ${summary?.failed ?? 0} · pending: ${summary?.pending ?? 0}`,
+      ].join("\n"),
+      problems: failed
+        ? [{
+            label: "Some task outputs failed",
+            detail: `${summary?.failed ?? 0} task group${summary?.failed === 1 ? "" : "s"} need review before the whole map can be trusted.`,
+            severity: "error",
+          }]
+        : undefined,
+      runScope,
+      stepKind: "split",
+      tone: failed ? "warning" : "process",
+      status: failed ? "needs_review" : "mapped",
+      meta: [
+        { label: "Function", value: "BuildTaskOutput" },
+        { label: "Input", value: `${taskGroups.length} TaskGroup items` },
+        { label: "Output", value: `${outputLookup.totalTasks} TaskOutput items` },
+        { label: "Selected", value: selectedGroup.title },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", mapId, "map", { sourceHandle: "out-0", targetHandle: "in-2" });
+
+  addNode(nodes, {
+    id: outputId,
+    position: { x: 2040, y },
+    data: {
+      title: "Task Outputs[]",
+      subtitle: `${outputLookup.totalTasks} website task${outputLookup.totalTasks === 1 ? "" : "s"}`,
+      detail: "Output boundary for all task results produced by BuildTaskOutput. It only accepts the array emitted by the map function.",
+      evidence: [
+        `Received ${outputLookup.totalTasks} task output(s)`,
+        `Source function: ${mapId}`,
+      ],
+      inputs: [{ cardinality: "array", label: "task outputs[]", detail: `${outputLookup.totalTasks} website tasks`, valueType: "TaskOutput" }],
+      outputs: [{ cardinality: "array", label: "website tasks[]", detail: `${outputLookup.totalTasks} published tasks`, valueType: "WebsiteTask" }],
+      bodyData: {
+        type: "function_output_collection",
+        sourceFunction: "BuildTaskOutput",
+        totalTasks: outputLookup.totalTasks,
+        selectedGroup: selectedGroup.title,
+        selectedOutputs: selectedOutputs.map((output) => ({
+          id: output.taskId,
+          title: output.title,
+          promptMarkdown: output.promptMarkdown,
+        })),
+      },
+      outputPreview: selectedOutputs.length > 0
+        ? selectedOutputs.map((output) => `${output.title}\n${output.promptMarkdown}`).join("\n\n")
+        : `No website task output is loaded for ${selectedGroup.title}.`,
+      renderedFields: selectedOutputs.map((output, index) => ({
+        label: output.title,
+        path: `selectedOutputs[${index}].promptMarkdown`,
+        type: "markdown",
+        value: output.promptMarkdown,
+      })),
+      problems: failed
+        ? [{
+            label: "Upstream map has failed items",
+            detail: "The output collection is partial until the failed task group items are fixed.",
+            severity: "warning",
+          }]
+        : undefined,
+      runScope,
+      stepKind: "collect",
+      tone: failed ? "warning" : "output",
+      status: failed ? "partial" : "ready",
+      meta: [
+        { label: "Items", value: String(outputLookup.totalTasks) },
+        { label: "Selected group", value: selectedGroup.title },
+      ],
+    },
+  });
+  addEdge(edges, mapId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
+}
+
+function addScriptOutputMapFunction({
+  edges,
+  nodes,
+  outputLookup,
+  progressItems,
+  resources,
+  y,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+  outputLookup: OutputLookup;
+  progressItems: BlueprintProgressItem[];
+  resources: CourseInventoryNode[];
+  y: number;
+}) {
+  const summary = summarizeProgressItems(progressItems);
+  const failed = (summary?.failed ?? 0) > 0;
+  const selectedResource = resources[0]!;
+  const selectedOutputs = scriptOutputsForResource(outputLookup, selectedResource);
+  const mapId = "map-build-script-section";
+  const outputId = "script-outputs-collection";
+  const runScope = resourceRunScope(selectedResource);
+
+  addNode(nodes, {
+    id: mapId,
+    position: { x: 1360, y },
+    data: {
+      title: "MAP BuildScriptSection",
+      subtitle: `ScriptGroup[] -> ScriptSection[] · ${resources.length} items`,
+      detail: "Runs the script-section function for every script resource. The loop boundary is explicit and produces one script section array.",
+      evidence: [
+        `Input collection: ${resources.length} script groups`,
+        "Internal function: INPUT -> PDF -> pages -> sections -> extraction -> Codex -> OUTPUT",
+      ],
+      inputs: [{ cardinality: "array", label: "script groups[]", detail: `${resources.length} script groups`, valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "array", label: "script sections[]", detail: `${outputLookup.totalScriptSections} sections`, valueType: "ScriptSection" }],
+      progressItems,
+      bodyData: {
+        type: "map_function",
+        name: "BuildScriptSection",
+        contract: {
+          inputNode: {
+            title: "INPUT",
+            outputs: [{ label: "script group", valueType: "ScriptGroup", cardinality: "single" }],
+          },
+          body: [
+            "Extract script PDF into pages and sections",
+            "Select active extraction",
+            "Codex curates one website script section",
+          ],
+          outputNode: {
+            title: "OUTPUT",
+            inputs: [{ label: "script section", valueType: "ScriptSection", cardinality: "single" }],
+          },
+        },
+        progress: summary,
+      },
+      outputPreview: [
+        "function BuildScriptSection(input: ScriptGroup) -> ScriptSection",
+        "",
+        "INPUT",
+        "  out script group",
+        "",
+        "BODY",
+        "  extract pages + sections",
+        "  select active extraction",
+        "  codex curate section",
+        "",
+        "OUTPUT",
+        "  in script section",
+        "",
+        `done: ${summary?.done ?? 0} · failed: ${summary?.failed ?? 0} · pending: ${summary?.pending ?? 0}`,
+      ].join("\n"),
+      problems: failed
+        ? [{
+            label: "Some script sections failed",
+            detail: `${summary?.failed ?? 0} script item${summary?.failed === 1 ? "" : "s"} need review.`,
+            severity: "error",
+          }]
+        : undefined,
+      runScope,
+      stepKind: "split",
+      tone: failed ? "warning" : "process",
+      status: failed ? "needs_review" : "mapped",
+      meta: [
+        { label: "Function", value: "BuildScriptSection" },
+        { label: "Input", value: `${resources.length} ScriptGroup items` },
+        { label: "Output", value: `${outputLookup.totalScriptSections} ScriptSection items` },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", mapId, "map", { sourceHandle: "out-2", targetHandle: "in-2" });
+
+  addNode(nodes, {
+    id: outputId,
+    position: { x: 2040, y },
+    data: {
+      title: "Script Sections[]",
+      subtitle: `${outputLookup.totalScriptSections} website section${outputLookup.totalScriptSections === 1 ? "" : "s"}`,
+      detail: "Output boundary for all script sections produced by BuildScriptSection.",
+      evidence: [`Received ${outputLookup.totalScriptSections} script section output(s)`],
+      inputs: [{ cardinality: "array", label: "script sections[]", detail: `${outputLookup.totalScriptSections} sections`, valueType: "ScriptSection" }],
+      outputs: [{ cardinality: "array", label: "website script[]", detail: `${outputLookup.totalScriptSections} sections`, valueType: "WebsiteScriptSection" }],
+      bodyData: {
+        type: "function_output_collection",
+        sourceFunction: "BuildScriptSection",
+        totalSections: outputLookup.totalScriptSections,
+        selectedOutputs: selectedOutputs.map((output) => ({
+          id: output.id,
+          title: output.title,
+          status: output.statusLabel,
+        })),
+      },
+      outputPreview: selectedOutputs.length > 0
+        ? selectedOutputs.map((output) => `${output.title}\n${output.statusLabel}`).join("\n\n")
+        : "No script output is loaded for the selected script resource.",
+      runScope,
+      stepKind: "collect",
+      tone: failed ? "warning" : "output",
+      status: failed ? "partial" : "ready",
+      meta: [{ label: "Items", value: String(outputLookup.totalScriptSections) }],
+    },
+  });
+  addEdge(edges, mapId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
+}
+
+function hideExpandedWorkflow(nodes: BlueprintGraphNode[], edges: Edge[]) {
+  const hiddenNodeIds = new Set<string>();
+  for (const node of nodes) {
+    if (isExpandedWorkflowNode(node.id)) {
+      node.hidden = true;
+      hiddenNodeIds.add(node.id);
+    }
+  }
+  for (const edge of edges) {
+    if (hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target)) {
+      edge.hidden = true;
+    }
+  }
+}
+
+function isExpandedWorkflowNode(id: string): boolean {
+  return id === "task-groups-frame"
+    || id === "script-groups-frame"
+    || id === "task-groups-collection"
+    || id === "task-groups-iterator"
+    || id === "script-groups-collection"
+    || id.startsWith("task-group-")
+    || id.startsWith("script-");
 }
 
 function addEdge(
@@ -584,8 +1064,21 @@ function resourceBodyData(resource: CourseInventoryNode) {
     role: resource.role,
     confidence: resource.confidence,
     reason: resource.reason,
-    url: resource.url ?? null,
+    url: redactSensitiveUrl(resource.url ?? null),
   };
+}
+
+function redactSensitiveUrl(value: string | null): string | null {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    for (const param of ["token", "wstoken", "sesskey", "password", "key"]) {
+      if (url.searchParams.has(param)) url.searchParams.set(param, "[redacted]");
+    }
+    return url.toString();
+  } catch {
+    return value.replace(/([?&](?:token|wstoken|sesskey|password|key)=)[^&\s]+/gi, "$1[redacted]");
+  }
 }
 
 function inventoryFromStatus(status: StudyPipelineStatusResponse | null): CourseInventoryResponse | null {
@@ -725,6 +1218,110 @@ function buildOutputLookup(taskView: TaskViewResponse | null): OutputLookup {
   };
 }
 
+function buildScriptProgressItems({
+  outputLookup,
+  resources,
+  runLookup,
+}: {
+  outputLookup: OutputLookup;
+  resources: CourseInventoryNode[];
+  runLookup: ReturnType<typeof buildRunLookup>;
+}): BlueprintProgressItem[] {
+  return resources.map((resource) => {
+    const outputs = scriptOutputsForResource(outputLookup, resource);
+    const failedRun = findLatestResourceRun(runLookup, resource.id, ["curated", "codex_curate", "extracted", "extract_text", "extract_pages"]);
+    const status = failedRun?.status === "failed"
+      ? "failed"
+      : failedRun?.status === "running" || failedRun?.status === "queued"
+        ? "loading"
+        : outputs.length > 0
+          ? "done"
+          : "pending";
+    return {
+      detail: failedRun?.error
+        ?? (outputs.length > 0
+          ? `${outputs.length} website script section${outputs.length === 1 ? "" : "s"}`
+          : resource.reason ?? resource.bucket),
+      id: resource.id,
+      selected: resource.id === resources[0]?.id,
+      status,
+      title: resource.name,
+    };
+  });
+}
+
+function taskOutputsForGroup(outputLookup: OutputLookup, group: CourseInventoryTaskGroup): TaskOutputRecord[] {
+  const seen = new Set<string>();
+  const outputs: TaskOutputRecord[] = [];
+  for (const key of resourceKeys(group.sheet.id)) {
+    for (const output of outputLookup.byResourceId.get(key) ?? []) {
+      if (seen.has(output.taskId)) continue;
+      seen.add(output.taskId);
+      outputs.push(output);
+    }
+  }
+  return outputs;
+}
+
+function scriptOutputsForResource(outputLookup: OutputLookup, resource: CourseInventoryNode): ScriptOutputRecord[] {
+  const seen = new Set<string>();
+  const outputs: ScriptOutputRecord[] = [];
+  for (const key of resourceKeys(resource.id)) {
+    for (const output of outputLookup.scriptSectionsByResourceId.get(key) ?? []) {
+      if (seen.has(output.id)) continue;
+      seen.add(output.id);
+      outputs.push(output);
+    }
+  }
+  return outputs;
+}
+
+function findLatestResourceRun(
+  runLookup: ReturnType<typeof buildRunLookup>,
+  resourceId: string,
+  stages: string[],
+): PipelineRunRecord | null {
+  for (const stage of stages) {
+    for (const key of resourceKeys(resourceId)) {
+      const runKey = `${key}:${stage}`;
+      const activeRun = runLookup.activeByResourceStage.get(runKey);
+      const latestRun = runLookup.byResourceStage.get(runKey)?.[0] ?? null;
+      if (activeRun) return activeRun;
+      if (latestRun) return latestRun;
+    }
+  }
+  return null;
+}
+
+function taskGroupRunScope(group: CourseInventoryTaskGroup): BlueprintRunScope {
+  return {
+    kind: "task_group",
+    label: group.title,
+    resourceIds: [group.sheet.id, group.solution?.id].filter(Boolean) as string[],
+  };
+}
+
+function resourceRunScope(resource: CourseInventoryNode): BlueprintRunScope {
+  return {
+    kind: "resource",
+    label: resource.name,
+    resourceIds: [resource.id],
+  };
+}
+
+function summarizeProgressItems(progressItems?: BlueprintProgressItem[]) {
+  if (!progressItems?.length) return null;
+  return progressItems.reduce(
+    (summary, item) => {
+      if (item.status === "done") summary.done += 1;
+      else if (item.status === "failed") summary.failed += 1;
+      else summary.pending += 1;
+      return summary;
+    },
+    { done: 0, failed: 0, pending: 0 },
+  );
+}
+
 function buildRootProblems({
   extractedDocuments,
   runs,
@@ -760,6 +1357,55 @@ function buildRootProblems({
   }
   return problems.length > 0 ? problems : undefined;
 }
+
+const PORT_SLOTS_BY_COUNT: Record<number, number[]> = {
+  1: [2],
+  2: [1, 4],
+  3: [0, 2, 4],
+  4: [0, 2, 3, 5],
+  5: [0, 1, 2, 4, 5],
+  6: [0, 1, 2, 3, 4, 5],
+};
+
+function portForHandle(
+  ports: BlueprintPort[],
+  handle: string | null | undefined,
+  direction: "in" | "out",
+): BlueprintPort | null {
+  if (ports.length === 0) return null;
+  if (!handle) return ports.length === 1 ? ports[0]! : null;
+
+  const match = handle.match(new RegExp(`^${direction}-(\\d+)$`));
+  if (!match) return null;
+
+  const slot = Number(match[1]);
+  const slots = PORT_SLOTS_BY_COUNT[Math.min(6, Math.max(1, ports.length))] ?? PORT_SLOTS_BY_COUNT[1]!;
+  const index = slots.indexOf(slot);
+  return index >= 0 ? ports[index] ?? null : null;
+}
+
+function validatePortCardinality(source: BlueprintPort, target: BlueprintPort): string | null {
+  const sourceCardinality = portCardinality(source);
+  const targetCardinality = portCardinality(target);
+  if (sourceCardinality === targetCardinality) return null;
+  if (sourceCardinality === "single" && targetCardinality === "optional") return null;
+  return `Cannot connect ${source.label} (${sourceCardinality}) to ${target.label} (${targetCardinality}). Use an explicit map, collect, or guard boundary.`;
+}
+
+function validatePortType(source: BlueprintPort, target: BlueprintPort): string | null {
+  if (!source.valueType || !target.valueType || source.valueType === target.valueType) {
+    return null;
+  }
+  return `Cannot connect ${source.label} (${source.valueType}) to ${target.label} (${target.valueType}).`;
+}
+
+function portCardinality(port: BlueprintPort): NonNullable<BlueprintPort["cardinality"]> {
+  if (port.cardinality) return port.cardinality;
+  if (/\[\]/.test(port.label)) return "array";
+  if (/\?|optional/i.test(`${port.label} ${port.detail ?? ""}`)) return "optional";
+  return "single";
+}
+
 export function resourceKeys(resourceId: string | undefined): string[] {
   if (!resourceId) return [];
   const trimmed = resourceId.trim();
@@ -780,14 +1426,13 @@ function sortInventoryNodes(nodes: CourseInventoryNode[]): CourseInventoryNode[]
   return [...nodes].sort((a, b) => naturalCompare(a.name, b.name));
 }
 
-function visibleBoundaryItems<T>(items: T[], maxItems: number): T[] {
-  if (items.length <= maxItems) return items;
-  return items.slice(0, 1);
-}
-
-function hiddenBoundaryItems<T>(items: T[], maxItems: number): T[] {
-  if (items.length <= maxItems) return [];
-  return items.slice(1);
+function visibleTaskGroupItems(
+  items: CourseInventoryResponse["taskGroups"],
+  selectedIds: string[],
+): CourseInventoryResponse["taskGroups"] {
+  if (items.length === 0) return [];
+  const selected = items.find((item) => selectedIds.includes(item.id));
+  return [selected ?? items[0]!];
 }
 
 function naturalCompare(left: string, right: string): number {

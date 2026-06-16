@@ -15,6 +15,7 @@ import {
   finalTaskOutputNodeData,
 } from "@/components/course-pipeline-blueprint-output-data";
 import type {
+  ActiveRunSelectionRecord,
   BlueprintGraphNode,
   BlueprintNode,
   BlueprintNodeData,
@@ -43,25 +44,31 @@ export function addTaskGroupLane({
   edges,
   extractedLookup,
   group,
-  hiddenSiblingTitles,
+  hiddenSiblingItems,
   index,
   nodes,
   outputLookup,
+  progressItems,
   runLookup,
+  taskGroupCount,
   y,
 }: {
   activeRunIds: Set<string>;
   edges: Edge[];
   extractedLookup: ExtractedLookup;
   group: CourseInventoryTaskGroup;
-  hiddenSiblingTitles?: string[];
+  hiddenSiblingItems?: BlueprintNodeData["hiddenItems"];
   index: number;
   nodes: BlueprintGraphNode[];
   outputLookup: OutputLookup;
+  progressItems?: BlueprintNodeData["progressItems"];
   runLookup: RunLookup;
+  taskGroupCount?: number;
   y: number;
 }) {
   const baseId = stableId(group.id);
+  const collectionId = "task-groups-collection";
+  const iteratorId = "task-groups-iterator";
   const groupId = `task-group-${baseId}`;
   const sheetPdfId = `${groupId}-sheet-pdf`;
   const solutionPdfId = `${groupId}-solution-pdf`;
@@ -75,47 +82,177 @@ export function addTaskGroupLane({
   const codexId = `${groupId}-codex`;
   const outputId = `${groupId}-output`;
   const paired = Boolean(group.solution);
-  const sheetRun = findLatestRun(runLookup, group.sheet.id, ["extracted", "extract_text", "extract_pages"]);
-  const solutionRun = group.solution ? findLatestRun(runLookup, group.solution.id, ["extracted", "extract_text", "extract_pages"]) : null;
   const sheetDocument = findExtractedDocument(extractedLookup, group.sheet.id);
   const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  const sheetRun = findLatestRun(runLookup, group.sheet.id, extractionStages)
+    ?? findRunForExtractedDocument(runLookup, sheetDocument, extractionStages);
+  const solutionRun = group.solution
+    ? findLatestRun(runLookup, group.solution.id, extractionStages)
+      ?? findRunForExtractedDocument(runLookup, solutionDocument, extractionStages)
+    : null;
   const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
   const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
   const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
+  const progressSummary = summarizeProgressItems(progressItems);
+
+  addNode(nodes, {
+    id: collectionId,
+    position: { x: PIPELINE_X.group, y },
+    data: {
+      title: "Task groups[]",
+      subtitle: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} task group${(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) === 1 ? "" : "s"}`,
+      detail: hiddenSiblingItems?.length
+        ? "Collection boundary for classified task groups. It does not choose one item or split it into PDFs."
+        : "Collection boundary for one classified task group.",
+      evidence: [
+        `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} task group(s) loaded`,
+        "No implicit iteration happens in this node.",
+        "Downstream single-item work must pass through the explicit iterator node.",
+      ],
+      inputs: [{
+        cardinality: "array",
+        label: "task groups[]",
+        detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+        valueType: "TaskGroup",
+      }],
+      outputs: [
+        {
+          cardinality: "array",
+          label: "task groups[]",
+          detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+          valueType: "TaskGroup",
+        },
+      ],
+      outputPreview: [
+        "TaskGroup[] collection",
+        `Items: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        progressSummary ? `done: ${progressSummary.done} · failed: ${progressSummary.failed} · pending: ${progressSummary.pending}` : null,
+      ].filter(Boolean).join("\n"),
+      runScope: taskGroupRunScope(group),
+      stepKind: "split",
+      tone: "process",
+      status: "loaded",
+      meta: [
+        { label: "Cardinality", value: "array" },
+        { label: "Item type", value: "TaskGroup" },
+        { label: "Items", value: String(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", collectionId, "task groups[]", {
+    sourceHandle: "out-0",
+    targetHandle: "in-2",
+  });
+
+  addNode(nodes, {
+    id: iteratorId,
+    position: { x: PIPELINE_X.iterator, y },
+    data: {
+      title: "Task Group Iterator",
+      subtitle: `selected ${group.title}`,
+      detail: "Explicit map boundary over task_groups[]. The selected item becomes the single task group for this detailed lane.",
+      evidence: [
+        `Collection size: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        `Selected item: ${group.title}`,
+        "The iterator is the only place where the array is turned into one item.",
+      ],
+      hiddenItems: hiddenSiblingItems,
+      progressItems,
+      inputs: [{
+        cardinality: "array",
+        label: "task groups[]",
+        detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+        valueType: "TaskGroup",
+      }],
+      outputs: [{
+        cardinality: "single",
+        label: "task group",
+        detail: group.title,
+        valueType: "TaskGroup",
+      }],
+      outputPreview: [
+        "Iterator over task_groups[]",
+        `Selected: ${group.title}`,
+        `Collection size: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        progressSummary ? `done: ${progressSummary.done} · failed: ${progressSummary.failed} · pending: ${progressSummary.pending}` : null,
+      ].filter(Boolean).join("\n"),
+      runScope: taskGroupRunScope(group),
+      stepKind: "transform",
+      tone: progressSummary?.failed ? "warning" : "process",
+      status: progressSummary?.failed ? "needs_review" : "selected",
+      meta: [
+        { label: "Mode", value: "explicit iterator" },
+        { label: "Selected group", value: group.title },
+        { label: "Collection size", value: String(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) },
+      ],
+    },
+  });
+  addEdge(edges, collectionId, iteratorId, "iterate", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
+  });
 
   addNode(nodes, {
     id: groupId,
-    position: { x: PIPELINE_X.group, y },
+    position: { x: PIPELINE_X.item, y },
     data: {
       title: group.title,
       subtitle: paired ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
-      detail: group.pairingReason || "Classified task group from Moodle resources.",
+      detail: group.pairingReason || "Selected task group from the iterator.",
       evidence: [
         `Sheet: ${group.sheet.name}`,
         group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
         `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
+        "Single selected item. PDF splitting starts from this node.",
       ],
-      hiddenItems: hiddenSiblingTitles,
-      inputs: [{ label: "task group", detail: "classified Moodle resources" }],
+      inputs: [{
+        cardinality: "single",
+        label: "task group",
+        detail: group.title,
+        valueType: "TaskGroup",
+      }],
       outputs: [
-        { label: "sheet pdf", detail: group.sheet.name },
-        { label: "solution pdf", detail: group.solution?.name ?? "missing", state: paired ? "available" : "missing" },
+        {
+          cardinality: "single",
+          label: "sheet pdf",
+          detail: group.sheet.name,
+          valueType: "PdfResource",
+        },
+        {
+          cardinality: group.solution ? "single" : "optional",
+          label: "solution pdf",
+          detail: group.solution?.name ?? "missing",
+          state: paired ? "available" : "missing",
+          valueType: "PdfResource",
+        },
       ],
-      outputPreview: `${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
+      outputPreview: hiddenSiblingItems?.length
+        ? [
+            `Selected: ${group.title}`,
+            `Sheet output: ${group.sheet.name}`,
+            `Solution output: ${group.solution?.name ?? "missing"}`,
+          ].join("\n")
+        : `${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
       problems: paired ? undefined : [{ label: "Solution missing", detail: "Codex can still build a task, but solution checks cannot be trusted.", severity: "warning" }],
       runScope: taskGroupRunScope(group),
       stepKind: "split",
       tone: paired ? "resource" : "warning",
       status: group.pairingStatus,
       meta: [
+        ...(hiddenSiblingItems?.length ? [
+          { label: "Mode", value: "map selected item" },
+          { label: "Selected group", value: group.title },
+        ] : []),
         { label: "Sheet", value: group.sheet.name },
         { label: "Solution", value: group.solution?.name ?? "missing" },
         { label: "Confidence", value: group.pairingConfidence || "unknown" },
       ],
     },
   });
-  addEdge(edges, "resource-set", groupId, "task group", {
-    sourceHandle: "out-0",
+  addEdge(edges, iteratorId, groupId, "selected item", {
+    edgeType: "straight",
+    sourceHandle: "out-2",
     targetHandle: "in-2",
   });
 
@@ -237,6 +374,107 @@ export function addTaskGroupLane({
   addEdge(edges, codexId, outputId, "publish", { edgeType: "straight", sourceHandle: "out-2", targetHandle: "in-2" });
 }
 
+export function buildTaskGroupProgressItems({
+  extractedLookup,
+  groups,
+  outputLookup,
+  runLookup,
+  selectedGroupId,
+}: {
+  extractedLookup: ExtractedLookup;
+  groups: CourseInventoryTaskGroup[];
+  outputLookup: OutputLookup;
+  runLookup: RunLookup;
+  selectedGroupId?: string;
+}): NonNullable<BlueprintNodeData["progressItems"]> {
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  return groups.map((group) => {
+    const sheetDocument = findExtractedDocument(extractedLookup, group.sheet.id);
+    const solutionDocument = group.solution ? findExtractedDocument(extractedLookup, group.solution.id) : null;
+    const sheetRun = findLatestRun(runLookup, group.sheet.id, extractionStages)
+      ?? findRunForExtractedDocument(runLookup, sheetDocument, extractionStages);
+    const solutionRun = group.solution
+      ? findLatestRun(runLookup, group.solution.id, extractionStages)
+        ?? findRunForExtractedDocument(runLookup, solutionDocument, extractionStages)
+      : null;
+    const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
+    const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
+    const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
+    const failedRun = [sheetRun, solutionRun, codexRun].find((run) => run?.status === "failed");
+    const runningRun = [sheetRun, solutionRun, codexRun].find((run) => run && (run.status === "running" || run.status === "queued"));
+    const status = failedRun
+      ? "failed"
+      : runningRun
+        ? "loading"
+        : taskOutputs.length > 0
+          ? "done"
+          : collectIssues.some((problem) => problem.severity === "error")
+            ? "failed"
+            : collectIssues.length > 0
+              ? "needs_review"
+              : "pending";
+    const detail = failedRun?.error
+      ?? (failedRun
+        ? `failed at ${STAGE_LABELS[failedRun.stage] ?? failedRun.stage}`
+        : taskOutputs.length > 0
+        ? `${taskOutputs.length} website task output${taskOutputs.length === 1 ? "" : "s"}`
+        : runningRun
+          ? `${runningRun.stage} ${runningRun.status}`
+          : collectIssues[0]?.detail
+            ?? group.pairingStatus.replaceAll("_", " "));
+    return {
+      detail,
+      id: group.id,
+      selected: group.id === selectedGroupId,
+      status,
+      title: group.title,
+    };
+  });
+}
+
+export function addScriptGroupCollection({
+  edges,
+  nodes,
+  resourceCount,
+  y,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+  resourceCount: number;
+  y: number;
+}) {
+  addNode(nodes, {
+    id: "script-groups-collection",
+    position: { x: PIPELINE_X.group, y },
+    data: {
+      title: "Script groups[]",
+      subtitle: `${resourceCount} script resource${resourceCount === 1 ? "" : "s"}`,
+      detail: "Collection boundary for classified script resources. It does not choose one item or split it into a PDF.",
+      evidence: [
+        `${resourceCount} script resource(s) loaded`,
+        "No implicit iteration happens in this node.",
+        "Downstream single-item work must pass through an explicit iterator node.",
+      ],
+      inputs: [{ cardinality: "array", label: "script groups[]", detail: `${resourceCount} classified lecture resources`, valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "array", label: "script groups[]", detail: `${resourceCount} classified lecture resources`, valueType: "ScriptGroup" }],
+      outputPreview: `ScriptGroup[] collection\nItems: ${resourceCount}`,
+      runScope: { kind: "course", label: "Whole course", resourceIds: [] },
+      stepKind: "split",
+      tone: "process",
+      status: "loaded",
+      meta: [
+        { label: "Cardinality", value: "array" },
+        { label: "Item type", value: "ScriptGroup" },
+        { label: "Items", value: String(resourceCount) },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", "script-groups-collection", "script groups[]", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
+  });
+}
+
 export function addScriptLane({
   activeRunIds,
   edges,
@@ -259,6 +497,7 @@ export function addScriptLane({
   y: number;
 }) {
   const baseId = `script-${stableId(resource.id)}`;
+  const iteratorId = `${baseId}-iterator`;
   const pdfId = `${baseId}-pdf`;
   const pagesId = `${baseId}-pages`;
   const sectionsId = `${baseId}-sections`;
@@ -266,22 +505,53 @@ export function addScriptLane({
   const selectedId = `${baseId}-selected`;
   const codexId = `${baseId}-codex`;
   const outputId = `${baseId}-output`;
-  const extractionRun = findLatestRun(runLookup, resource.id, ["extracted", "extract_text", "extract_pages"]);
   const extractedDocument = findExtractedDocument(extractedLookup, resource.id);
+  const extractionStages = ["extracted", "extract_text", "extract_pages"];
+  const extractionRun = findLatestRun(runLookup, resource.id, extractionStages)
+    ?? findRunForExtractedDocument(runLookup, extractedDocument, extractionStages);
   const codexRun = findLatestRun(runLookup, resource.id, ["curated", "codex_curate"]);
   const scriptOutputs = findScriptOutputs(outputLookup, resource.id);
   const selectedExtractionReady = Boolean((extractionRun && extractionRun.status !== "failed") || (extractedDocument && extractedDocument.status !== "failed"));
 
   addNode(nodes, {
+    id: iteratorId,
+    position: { x: PIPELINE_X.iterator, y },
+    data: {
+      title: "Script Group Iterator",
+      subtitle: `selected ${resource.name}`,
+      detail: "Explicit map boundary over script_groups[]. The selected item becomes the single script resource for this lane.",
+      evidence: [
+        `Selected item: ${resource.name}`,
+        "The iterator is the only place where the script group array is turned into one item.",
+      ],
+      inputs: [{ cardinality: "array", label: "script groups[]", detail: "classified lecture resources", valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "single", label: "script group", detail: resource.name, valueType: "ScriptGroup" }],
+      outputPreview: `Iterator over script_groups[]\nSelected: ${resource.name}`,
+      runScope: resourceRunScope(resource),
+      stepKind: "transform",
+      tone: "process",
+      status: "selected",
+      meta: [
+        { label: "Mode", value: "explicit iterator" },
+        { label: "Selected group", value: resource.name },
+      ],
+    },
+  });
+  addEdge(edges, "script-groups-collection", iteratorId, "iterate", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
+  });
+
+  addNode(nodes, {
     id: baseId,
-    position: { x: PIPELINE_X.group, y },
+    position: { x: PIPELINE_X.item, y },
     data: {
       title: `Script Group ${index + 1}`,
       subtitle: resource.name,
       detail: "Lecture material is processed into script sections rather than task outputs.",
       evidence: [`Resource: ${resource.name}`, `Reason: ${resource.reason || "lecture material"}`],
-      inputs: [{ label: "script group", detail: "classified Moodle resource" }],
-      outputs: [{ label: "script pdf", detail: resource.name }],
+      inputs: [{ cardinality: "single", label: "script group", detail: resource.name, valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "single", label: "script pdf", detail: resource.name, valueType: "PdfResource" }],
       outputPreview: resource.name,
       runScope: resourceRunScope(resource),
       stepKind: "transform",
@@ -293,7 +563,8 @@ export function addScriptLane({
       ],
     },
   });
-  addEdge(edges, "resource-set", baseId, "script group", {
+  addEdge(edges, iteratorId, baseId, "selected item", {
+    edgeType: "straight",
     sourceHandle: "out-2",
     targetHandle: "in-2",
   });
@@ -332,8 +603,8 @@ export function addScriptLane({
         : extractedDocument
           ? [`Document ${extractedDocument.id}`, `Run ${extractedDocument.runId}`, `${extractedDocument.pages.length} pages`]
           : ["No selected extraction run recorded"],
-      inputs: [{ label: "extraction variants", detail: resource.name }],
-      outputs: [{ label: "active extraction", detail: extractionRun?.engine ?? extractedDocument?.engine ?? "missing", state: extractionRun?.status ?? extractedDocument?.status ?? "missing" }],
+      inputs: [{ cardinality: "single", label: "extraction variants", detail: resource.name, valueType: "ExtractedDocument" }],
+      outputs: [{ cardinality: "single", label: "active extraction", detail: extractionRun?.engine ?? extractedDocument?.engine ?? "missing", state: extractionRun?.status ?? extractedDocument?.status ?? "missing", valueType: "ExtractedDocument" }],
       outputPreview: extractionRun
         ? runPreview(extractionRun)
         : extractedDocument
@@ -529,8 +800,8 @@ export function addReviewLane({
       subtitle: `${warnings.length} problem${warnings.length === 1 ? "" : "s"}`,
       detail: "Collects items that cannot safely continue without review.",
       evidence: warnings.map((warning) => warning.title),
-      inputs: warnings.map((warning) => ({ label: warning.title, state: warning.status })),
-      outputs: [{ label: "review queue", detail: `${warnings.length} items` }],
+      inputs: [{ cardinality: "array", label: "review items[]", detail: `${warnings.length} items`, valueType: "ReviewItem" }],
+      outputs: [{ cardinality: "array", label: "review queue[]", detail: `${warnings.length} items`, valueType: "ReviewItem" }],
       outputPreview: warnings.map((warning) => `${warning.title}: ${warning.detail}`).join("\n"),
       problems: warnings.map((warning) => ({
         label: warning.title,
@@ -568,10 +839,17 @@ function resourceRunScope(resource: CourseInventoryNode): BlueprintRunScope {
 }
 
 export type RunLookup = {
+  byId: Map<string, PipelineRunRecord>;
+  activeByResourceStage: Map<string, PipelineRunRecord>;
   byResourceStage: Map<string, PipelineRunRecord[]>;
 };
 
-export function buildRunLookup(runs: PipelineRunRecord[]): RunLookup {
+export function buildRunLookup(
+  runs: PipelineRunRecord[],
+  activeSelections: ActiveRunSelectionRecord[] = [],
+): RunLookup {
+  const byId = new Map(runs.map((run) => [run.id, run]));
+  const activeByResourceStage = new Map<string, PipelineRunRecord>();
   const byResourceStage = new Map<string, PipelineRunRecord[]>();
   for (const run of runs) {
     if (!run.resourceId) continue;
@@ -585,10 +863,27 @@ export function buildRunLookup(runs: PipelineRunRecord[]): RunLookup {
   for (const records of byResourceStage.values()) {
     records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
-  return { byResourceStage };
+  for (const selection of activeSelections) {
+    const run = byId.get(selection.activeRunId);
+    if (!run) continue;
+    const stage = selection.stage || run.stage;
+    const selectedResourceId = selection.resourceId || run.resourceId;
+    for (const key of resourceKeys(selectedResourceId)) {
+      activeByResourceStage.set(runKey(key, stage), run);
+    }
+  }
+  return { activeByResourceStage, byId, byResourceStage };
 }
 
 function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[]): PipelineRunRecord | null {
+  for (const stage of stages) {
+    for (const key of resourceKeys(resourceId)) {
+      const activeRun = runLookup.activeByResourceStage.get(runKey(key, stage));
+      const latestRun = runLookup.byResourceStage.get(runKey(key, stage))?.[0] ?? null;
+      if (activeRun && shouldPreferActiveRun(activeRun, latestRun)) return activeRun;
+      if (latestRun) return latestRun;
+    }
+  }
   for (const stage of stages) {
     for (const key of resourceKeys(resourceId)) {
       const resourceRun = runLookup.byResourceStage.get(runKey(key, stage))?.[0];
@@ -596,6 +891,25 @@ function findLatestRun(runLookup: RunLookup, resourceId: string, stages: string[
     }
   }
   return null;
+}
+
+function findRunForExtractedDocument(
+  runLookup: RunLookup,
+  document: ExtractedDocumentRecord | null,
+  stages: string[],
+): PipelineRunRecord | null {
+  if (!document?.runId) return null;
+  const run = runLookup.byId.get(document.runId);
+  if (!run || !stages.includes(run.stage)) return null;
+  return run;
+}
+
+function shouldPreferActiveRun(activeRun: PipelineRunRecord, latestRun: PipelineRunRecord | null): boolean {
+  if (!latestRun || latestRun.id === activeRun.id) return true;
+  if (latestRun.status === "running" || latestRun.status === "queued" || latestRun.status === "failed") {
+    return new Date(activeRun.createdAt).getTime() >= new Date(latestRun.createdAt).getTime();
+  }
+  return true;
 }
 
 function runKey(resourceId: string, stage: string): string {
@@ -736,13 +1050,28 @@ function addEdge(
 
 const PIPELINE_X = {
   group: 820,
-  pdf: 1260,
-  pages: 1740,
-  sections: 2220,
-  extraction: 2700,
-  collect: 3220,
-  codex: 3680,
-  output: 4140,
+  iterator: 1540,
+  item: 2260,
+  pdf: 2980,
+  pages: 3700,
+  sections: 4420,
+  extraction: 5140,
+  collect: 5860,
+  codex: 6580,
+  output: 7300,
 } as const;
 
 const PDF_PAIR_OFFSET = 190;
+
+function summarizeProgressItems(progressItems?: BlueprintNodeData["progressItems"]) {
+  if (!progressItems?.length) return null;
+  return progressItems.reduce(
+    (summary, item) => {
+      if (item.status === "done") summary.done += 1;
+      else if (item.status === "failed") summary.failed += 1;
+      else summary.pending += 1;
+      return summary;
+    },
+    { done: 0, failed: 0, pending: 0 },
+  );
+}

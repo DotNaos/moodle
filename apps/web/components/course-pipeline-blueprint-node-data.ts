@@ -202,7 +202,7 @@ export function codexNodeData({
         ],
         inputs: [{ label: "active input bundle", detail: inputLabel }],
         bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
-        outputs: [{ label: outputLabel, state: "needs_review" }],
+        outputs: [codexOutputPort(outputLabel, "needs_review")],
         outputPreview: outputPreview ?? "A website-ready draft is available downstream.",
         renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
         problems: checklistProblems,
@@ -224,7 +224,7 @@ export function codexNodeData({
       evidence: ["No Codex run has been recorded for this input yet."],
       inputs: [{ label: "active input bundle", detail: inputLabel }],
       bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
-      outputs: [{ label: outputLabel, state: "missing" }],
+      outputs: [codexOutputPort(outputLabel, "missing")],
       outputPreview: outputPreview ?? "Codex has not produced a draft for this lane yet.",
       renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
       problems: [
@@ -257,7 +257,7 @@ export function codexNodeData({
     ],
     inputs: [{ label: "active input bundle", detail: inputLabel }],
     bodyData: codexBodyData({ hasMaterializedOutput, inputLabel, outputLabel, outputPreview, run, subtitle }),
-    outputs: [{ label: outputLabel, state: run.status }],
+    outputs: [codexOutputPort(outputLabel, run.status)],
     outputPreview: outputPreview ?? runPreview(run),
     renderedFields: codexRenderedFields({ outputLabel, outputPreview }),
     problems,
@@ -425,6 +425,22 @@ function codexRenderedFields({
   }];
 }
 
+function codexOutputPort(label: string, state: string) {
+  const isArray = /\[\]/.test(label);
+  const lowerLabel = label.toLowerCase();
+  const valueType = lowerLabel.includes("script")
+    ? "ScriptSection"
+    : lowerLabel.includes("task")
+      ? "TaskDraft"
+      : undefined;
+  return {
+    cardinality: isArray ? "array" as const : "single" as const,
+    label,
+    state,
+    valueType,
+  };
+}
+
 export function finalOutputNodeData({
   runScope,
   sourceLabel,
@@ -450,8 +466,18 @@ export function finalOutputNodeData({
     subtitle: type === "task" ? "website task output" : "website script output",
     detail: "Final output is only valid when it renders like website content and remains source-linked.",
     evidence: [`Source lane: ${sourceLabel}`, "Output must validate images, LaTeX, encoding, and source mapping."],
-    inputs: [{ label: type === "task" ? "task draft" : "script draft", detail: sourceLabel }],
-    outputs: [{ label: type === "task" ? "published task" : "published script section", state: ready ? "ready" : "needs_review" }],
+    inputs: [{
+      cardinality: "array",
+      label: type === "task" ? "task draft[]" : "script section[]",
+      detail: sourceLabel,
+      valueType: type === "task" ? "TaskDraft" : "ScriptSection",
+    }],
+    outputs: [{
+      cardinality: "array",
+      label: type === "task" ? "published task[]" : "published script section[]",
+      state: ready ? "ready" : "needs_review",
+      valueType: type === "task" ? "WebsiteTask" : "WebsiteScriptSection",
+    }],
     outputPreview: ready
       ? `${title} is ready to render in the course UI.`
       : `${title} is not ready. Inspect upstream nodes before trusting the website output.`,
@@ -566,7 +592,7 @@ function extractedDocumentBodyData(
     type: "extracted_document",
     document: {
       id: document.id,
-      resource: document.resource,
+      resource: sanitizePreviewValue(document.resource),
       engine: document.engine,
       status: document.status,
       sourcePath: document.sourcePath ?? null,
@@ -601,6 +627,33 @@ function extractedDocumentBodyData(
         }
       : null,
   };
+}
+
+function sanitizePreviewValue<T>(value: T): T {
+  if (typeof value === "string") return redactSensitiveUrl(value) as T;
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizePreviewValue(item)) as T;
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    sanitized[key] = key.toLowerCase().includes("url")
+      ? redactSensitiveUrl(String(entry ?? ""))
+      : sanitizePreviewValue(entry);
+  }
+  return sanitized as T;
+}
+
+function redactSensitiveUrl(value: string): string {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    const sensitiveParams = ["token", "wstoken", "sesskey", "password", "key"];
+    for (const param of sensitiveParams) {
+      if (url.searchParams.has(param)) url.searchParams.set(param, "[redacted]");
+    }
+    return url.toString();
+  } catch {
+    return value.replace(/([?&](?:token|wstoken|sesskey|password|key)=)[^&\s]+/gi, "$1[redacted]");
+  }
 }
 
 function extractedDocumentMarkdown(document: PDFDocumentStructure, courseId?: string): string {

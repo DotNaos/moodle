@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildBlueprintGraph, type PipelineRunRecord, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
+import { buildBlueprintGraph, buildDisplayGraph, validateBlueprintGraph, type PipelineRunRecord, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
 import { codexNodeData } from "@/components/course-pipeline-blueprint-node-data";
 import { buildPipelineNodePreview } from "@/components/course-pipeline-node-preview";
 import { buildUpstreamTrace } from "@/components/course-pipeline-trace";
@@ -316,22 +316,64 @@ describe("course pipeline blueprint graph", () => {
   test("builds a blackbox conveyor graph from trace data", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
     const titles = graph.nodes.map((node) => node.data.title);
+    const visibleTitles = graph.nodes.filter((node) => !node.hidden).map((node) => node.data.title);
 
+    expect(validateBlueprintGraph(graph)).toEqual([]);
     expect(titles).toContain("Course");
     expect(titles).toContain("Resource Set");
-    expect(titles).toContain("Aufgabenblatt 01");
-    expect(titles).toContain("Aufgabenblatt 02");
+    expect(titles).toContain("Task groups[]");
     expect(titles).toContain("Collect Pair");
     expect(titles).toContain("Codex Transform");
     expect(titles).toContain("Output 1");
-    expect(titles).toContain("Output 2");
+    expect(titles).not.toContain("Output 2");
     expect(titles).toContain("Script Section 1");
     expect(titles).toContain("Review Collector");
+    expect(visibleTitles).toContain("MAP BuildTaskOutput");
+    expect(visibleTitles).toContain("Task Outputs[]");
+    expect(visibleTitles).toContain("MAP BuildScriptSection");
+    expect(visibleTitles).toContain("Script Sections[]");
+    expect(visibleTitles).not.toContain("Task Group Iterator");
+    expect(visibleTitles).not.toContain("Collect Pair");
+    expect(visibleTitles).not.toContain("Codex Transform");
 
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.stepKind).toBe("split");
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator")?.data.progressItems?.map((item) => item.title)).toEqual([
+      "Aufgabenblatt 01",
+      "Aufgabenblatt 02",
+    ]);
     expect(graph.nodes.find((node) => node.data.title === "Collect Pair")?.data.stepKind).toBe("collect");
     expect(graph.nodes.find((node) => node.data.title === "Codex Transform")?.data.stepKind).toBe("transform");
-    expect(graph.nodes.find((node) => node.data.title === "Output 2")?.data.problems?.map((problem) => problem.label)).toContain("Solution missing");
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator")?.data.progressItems?.find((item) => item.title === "Aufgabenblatt 02")?.status).toBe("needs_review");
+    const resourceSet = graph.nodes.find((node) => node.id === "resource-set");
+    expect(resourceSet?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+      ["script groups[]", "array", "ScriptGroup"],
+      ["review items[]", "array", "ReviewItem"],
+    ]);
+    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupsNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(taskGroupsNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(taskGroupsNode?.data.outputPreview).toContain("TaskGroup[] collection");
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    expect(iteratorNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(iteratorNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(iteratorNode?.data.outputPreview).toContain("Iterator over task_groups[]");
+    const selectedTaskGroupNode = graph.nodes.find((node) => node.id === "task-group-sheet-01");
+    expect(selectedTaskGroupNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(selectedTaskGroupNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["sheet pdf", "single", "PdfResource"],
+      ["solution pdf", "single", "PdfResource"],
+    ]);
     const nodeTitles = new Map(graph.nodes.map((node) => [node.id, node.data.title]));
     const directTaskGroupToOutput = graph.edges.some((edge) => {
       const sourceTitle = nodeTitles.get(edge.source) ?? "";
@@ -342,31 +384,127 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.some((node) => node.data.tone === "warning")).toBe(true);
   });
 
-  test("adds readable stage columns and keeps conveyor edges moving right", () => {
+  test("renders map function drilldown with single-item arguments instead of an iterator node", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
+    const displayGraph = buildDisplayGraph({ edges: graph.edges, functionView: "task-output-map", nodes: graph.nodes });
+    const titles = displayGraph.nodes.map((node) => node.data.title);
+    const argumentNode = displayGraph.nodes.find((node) => node.id === "function-task-arguments");
+    const returnNode = displayGraph.nodes.find((node) => node.id === "function-task-return");
+
+    expect(titles).toContain("Arguments");
+    expect(titles).toContain("Return");
+    expect(titles).not.toContain("Task groups[]");
+    expect(titles).not.toContain("Task Group Iterator");
+    expect(argumentNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(returnNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task output", "single", "TaskOutput"],
+    ]);
+    expect(displayGraph.edges.some((edge) => edge.source === "function-task-arguments" && edge.target === "task-group-sheet-01")).toBe(true);
+  });
+
+  test("fails workflow validation when an array port is wired into a single-value consumer", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
+    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupsNode).toBeDefined();
+    if (taskGroupsNode?.type === "blueprint") {
+      taskGroupsNode.data.inputs = [{ cardinality: "single", label: "task group", valueType: "TaskGroup" }];
+    }
+
+    const issues = validateBlueprintGraph(graph);
+    expect(issues.some((issue) => issue.label === "Invalid cardinality")).toBe(true);
+    expect(issues.some((issue) => issue.detail.includes("explicit map"))).toBe(true);
+  });
+
+  test("uses the active run selection instead of a newer failed run for the main lane state", () => {
+    const selectedRunId = "run-curated-active-success";
+    const supersededRunId = "run-curated-newer-failed";
+    const runsWithActiveCuratedSelection: PipelineRunsResponse = {
+      activeSelections: [{
+        activeRunId: selectedRunId,
+        reason: "latest successful run",
+        resourceId: "947711",
+        selectedAt: "2026-06-13T07:08:00Z",
+        sourceId: "source:moodle-course:22584",
+        stage: "curated",
+      }],
+      courseId: "22584",
+      runs: [
+        {
+          artifactRefs: [
+            { id: "artifact-page-render", kind: "page_render" },
+            { id: "artifact-element-accountability", kind: "element_accountability" },
+            { id: "artifact-render-preview", kind: "rendered_preview" },
+          ],
+          artifactRoot: "study-pipeline/course-22584/run-curated-active",
+          configHash: "config:curated:codex:gpt-5.5:medium",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:08:00Z",
+          engine: "codex",
+          id: selectedRunId,
+          ownership: "user_owned",
+          resourceId: "947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "curated",
+          status: "succeeded",
+          curationChecklist: {
+            items: [
+              { evidenceArtifactId: "artifact-page-render", id: "page_images_reviewed", label: "Page images reviewed", status: "checked" },
+              { id: "extracted_elements_reviewed", label: "Extracted PDF elements reviewed", status: "checked" },
+              { evidenceArtifactId: "artifact-element-accountability", id: "element_accountability_complete", label: "Element accountability complete", status: "checked" },
+              { id: "layout_reconstructed", label: "Layout reconstructed", status: "checked" },
+              { evidenceArtifactId: "artifact-render-preview", id: "rendered_preview_reviewed", label: "Rendered preview reviewed", status: "checked" },
+              { id: "source_mapping_complete", label: "Source mapping complete", status: "checked" },
+            ],
+            renderPreviewArtifactId: "artifact-render-preview",
+            status: "complete",
+          },
+          elementDecisions: [{
+            elementKind: "paragraph",
+            outcome: "used",
+            sourceElementId: "block-1",
+          }],
+        },
+        {
+          artifactRoot: "study-pipeline/course-22584/run-curated-failed",
+          configHash: "config:curated:codex:gpt-5.5:medium",
+          courseId: "22584",
+          createdAt: "2026-06-13T07:06:00Z",
+          engine: "codex",
+          error: "element accountability incomplete",
+          id: supersededRunId,
+          ownership: "user_owned",
+          resourceId: "947711",
+          sourceId: "source:moodle-course:22584",
+          stage: "curated",
+          status: "failed",
+        },
+      ],
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments,
+      inventory,
+      runs: runsWithActiveCuratedSelection,
+      status,
+      taskView,
+    });
+    const codexNode = graph.nodes.find((node) => node.id === "task-group-sheet-01-codex");
+
+    expect(codexNode?.data.status).toBe("succeeded");
+    expect(codexNode?.data.active).toBe(true);
+    expect(codexNode?.data.evidence).toContain(`Run ${selectedRunId}`);
+    expect(codexNode?.data.evidence).not.toContain(`Run ${supersededRunId}`);
+    expect(codexNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Run failed");
+  });
+
+  test("keeps the visible conveyor moving right without stage containers", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
-    const stageIds = [
-      "stage-course",
-      "stage-resources",
-      "stage-groups",
-      "stage-pdfs",
-      "stage-pages",
-      "stage-sections",
-      "stage-extraction",
-      "stage-collect",
-      "stage-codex",
-      "stage-output",
-    ];
     const positions = new Map(graph.nodes.map((node) => [node.id, node.position.x]));
+    const visibleFrames = graph.nodes.filter((node) => node.type === "frame" && !node.hidden);
 
-    for (const stageId of stageIds) {
-      const stage = graph.nodes.find((node) => node.id === stageId);
-      expect(stage?.type).toBe("frame");
-      expect(stage?.data.frame?.variant).toBe("stage");
-    }
-
-    for (let index = 1; index < stageIds.length; index += 1) {
-      expect(positions.get(stageIds[index]) ?? 0).toBeGreaterThan(positions.get(stageIds[index - 1]) ?? 0);
-    }
+    expect(visibleFrames).toHaveLength(0);
 
     for (const edge of graph.edges) {
       expect(positions.get(edge.target) ?? 0).toBeGreaterThanOrEqual(positions.get(edge.source) ?? 0);
@@ -399,7 +537,7 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.problems?.[0]?.label).toBe("Inventory missing");
   });
 
-  test("sorts repeated task groups naturally and keeps hidden groups inside the first lane", () => {
+  test("sorts repeated task groups naturally and keeps array iteration explicit", () => {
     const manyTaskGroups: CourseInventoryResponse = {
       ...inventory,
       summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
@@ -438,15 +576,100 @@ describe("course pipeline blueprint graph", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory: manyTaskGroups, runs: null, status, taskView: null });
     const titles = graph.nodes.map((node) => node.data.title);
 
+    expect(titles).toContain("Task groups[]");
+    expect(titles).toContain("Task Group Iterator");
     expect(titles).toContain("Aufgabenblatt 1");
     expect(titles).not.toContain("Aufgabenblatt 12");
     expect(titles).not.toContain("Aufgabenblatt 10");
     expect(titles).not.toContain("2 ... 11 collapsed");
 
-    const firstTaskGroup = graph.nodes.find((node) => node.data.title === "Aufgabenblatt 1");
-    expect(firstTaskGroup?.data.hiddenItems).toHaveLength(11);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]).toBe("Aufgabenblatt 2");
-    expect(firstTaskGroup?.data.hiddenItems?.at(-1)).toBe("Aufgabenblatt 12");
+    const taskGroupCollection = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupCollection?.data.hiddenItems).toBe(undefined);
+    expect(taskGroupCollection?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    expect(iteratorNode?.data.hiddenItems).toHaveLength(12);
+    expect(iteratorNode?.data.hiddenItems?.[0]?.id).toBe("sheet-1");
+    expect(iteratorNode?.data.hiddenItems?.[0]?.selected).toBe(true);
+    expect(iteratorNode?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 1");
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.id).toBe("sheet-12");
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.selected).toBe(false);
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.title).toBe("Aufgabenblatt 12");
+    expect(iteratorNode?.data.progressItems?.map((item) => item.title)).toEqual([
+      "Aufgabenblatt 1",
+      "Aufgabenblatt 2",
+      "Aufgabenblatt 3",
+      "Aufgabenblatt 4",
+      "Aufgabenblatt 5",
+      "Aufgabenblatt 6",
+      "Aufgabenblatt 7",
+      "Aufgabenblatt 8",
+      "Aufgabenblatt 9",
+      "Aufgabenblatt 10",
+      "Aufgabenblatt 11",
+      "Aufgabenblatt 12",
+    ]);
+  });
+
+  test("uses the selected task group for the detail lane without rendering sibling lanes", () => {
+    const manyTaskGroups: CourseInventoryResponse = {
+      ...inventory,
+      summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
+      taskGroups: Array.from({ length: 12 }, (_, index) => {
+        const number = index + 1;
+        return {
+          id: `sheet-${number}`,
+          pairingConfidence: "high",
+          pairingReason: "Sheet and solution numbers match.",
+          pairingStatus: "paired" as const,
+          sheet: {
+            bucket: "task_sheet" as const,
+            confidence: "high" as const,
+            id: `sheet-${number}`,
+            name: `Aufgabenblatt ${number}`,
+            reason: "Task sheet",
+            role: "sheet" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          solution: {
+            bucket: "solution" as const,
+            confidence: "high" as const,
+            id: `solution-${number}`,
+            name: `Aufgabenblatt ${number} Lösung`,
+            reason: "Solution sheet",
+            role: "solution" as const,
+            sectionName: "Einführung",
+            type: "pdf",
+          },
+          title: `Aufgabenblatt ${number}`,
+        };
+      }).reverse(),
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments: null,
+      inventory: manyTaskGroups,
+      runs: null,
+      selectedTaskGroupIds: ["sheet-2"],
+      status,
+      taskView: null,
+    });
+    const titles = graph.nodes.map((node) => node.data.title);
+
+    expect(titles).toContain("Task groups[]");
+    expect(titles).toContain("Task Group Iterator");
+    expect(titles).not.toContain("Aufgabenblatt 1");
+    expect(titles).toContain("Aufgabenblatt 2");
+    expect(titles).not.toContain("Aufgabenblatt 12");
+
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    const selectedItem = iteratorNode?.data.hiddenItems?.find((item) => item.id === "sheet-2");
+    expect(selectedItem?.selected).toBe(true);
+    expect(selectedItem?.title).toBe("Aufgabenblatt 2");
+    expect(iteratorNode?.data.subtitle).toContain("selected Aufgabenblatt 2");
+    expect(graph.nodes.find((node) => node.data.title === "Sheet PDF")?.data.subtitle).toBe("Aufgabenblatt 2");
   });
 
   test("does not project global runs onto resource-specific extraction nodes", () => {
@@ -458,6 +681,81 @@ describe("course pipeline blueprint graph", () => {
 
     expect(sheetExtraction?.data.status).toBe("missing");
     expect(sheetExtraction?.data.problems?.map((problem) => problem.label)).toContain("No extraction run");
+  });
+
+  test("uses an extracted document run id to attach course-level extraction runs", () => {
+    const documentRunId = extractedDocuments.documents[0]?.runId ?? "";
+    const runsWithCourseLevelExtraction: PipelineRunsResponse = {
+      activeSelections: [{
+        activeRunId: documentRunId,
+        reason: "course-wide extraction selected",
+        selectedAt: "2026-06-13T07:05:00Z",
+        sourceId: "source:moodle-course:22584",
+        stage: "extracted",
+      }],
+      courseId: "22584",
+      runs: [{
+        artifactRefs: [{ id: "document-947711", kind: "extracted_document", metadata: { chars: 240 } }],
+        artifactRoot: "study-pipeline/course-22584/run-extracted-course",
+        configHash: "config:extracted:pdftotext:default",
+        courseId: "22584",
+        createdAt: "2026-06-13T07:03:00Z",
+        engine: "baseline-pdftotext-pdftoppm",
+        id: documentRunId,
+        ownership: "shared",
+        sourceId: "source:moodle-course:22584",
+        stage: "extracted",
+        status: "succeeded",
+      }],
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments,
+      inventory,
+      runs: runsWithCourseLevelExtraction,
+      status,
+      taskView,
+    });
+    const sheetExtraction = graph.nodes.find((node) => node.id === "task-group-sheet-01-sheet-extraction");
+
+    expect(sheetExtraction?.data.status).toBe("succeeded");
+    expect(sheetExtraction?.data.evidence).toContain(`Run ${documentRunId}`);
+    expect(sheetExtraction?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Run record missing");
+  });
+
+  test("redacts Moodle tokens from pipeline raw preview data", () => {
+    const tokenizedInventory: CourseInventoryResponse = {
+      ...inventory,
+      taskGroups: inventory.taskGroups.map((group) => ({
+        ...group,
+        sheet: {
+          ...group.sheet,
+          url: "https://moodle.fhgr.ch/pluginfile.php/file.pdf?forcedownload=1&token=secret-token",
+        },
+      })),
+    };
+    const tokenizedDocuments: ExtractedDocumentsResponse = {
+      ...extractedDocuments,
+      documents: extractedDocuments.documents.map((document) => ({
+        ...document,
+        resource: {
+          ...document.resource,
+          url: "https://moodle.fhgr.ch/pluginfile.php/file.pdf?wstoken=secret-token",
+        } as typeof document.resource,
+      })),
+    };
+
+    const graph = buildBlueprintGraph({
+      extractedDocuments: tokenizedDocuments,
+      inventory: tokenizedInventory,
+      runs: resourceRuns,
+      status,
+      taskView,
+    });
+    const serialized = JSON.stringify(graph.nodes.map((node) => node.data.bodyData));
+
+    expect(serialized).not.toContain("secret-token");
+    expect(serialized).toContain("%5Bredacted%5D");
   });
 
   test("attaches OCR engine variants to resource extraction nodes", () => {
@@ -655,6 +953,21 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.jsonText).toContain('"sourceResourceId"');
     expect(preview.jsonText).not.toContain('"promptMarkdown"');
     expect(preview.jsonText).not.toContain("codex-improved");
+  });
+
+  test("renders explicit task-group iterator as compact progress summaries instead of raw JSON", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView });
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    if (!iteratorNode || iteratorNode.type !== "blueprint") throw new Error("Task group iterator missing");
+
+    const preview = buildPipelineNodePreview(iteratorNode.data);
+
+    expect(preview.kind).toBe("markdown");
+    if (preview.kind !== "markdown") throw new Error("Expected markdown preview");
+    expect(preview.text).toContain("Selected: Aufgabenblatt 01");
+    expect(preview.text).toContain("done:");
+    expect(preview.text).not.toContain('"title"');
+    expect(preview.text).not.toContain('"outputs"');
   });
 
   test("renders Codex output previews as typed fields when the output is materialized", () => {
@@ -958,7 +1271,7 @@ describe("course pipeline blueprint graph", () => {
       "Pages",
       "Sheet PDF",
       "Solution PDF",
-      "Aufgabenblatt 01",
+      "Task groups[]",
       "Resource Set",
       "Course",
     ]) {
