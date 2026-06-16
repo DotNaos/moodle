@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildBlueprintGraph, type PipelineRunRecord, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
+import { buildBlueprintGraph, buildDisplayGraph, validateBlueprintGraph, type PipelineRunRecord, type PipelineRunsResponse } from "@/components/course-pipeline-blueprint";
 import { codexNodeData } from "@/components/course-pipeline-blueprint-node-data";
 import { buildPipelineNodePreview } from "@/components/course-pipeline-node-preview";
 import { buildUpstreamTrace } from "@/components/course-pipeline-trace";
@@ -316,7 +316,9 @@ describe("course pipeline blueprint graph", () => {
   test("builds a blackbox conveyor graph from trace data", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
     const titles = graph.nodes.map((node) => node.data.title);
+    const visibleTitles = graph.nodes.filter((node) => !node.hidden).map((node) => node.data.title);
 
+    expect(validateBlueprintGraph(graph)).toEqual([]);
     expect(titles).toContain("Course");
     expect(titles).toContain("Resource Set");
     expect(titles).toContain("Task groups[]");
@@ -326,15 +328,52 @@ describe("course pipeline blueprint graph", () => {
     expect(titles).not.toContain("Output 2");
     expect(titles).toContain("Script Section 1");
     expect(titles).toContain("Review Collector");
+    expect(visibleTitles).toContain("MAP BuildTaskOutput");
+    expect(visibleTitles).toContain("Task Outputs[]");
+    expect(visibleTitles).toContain("MAP BuildScriptSection");
+    expect(visibleTitles).toContain("Script Sections[]");
+    expect(visibleTitles).not.toContain("Task Group Iterator");
+    expect(visibleTitles).not.toContain("Collect Pair");
+    expect(visibleTitles).not.toContain("Codex Transform");
 
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.stepKind).toBe("split");
-    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]")?.data.progressItems?.map((item) => item.title)).toEqual([
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator")?.data.progressItems?.map((item) => item.title)).toEqual([
       "Aufgabenblatt 01",
       "Aufgabenblatt 02",
     ]);
     expect(graph.nodes.find((node) => node.data.title === "Collect Pair")?.data.stepKind).toBe("collect");
     expect(graph.nodes.find((node) => node.data.title === "Codex Transform")?.data.stepKind).toBe("transform");
-    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]")?.data.progressItems?.find((item) => item.title === "Aufgabenblatt 02")?.status).toBe("needs_review");
+    expect(graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator")?.data.progressItems?.find((item) => item.title === "Aufgabenblatt 02")?.status).toBe("needs_review");
+    const resourceSet = graph.nodes.find((node) => node.id === "resource-set");
+    expect(resourceSet?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+      ["script groups[]", "array", "ScriptGroup"],
+      ["review items[]", "array", "ReviewItem"],
+    ]);
+    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupsNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(taskGroupsNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(taskGroupsNode?.data.outputPreview).toContain("TaskGroup[] collection");
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    expect(iteratorNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    expect(iteratorNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(iteratorNode?.data.outputPreview).toContain("Iterator over task_groups[]");
+    const selectedTaskGroupNode = graph.nodes.find((node) => node.id === "task-group-sheet-01");
+    expect(selectedTaskGroupNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(selectedTaskGroupNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["sheet pdf", "single", "PdfResource"],
+      ["solution pdf", "single", "PdfResource"],
+    ]);
     const nodeTitles = new Map(graph.nodes.map((node) => [node.id, node.data.title]));
     const directTaskGroupToOutput = graph.edges.some((edge) => {
       const sourceTitle = nodeTitles.get(edge.source) ?? "";
@@ -343,6 +382,39 @@ describe("course pipeline blueprint graph", () => {
     });
     expect(directTaskGroupToOutput).toBe(false);
     expect(graph.nodes.some((node) => node.data.tone === "warning")).toBe(true);
+  });
+
+  test("renders map function drilldown with single-item arguments instead of an iterator node", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
+    const displayGraph = buildDisplayGraph({ edges: graph.edges, functionView: "task-output-map", nodes: graph.nodes });
+    const titles = displayGraph.nodes.map((node) => node.data.title);
+    const argumentNode = displayGraph.nodes.find((node) => node.id === "function-task-arguments");
+    const returnNode = displayGraph.nodes.find((node) => node.id === "function-task-return");
+
+    expect(titles).toContain("Arguments");
+    expect(titles).toContain("Return");
+    expect(titles).not.toContain("Task groups[]");
+    expect(titles).not.toContain("Task Group Iterator");
+    expect(argumentNode?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task group", "single", "TaskGroup"],
+    ]);
+    expect(returnNode?.data.inputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task output", "single", "TaskOutput"],
+    ]);
+    expect(displayGraph.edges.some((edge) => edge.source === "function-task-arguments" && edge.target === "task-group-sheet-01")).toBe(true);
+  });
+
+  test("fails workflow validation when an array port is wired into a single-value consumer", () => {
+    const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView: null });
+    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupsNode).toBeDefined();
+    if (taskGroupsNode?.type === "blueprint") {
+      taskGroupsNode.data.inputs = [{ cardinality: "single", label: "task group", valueType: "TaskGroup" }];
+    }
+
+    const issues = validateBlueprintGraph(graph);
+    expect(issues.some((issue) => issue.label === "Invalid cardinality")).toBe(true);
+    expect(issues.some((issue) => issue.detail.includes("explicit map"))).toBe(true);
   });
 
   test("uses the active run selection instead of a newer failed run for the main lane state", () => {
@@ -427,31 +499,12 @@ describe("course pipeline blueprint graph", () => {
     expect(codexNode?.data.problems?.map((problem) => problem.label) ?? []).not.toContain("Run failed");
   });
 
-  test("adds readable stage columns and keeps conveyor edges moving right", () => {
+  test("keeps the visible conveyor moving right without stage containers", () => {
     const graph = buildBlueprintGraph({ extractedDocuments, inventory, runs: resourceRuns, status, taskView });
-    const stageIds = [
-      "stage-course",
-      "stage-resources",
-      "stage-groups",
-      "stage-pdfs",
-      "stage-pages",
-      "stage-sections",
-      "stage-extraction",
-      "stage-collect",
-      "stage-codex",
-      "stage-output",
-    ];
     const positions = new Map(graph.nodes.map((node) => [node.id, node.position.x]));
+    const visibleFrames = graph.nodes.filter((node) => node.type === "frame" && !node.hidden);
 
-    for (const stageId of stageIds) {
-      const stage = graph.nodes.find((node) => node.id === stageId);
-      expect(stage?.type).toBe("frame");
-      expect(stage?.data.frame?.variant).toBe("stage");
-    }
-
-    for (let index = 1; index < stageIds.length; index += 1) {
-      expect(positions.get(stageIds[index]) ?? 0).toBeGreaterThan(positions.get(stageIds[index - 1]) ?? 0);
-    }
+    expect(visibleFrames).toHaveLength(0);
 
     for (const edge of graph.edges) {
       expect(positions.get(edge.target) ?? 0).toBeGreaterThanOrEqual(positions.get(edge.source) ?? 0);
@@ -484,7 +537,7 @@ describe("course pipeline blueprint graph", () => {
     expect(graph.nodes.find((node) => node.id === "resource-set")?.data.problems?.[0]?.label).toBe("Inventory missing");
   });
 
-  test("sorts repeated task groups naturally and keeps the array inside one task-group node", () => {
+  test("sorts repeated task groups naturally and keeps array iteration explicit", () => {
     const manyTaskGroups: CourseInventoryResponse = {
       ...inventory,
       summary: { ...inventory.summary, taskGroups: 12, pairedTaskGroups: 12, missingSolutionGroups: 0, totalResources: 24 },
@@ -524,19 +577,26 @@ describe("course pipeline blueprint graph", () => {
     const titles = graph.nodes.map((node) => node.data.title);
 
     expect(titles).toContain("Task groups[]");
+    expect(titles).toContain("Task Group Iterator");
+    expect(titles).toContain("Aufgabenblatt 1");
     expect(titles).not.toContain("Aufgabenblatt 12");
     expect(titles).not.toContain("Aufgabenblatt 10");
     expect(titles).not.toContain("2 ... 11 collapsed");
 
-    const firstTaskGroup = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
-    expect(firstTaskGroup?.data.hiddenItems).toHaveLength(12);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.id).toBe("sheet-1");
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.selected).toBe(true);
-    expect(firstTaskGroup?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 1");
-    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.id).toBe("sheet-12");
-    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.selected).toBe(false);
-    expect(firstTaskGroup?.data.hiddenItems?.at(-1)?.title).toBe("Aufgabenblatt 12");
-    expect(firstTaskGroup?.data.progressItems?.map((item) => item.title)).toEqual([
+    const taskGroupCollection = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
+    expect(taskGroupCollection?.data.hiddenItems).toBe(undefined);
+    expect(taskGroupCollection?.data.outputs.map((port) => [port.label, port.cardinality, port.valueType])).toEqual([
+      ["task groups[]", "array", "TaskGroup"],
+    ]);
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    expect(iteratorNode?.data.hiddenItems).toHaveLength(12);
+    expect(iteratorNode?.data.hiddenItems?.[0]?.id).toBe("sheet-1");
+    expect(iteratorNode?.data.hiddenItems?.[0]?.selected).toBe(true);
+    expect(iteratorNode?.data.hiddenItems?.[0]?.title).toBe("Aufgabenblatt 1");
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.id).toBe("sheet-12");
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.selected).toBe(false);
+    expect(iteratorNode?.data.hiddenItems?.at(-1)?.title).toBe("Aufgabenblatt 12");
+    expect(iteratorNode?.data.progressItems?.map((item) => item.title)).toEqual([
       "Aufgabenblatt 1",
       "Aufgabenblatt 2",
       "Aufgabenblatt 3",
@@ -599,15 +659,16 @@ describe("course pipeline blueprint graph", () => {
     const titles = graph.nodes.map((node) => node.data.title);
 
     expect(titles).toContain("Task groups[]");
+    expect(titles).toContain("Task Group Iterator");
     expect(titles).not.toContain("Aufgabenblatt 1");
-    expect(titles).not.toContain("Aufgabenblatt 2");
+    expect(titles).toContain("Aufgabenblatt 2");
     expect(titles).not.toContain("Aufgabenblatt 12");
 
-    const firstTaskGroup = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
-    const selectedItem = firstTaskGroup?.data.hiddenItems?.find((item) => item.id === "sheet-2");
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    const selectedItem = iteratorNode?.data.hiddenItems?.find((item) => item.id === "sheet-2");
     expect(selectedItem?.selected).toBe(true);
     expect(selectedItem?.title).toBe("Aufgabenblatt 2");
-    expect(firstTaskGroup?.data.subtitle).toContain("selected Aufgabenblatt 2");
+    expect(iteratorNode?.data.subtitle).toContain("selected Aufgabenblatt 2");
     expect(graph.nodes.find((node) => node.data.title === "Sheet PDF")?.data.subtitle).toBe("Aufgabenblatt 2");
   });
 
@@ -894,12 +955,12 @@ describe("course pipeline blueprint graph", () => {
     expect(preview.jsonText).not.toContain("codex-improved");
   });
 
-  test("renders task-group array nodes as compact progress summaries instead of raw JSON", () => {
+  test("renders explicit task-group iterator as compact progress summaries instead of raw JSON", () => {
     const graph = buildBlueprintGraph({ extractedDocuments: null, inventory, runs, status, taskView });
-    const taskGroupsNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task groups[]");
-    if (!taskGroupsNode || taskGroupsNode.type !== "blueprint") throw new Error("Task groups node missing");
+    const iteratorNode = graph.nodes.find((node) => node.type === "blueprint" && node.data.title === "Task Group Iterator");
+    if (!iteratorNode || iteratorNode.type !== "blueprint") throw new Error("Task group iterator missing");
 
-    const preview = buildPipelineNodePreview(taskGroupsNode.data);
+    const preview = buildPipelineNodePreview(iteratorNode.data);
 
     expect(preview.kind).toBe("markdown");
     if (preview.kind !== "markdown") throw new Error("Expected markdown preview");

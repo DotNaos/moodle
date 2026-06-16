@@ -16,15 +16,11 @@ import {
   markPlanStep,
   markRunningPlanStepFailed,
   markRunningPlanStepWaitingForStatus,
-  PipelineRunControl,
   planRequestBody,
   planStepsFromResponse,
-  resolveRunScope,
   stagesForPlan,
   type PipelinePlanResponse,
   type PipelinePlanStep,
-  type PipelineRunMode,
-  type PipelineScopeMode,
   type PipelineStageId,
 } from "@/components/course-pipeline-run-control";
 import type { ExtractedDocumentsResponse } from "@/components/extracted-document-inspector";
@@ -69,10 +65,6 @@ export function CoursePipelineInspector({
   const [loading, setLoading] = useState(false);
   const [selectingRunId, setSelectingRunId] = useState<string | null>(null);
   const [rerunningEngine, setRerunningEngine] = useState<string | null>(null);
-  const [selectedScope, setSelectedScope] = useState<BlueprintRunScope | null>(null);
-  const [runMode, setRunMode] = useState<PipelineRunMode>("from");
-  const [runScopeMode, setRunScopeMode] = useState<PipelineScopeMode>("selected");
-  const [runStartStage, setRunStartStage] = useState<PipelineStageId>("extracted");
   const [runPlan, setRunPlan] = useState<PipelinePlanStep[]>([]);
   const [runningPlanId, setRunningPlanId] = useState<string | null>(null);
   const [monitoringDetachedPlanId, setMonitoringDetachedPlanId] = useState<string | null>(null);
@@ -97,11 +89,17 @@ export function CoursePipelineInspector({
     statusLoaded: Boolean(status),
   });
   const redirectingToConnect = gate.kind === "blocked" && shouldRedirectToMoodleConnect(gate.issue);
-  const displayedRunScope = useMemo(() => {
-    const scope = resolveRunScope({ mode: runScopeMode, selectedScope });
-    const normalized = normalizeScopeForPlan(scope, stagesForPlan(runMode, runStartStage), inventory);
-    return normalized.kind === "course" ? selectedScope : normalized;
-  }, [inventory, runMode, runScopeMode, runStartStage, selectedScope]);
+  const codexConfig = useMemo(() => ({
+    connected: codexModels.connected,
+    connecting: codexModels.connecting,
+    deviceCode: codexModels.deviceCode,
+    error: codexModels.error,
+    loading: codexModels.loading || codexModels.authChecking,
+    modelOptions: codexModels.models,
+    onConnect: () => void codexModels.connect(),
+    onModelChange: codexModels.setSelectedModel,
+    selectedModel: codexModels.selectedModel,
+  }), [codexModels]);
 
   useEffect(() => {
     void loadInspectorData();
@@ -270,16 +268,11 @@ export function CoursePipelineInspector({
 
   async function runPipelinePlan(override?: BlueprintRunRequest) {
     const runId = makeClientRunId();
-    const nextMode = override?.mode ?? runMode;
-    const nextStartStage = override?.startStage ?? runStartStage;
+    const nextMode = override?.mode ?? "from";
+    const nextStartStage = override?.startStage ?? "extracted";
     const stages = stagesForPlan(nextMode, nextStartStage);
-    const initialScope = override?.scope ?? resolveRunScope({ mode: runScopeMode, selectedScope });
+    const initialScope = override?.scope ?? { kind: "course", label: "Whole course", resourceIds: [] };
     const scope = normalizeScopeForPlan(initialScope, stages, inventory);
-    if (override) {
-      setRunMode(nextMode);
-      setRunStartStage(nextStartStage);
-      setRunScopeMode(scope.kind === "course" ? "course" : "selected");
-    }
     setRunningPlanId(runId);
     setMonitoringDetachedPlanId(null);
     setError(null);
@@ -363,34 +356,12 @@ export function CoursePipelineInspector({
 
           {gate.kind === "ready" ? (
             <>
-              <PipelineRunControl
-                codexModel={codexModels.selectedModel}
-                codexModelOptions={codexModels.models}
-                codexConnected={codexModels.connected}
-                codexConnecting={codexModels.connecting}
-                codexDeviceCode={codexModels.deviceCode}
-                codexError={codexModels.error}
-                codexModelsLoading={codexModels.loading || codexModels.authChecking}
-                disabled={Boolean(runningPlanId) || Boolean(monitoringDetachedPlanId) || loading}
-                mode={runMode}
-                onCodexConnect={() => void codexModels.connect()}
-                onCodexModelChange={codexModels.setSelectedModel}
-                onModeChange={setRunMode}
-                onRun={() => void runPipelinePlan()}
-                onScopeModeChange={setRunScopeMode}
-                onStartStageChange={setRunStartStage}
-                plan={runPlan}
-                scopeMode={runScopeMode}
-                selectedScope={displayedRunScope}
-                startStage={runStartStage}
-              />
-
               <CoursePipelineBlueprint
+                codexConfig={codexConfig}
                 extractedDocuments={extractedDocuments}
                 inventory={inventory}
                 onRerunExtraction={(engine) => void rerunExtracted(engine)}
                 onRunNode={(request) => void runPipelinePlan(request)}
-                onSelectedScopeChange={setSelectedScope}
                 onSelectRun={(runId) => void selectActiveRun(runId)}
                 rerunningEngine={rerunningEngine}
                 runningNodeAction={Boolean(runningPlanId) || Boolean(monitoringDetachedPlanId) || loading}

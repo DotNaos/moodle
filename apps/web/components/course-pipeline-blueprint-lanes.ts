@@ -67,6 +67,8 @@ export function addTaskGroupLane({
   y: number;
 }) {
   const baseId = stableId(group.id);
+  const collectionId = "task-groups-collection";
+  const iteratorId = "task-groups-iterator";
   const groupId = `task-group-${baseId}`;
   const sheetPdfId = `${groupId}-sheet-pdf`;
   const solutionPdfId = `${groupId}-solution-pdf`;
@@ -92,53 +94,165 @@ export function addTaskGroupLane({
   const codexRun = findLatestRun(runLookup, group.sheet.id, ["curated", "codex_curate"]);
   const taskOutputs = findTaskOutputs(outputLookup, group.sheet.id);
   const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
+  const progressSummary = summarizeProgressItems(progressItems);
+
+  addNode(nodes, {
+    id: collectionId,
+    position: { x: PIPELINE_X.group, y },
+    data: {
+      title: "Task groups[]",
+      subtitle: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} task group${(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) === 1 ? "" : "s"}`,
+      detail: hiddenSiblingItems?.length
+        ? "Collection boundary for classified task groups. It does not choose one item or split it into PDFs."
+        : "Collection boundary for one classified task group.",
+      evidence: [
+        `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} task group(s) loaded`,
+        "No implicit iteration happens in this node.",
+        "Downstream single-item work must pass through the explicit iterator node.",
+      ],
+      inputs: [{
+        cardinality: "array",
+        label: "task groups[]",
+        detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+        valueType: "TaskGroup",
+      }],
+      outputs: [
+        {
+          cardinality: "array",
+          label: "task groups[]",
+          detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+          valueType: "TaskGroup",
+        },
+      ],
+      outputPreview: [
+        "TaskGroup[] collection",
+        `Items: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        progressSummary ? `done: ${progressSummary.done} · failed: ${progressSummary.failed} · pending: ${progressSummary.pending}` : null,
+      ].filter(Boolean).join("\n"),
+      runScope: taskGroupRunScope(group),
+      stepKind: "split",
+      tone: "process",
+      status: "loaded",
+      meta: [
+        { label: "Cardinality", value: "array" },
+        { label: "Item type", value: "TaskGroup" },
+        { label: "Items", value: String(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", collectionId, "task groups[]", {
+    sourceHandle: "out-0",
+    targetHandle: "in-2",
+  });
+
+  addNode(nodes, {
+    id: iteratorId,
+    position: { x: PIPELINE_X.iterator, y },
+    data: {
+      title: "Task Group Iterator",
+      subtitle: `selected ${group.title}`,
+      detail: "Explicit map boundary over task_groups[]. The selected item becomes the single task group for this detailed lane.",
+      evidence: [
+        `Collection size: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        `Selected item: ${group.title}`,
+        "The iterator is the only place where the array is turned into one item.",
+      ],
+      hiddenItems: hiddenSiblingItems,
+      progressItems,
+      inputs: [{
+        cardinality: "array",
+        label: "task groups[]",
+        detail: `${taskGroupCount ?? hiddenSiblingItems?.length ?? 1} classified task groups`,
+        valueType: "TaskGroup",
+      }],
+      outputs: [{
+        cardinality: "single",
+        label: "task group",
+        detail: group.title,
+        valueType: "TaskGroup",
+      }],
+      outputPreview: [
+        "Iterator over task_groups[]",
+        `Selected: ${group.title}`,
+        `Collection size: ${taskGroupCount ?? hiddenSiblingItems?.length ?? 1}`,
+        progressSummary ? `done: ${progressSummary.done} · failed: ${progressSummary.failed} · pending: ${progressSummary.pending}` : null,
+      ].filter(Boolean).join("\n"),
+      runScope: taskGroupRunScope(group),
+      stepKind: "transform",
+      tone: progressSummary?.failed ? "warning" : "process",
+      status: progressSummary?.failed ? "needs_review" : "selected",
+      meta: [
+        { label: "Mode", value: "explicit iterator" },
+        { label: "Selected group", value: group.title },
+        { label: "Collection size", value: String(taskGroupCount ?? hiddenSiblingItems?.length ?? 1) },
+      ],
+    },
+  });
+  addEdge(edges, collectionId, iteratorId, "iterate", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
+  });
 
   addNode(nodes, {
     id: groupId,
-    position: { x: PIPELINE_X.group, y },
+    position: { x: PIPELINE_X.item, y },
     data: {
-      title: hiddenSiblingItems?.length ? "Task groups[]" : group.title,
-      subtitle: hiddenSiblingItems?.length
-        ? `${taskGroupCount ?? hiddenSiblingItems.length} task groups · selected ${group.title}`
-        : paired ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
-      detail: hiddenSiblingItems?.length
-        ? "Task groups are an array. The list below shows every group status; the selected group continues through the detailed PDF, extraction, Codex, and output path."
-        : group.pairingReason || "Classified task group from Moodle resources.",
+      title: group.title,
+      subtitle: paired ? "sheet + solution" : group.pairingStatus.replaceAll("_", " "),
+      detail: group.pairingReason || "Selected task group from the iterator.",
       evidence: [
         `Sheet: ${group.sheet.name}`,
         group.solution ? `Solution: ${group.solution.name}` : "Solution: missing",
         `Pairing confidence: ${group.pairingConfidence || "unknown"}`,
+        "Single selected item. PDF splitting starts from this node.",
       ],
-      hiddenItems: hiddenSiblingItems,
-      progressItems,
-      inputs: [{ label: "task group", detail: "classified Moodle resources" }],
+      inputs: [{
+        cardinality: "single",
+        label: "task group",
+        detail: group.title,
+        valueType: "TaskGroup",
+      }],
       outputs: [
         {
-          label: hiddenSiblingItems?.length ? "sheet pdf[]" : "sheet pdf",
-          detail: hiddenSiblingItems?.length ? `${taskGroupCount ?? hiddenSiblingItems.length} sheets` : group.sheet.name,
+          cardinality: "single",
+          label: "sheet pdf",
+          detail: group.sheet.name,
+          valueType: "PdfResource",
         },
         {
-          label: hiddenSiblingItems?.length ? "solution pdf[]" : "solution pdf",
-          detail: hiddenSiblingItems?.length ? "paired solution slots" : group.solution?.name ?? "missing",
+          cardinality: group.solution ? "single" : "optional",
+          label: "solution pdf",
+          detail: group.solution?.name ?? "missing",
           state: paired ? "available" : "missing",
+          valueType: "PdfResource",
         },
       ],
-      outputPreview: `${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
+      outputPreview: hiddenSiblingItems?.length
+        ? [
+            `Selected: ${group.title}`,
+            `Sheet output: ${group.sheet.name}`,
+            `Solution output: ${group.solution?.name ?? "missing"}`,
+          ].join("\n")
+        : `${group.sheet.name}${group.solution ? `\n${group.solution.name}` : "\nMissing solution"}`,
       problems: paired ? undefined : [{ label: "Solution missing", detail: "Codex can still build a task, but solution checks cannot be trusted.", severity: "warning" }],
       runScope: taskGroupRunScope(group),
       stepKind: "split",
       tone: paired ? "resource" : "warning",
       status: group.pairingStatus,
       meta: [
-        ...(hiddenSiblingItems?.length ? [{ label: "Selected group", value: group.title }] : []),
+        ...(hiddenSiblingItems?.length ? [
+          { label: "Mode", value: "map selected item" },
+          { label: "Selected group", value: group.title },
+        ] : []),
         { label: "Sheet", value: group.sheet.name },
         { label: "Solution", value: group.solution?.name ?? "missing" },
         { label: "Confidence", value: group.pairingConfidence || "unknown" },
       ],
     },
   });
-  addEdge(edges, "resource-set", groupId, "task group", {
-    sourceHandle: "out-0",
+  addEdge(edges, iteratorId, groupId, "selected item", {
+    edgeType: "straight",
+    sourceHandle: "out-2",
     targetHandle: "in-2",
   });
 
@@ -288,24 +402,26 @@ export function buildTaskGroupProgressItems({
     const collectIssues = collectProblems(group, sheetRun, solutionRun, { sheetDocument, solutionDocument });
     const failedRun = [sheetRun, solutionRun, codexRun].find((run) => run?.status === "failed");
     const runningRun = [sheetRun, solutionRun, codexRun].find((run) => run && (run.status === "running" || run.status === "queued"));
-    const status = taskOutputs.length > 0
-      ? "done"
-      : failedRun
-        ? "failed"
-        : runningRun
-          ? "loading"
+    const status = failedRun
+      ? "failed"
+      : runningRun
+        ? "loading"
+        : taskOutputs.length > 0
+          ? "done"
           : collectIssues.some((problem) => problem.severity === "error")
             ? "failed"
             : collectIssues.length > 0
               ? "needs_review"
               : "pending";
     const detail = failedRun?.error
-      ?? collectIssues[0]?.detail
-      ?? (taskOutputs.length > 0
+      ?? (failedRun
+        ? `failed at ${STAGE_LABELS[failedRun.stage] ?? failedRun.stage}`
+        : taskOutputs.length > 0
         ? `${taskOutputs.length} website task output${taskOutputs.length === 1 ? "" : "s"}`
         : runningRun
           ? `${runningRun.stage} ${runningRun.status}`
-          : group.pairingStatus.replaceAll("_", " "));
+          : collectIssues[0]?.detail
+            ?? group.pairingStatus.replaceAll("_", " "));
     return {
       detail,
       id: group.id,
@@ -313,6 +429,49 @@ export function buildTaskGroupProgressItems({
       status,
       title: group.title,
     };
+  });
+}
+
+export function addScriptGroupCollection({
+  edges,
+  nodes,
+  resourceCount,
+  y,
+}: {
+  edges: Edge[];
+  nodes: BlueprintGraphNode[];
+  resourceCount: number;
+  y: number;
+}) {
+  addNode(nodes, {
+    id: "script-groups-collection",
+    position: { x: PIPELINE_X.group, y },
+    data: {
+      title: "Script groups[]",
+      subtitle: `${resourceCount} script resource${resourceCount === 1 ? "" : "s"}`,
+      detail: "Collection boundary for classified script resources. It does not choose one item or split it into a PDF.",
+      evidence: [
+        `${resourceCount} script resource(s) loaded`,
+        "No implicit iteration happens in this node.",
+        "Downstream single-item work must pass through an explicit iterator node.",
+      ],
+      inputs: [{ cardinality: "array", label: "script groups[]", detail: `${resourceCount} classified lecture resources`, valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "array", label: "script groups[]", detail: `${resourceCount} classified lecture resources`, valueType: "ScriptGroup" }],
+      outputPreview: `ScriptGroup[] collection\nItems: ${resourceCount}`,
+      runScope: { kind: "course", label: "Whole course", resourceIds: [] },
+      stepKind: "split",
+      tone: "process",
+      status: "loaded",
+      meta: [
+        { label: "Cardinality", value: "array" },
+        { label: "Item type", value: "ScriptGroup" },
+        { label: "Items", value: String(resourceCount) },
+      ],
+    },
+  });
+  addEdge(edges, "resource-set", "script-groups-collection", "script groups[]", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
   });
 }
 
@@ -338,6 +497,7 @@ export function addScriptLane({
   y: number;
 }) {
   const baseId = `script-${stableId(resource.id)}`;
+  const iteratorId = `${baseId}-iterator`;
   const pdfId = `${baseId}-pdf`;
   const pagesId = `${baseId}-pages`;
   const sectionsId = `${baseId}-sections`;
@@ -354,15 +514,44 @@ export function addScriptLane({
   const selectedExtractionReady = Boolean((extractionRun && extractionRun.status !== "failed") || (extractedDocument && extractedDocument.status !== "failed"));
 
   addNode(nodes, {
+    id: iteratorId,
+    position: { x: PIPELINE_X.iterator, y },
+    data: {
+      title: "Script Group Iterator",
+      subtitle: `selected ${resource.name}`,
+      detail: "Explicit map boundary over script_groups[]. The selected item becomes the single script resource for this lane.",
+      evidence: [
+        `Selected item: ${resource.name}`,
+        "The iterator is the only place where the script group array is turned into one item.",
+      ],
+      inputs: [{ cardinality: "array", label: "script groups[]", detail: "classified lecture resources", valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "single", label: "script group", detail: resource.name, valueType: "ScriptGroup" }],
+      outputPreview: `Iterator over script_groups[]\nSelected: ${resource.name}`,
+      runScope: resourceRunScope(resource),
+      stepKind: "transform",
+      tone: "process",
+      status: "selected",
+      meta: [
+        { label: "Mode", value: "explicit iterator" },
+        { label: "Selected group", value: resource.name },
+      ],
+    },
+  });
+  addEdge(edges, "script-groups-collection", iteratorId, "iterate", {
+    sourceHandle: "out-2",
+    targetHandle: "in-2",
+  });
+
+  addNode(nodes, {
     id: baseId,
-    position: { x: PIPELINE_X.group, y },
+    position: { x: PIPELINE_X.item, y },
     data: {
       title: `Script Group ${index + 1}`,
       subtitle: resource.name,
       detail: "Lecture material is processed into script sections rather than task outputs.",
       evidence: [`Resource: ${resource.name}`, `Reason: ${resource.reason || "lecture material"}`],
-      inputs: [{ label: "script group", detail: "classified Moodle resource" }],
-      outputs: [{ label: "script pdf", detail: resource.name }],
+      inputs: [{ cardinality: "single", label: "script group", detail: resource.name, valueType: "ScriptGroup" }],
+      outputs: [{ cardinality: "single", label: "script pdf", detail: resource.name, valueType: "PdfResource" }],
       outputPreview: resource.name,
       runScope: resourceRunScope(resource),
       stepKind: "transform",
@@ -374,7 +563,8 @@ export function addScriptLane({
       ],
     },
   });
-  addEdge(edges, "resource-set", baseId, "script group", {
+  addEdge(edges, iteratorId, baseId, "selected item", {
+    edgeType: "straight",
     sourceHandle: "out-2",
     targetHandle: "in-2",
   });
@@ -413,8 +603,8 @@ export function addScriptLane({
         : extractedDocument
           ? [`Document ${extractedDocument.id}`, `Run ${extractedDocument.runId}`, `${extractedDocument.pages.length} pages`]
           : ["No selected extraction run recorded"],
-      inputs: [{ label: "extraction variants", detail: resource.name }],
-      outputs: [{ label: "active extraction", detail: extractionRun?.engine ?? extractedDocument?.engine ?? "missing", state: extractionRun?.status ?? extractedDocument?.status ?? "missing" }],
+      inputs: [{ cardinality: "single", label: "extraction variants", detail: resource.name, valueType: "ExtractedDocument" }],
+      outputs: [{ cardinality: "single", label: "active extraction", detail: extractionRun?.engine ?? extractedDocument?.engine ?? "missing", state: extractionRun?.status ?? extractedDocument?.status ?? "missing", valueType: "ExtractedDocument" }],
       outputPreview: extractionRun
         ? runPreview(extractionRun)
         : extractedDocument
@@ -610,8 +800,8 @@ export function addReviewLane({
       subtitle: `${warnings.length} problem${warnings.length === 1 ? "" : "s"}`,
       detail: "Collects items that cannot safely continue without review.",
       evidence: warnings.map((warning) => warning.title),
-      inputs: warnings.map((warning) => ({ label: warning.title, state: warning.status })),
-      outputs: [{ label: "review queue", detail: `${warnings.length} items` }],
+      inputs: [{ cardinality: "array", label: "review items[]", detail: `${warnings.length} items`, valueType: "ReviewItem" }],
+      outputs: [{ cardinality: "array", label: "review queue[]", detail: `${warnings.length} items`, valueType: "ReviewItem" }],
       outputPreview: warnings.map((warning) => `${warning.title}: ${warning.detail}`).join("\n"),
       problems: warnings.map((warning) => ({
         label: warning.title,
@@ -860,13 +1050,28 @@ function addEdge(
 
 const PIPELINE_X = {
   group: 820,
-  pdf: 1260,
-  pages: 1740,
-  sections: 2220,
-  extraction: 2700,
-  collect: 3220,
-  codex: 3680,
-  output: 4140,
+  iterator: 1540,
+  item: 2260,
+  pdf: 2980,
+  pages: 3700,
+  sections: 4420,
+  extraction: 5140,
+  collect: 5860,
+  codex: 6580,
+  output: 7300,
 } as const;
 
 const PDF_PAIR_OFFSET = 190;
+
+function summarizeProgressItems(progressItems?: BlueprintNodeData["progressItems"]) {
+  if (!progressItems?.length) return null;
+  return progressItems.reduce(
+    (summary, item) => {
+      if (item.status === "done") summary.done += 1;
+      else if (item.status === "failed") summary.failed += 1;
+      else summary.pending += 1;
+      return summary;
+    },
+    { done: 0, failed: 0, pending: 0 },
+  );
+}
