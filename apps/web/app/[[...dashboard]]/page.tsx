@@ -43,7 +43,7 @@ import {
 import { NavigatorSidebar } from "@/components/navigator-sidebar";
 import { TopBar } from "@/components/top-bar";
 import type { StudyMode } from "@/components/study-mode-actions";
-import type { TaskViewResponse } from "@/components/task-study-panel";
+import { normalizeTaskViewForDisplay, type TaskViewResponse } from "@/components/task-study-panel";
 import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import { useCodexMoodleActions } from "@/hooks/use-codex-moodle-actions";
 import { useNavigator } from "@/hooks/use-navigator";
@@ -534,6 +534,31 @@ export default function Home() {
     setStudyOutline(EMPTY_STUDY_OUTLINE);
     setTaskView(null);
   }, [activeCourseId]);
+
+  useEffect(() => {
+    if (!isSignedIn || needsConnection || !activeCourseId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadTaskOverview(activeCourseId, controller.signal)
+      .then((view) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const displayView = normalizeTaskViewForDisplay(view);
+        setTaskView(displayView);
+        setStudyOutline(buildStudyOutlineFromTaskView(displayView));
+      })
+      .catch((loadError) => {
+        if (controller.signal.aborted || isTaskOverviewUnavailable(loadError)) {
+          return;
+        }
+        setError(getErrorMessage(loadError));
+      });
+
+    return () => controller.abort();
+  }, [activeCourseId, isSignedIn, needsConnection]);
 
   // Remember opened tasks so the home overview can show what the user is
   // currently working on. Wait until the title resolves from the loaded data.
@@ -1282,6 +1307,72 @@ function taskTitleForId(taskId: string, studyOutline: StudyOutline, taskView: Ta
     (candidate) => candidate.id === taskId || taskId.startsWith(`${candidate.id}-`),
   );
   return outlineTask ? taskDisplayTitle(outlineTask.sheetTitle, outlineTask.title) : null;
+}
+
+async function loadTaskOverview(courseId: string, signal: AbortSignal): Promise<TaskViewResponse> {
+  const query = "includeScript=0";
+  try {
+    return await studyPipelineRequest<TaskViewResponse>(
+      `/courses/${encodeURIComponent(courseId)}/study-pipeline/task-view?${query}`,
+      { signal },
+    );
+  } catch (pipelineError) {
+    const bundleResponse = await fetch(
+      `/api/study-bundles/courses/${encodeURIComponent(courseId)}/task-view?${query}`,
+      { signal },
+    );
+    if (bundleResponse.ok) {
+      return await bundleResponse.json() as TaskViewResponse;
+    }
+    if (isTaskOverviewUnavailableStatus(bundleResponse.status)) {
+      throw pipelineError;
+    }
+    const payload = await bundleResponse.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error ?? getErrorMessage(pipelineError));
+  }
+}
+
+async function studyPipelineRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api/study-pipeline${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => null) as { error?: string } | T | null;
+  if (!response.ok) {
+    const errorMessage = payload && typeof payload === "object" && "error" in payload
+      ? String(payload.error)
+      : `Moodle study pipeline failed with ${response.status}.`;
+    const error = new Error(errorMessage) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return payload as T;
+}
+
+function buildStudyOutlineFromTaskView(view: TaskViewResponse): StudyOutline {
+  return {
+    scriptSections: [],
+    tasks: view.sheets.flatMap((sheet) =>
+      sheet.tasks.map((task) => ({
+        id: task.taskId,
+        sheetTitle: sheet.title,
+        status: task.status,
+        title: task.title,
+      })),
+    ),
+  };
+}
+
+function isTaskOverviewUnavailable(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError" ||
+    isTaskOverviewUnavailableStatus((error as { status?: unknown })?.status);
+}
+
+function isTaskOverviewUnavailableStatus(status: unknown): boolean {
+  return status === 400 || status === 404 || status === 409;
 }
 
 function DashboardToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {

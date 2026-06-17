@@ -13,6 +13,17 @@ export function buildPDFDownloadFilename(title: string): string {
   return `${compact || "moodle-pdf"}.pdf`;
 }
 
+export function buildDownloadFilename(title: string, extension: string, fallback = "moodle-export"): string {
+  const normalizedExtension = extension.replace(/^\.+/, "").trim().toLowerCase();
+  const withoutExtension = title.replace(new RegExp(`\\.${normalizedExtension}$`, "i"), "");
+  const cleaned = withoutExtension
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const compact = cleaned.replace(/\s/g, "-").slice(0, 96);
+  return `${compact || fallback}.${normalizedExtension}`;
+}
+
 export function canWritePDFClipboardItem(
   ClipboardItemCtor: ClipboardItemConstructor | undefined = globalThis.ClipboardItem,
 ): ClipboardItemCtor is ClipboardItemConstructor {
@@ -53,6 +64,15 @@ export function startPDFDownload(url: string, filename: string): void {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+export function startBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    startPDFDownload(url, filename);
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 }
 
 export function canvasToPNGBlob(canvas: HTMLCanvasElement): Promise<Blob> {

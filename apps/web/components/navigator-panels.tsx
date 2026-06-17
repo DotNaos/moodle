@@ -9,7 +9,6 @@ import {
   GitBranch,
   MessageSquare,
   Plus,
-  Circle,
   Sigma,
   Video,
   type LucideIcon,
@@ -17,9 +16,8 @@ import {
 import { useEffect, useState } from "react";
 
 import { CourseHero } from "@/components/course-hero";
-import { MaterialFileIcon } from "@/components/dashboard-ui";
+import { RecentMaterialsPreview, TaskProgressPreview } from "@/components/course-overview-summary";
 import { StudyPipelineAction } from "@/components/study-pipeline-action";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import type { CalendarEventSummary } from "@/hooks/use-calendar-events";
 import type { Course, Material, WebexRecordingState } from "@/lib/dashboard-data";
@@ -27,7 +25,7 @@ import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
 import { shouldHandleAppLinkClick } from "@/lib/link-events";
 import { buildNavigatorURL, COURSE_MODE_LABELS, homeState, openDocument, type CourseMode } from "@/lib/navigator";
 import { readRecentChats, subscribeRecentChats, type RecentChatEntry } from "@/lib/recent-chat-storage";
-import { taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
+import type { StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export type CourseModeItem = {
@@ -47,8 +45,6 @@ export const COURSE_MODE_ITEMS: CourseModeItem[] = [
 ];
 
 export type NavigatorListVariant = "full" | "sidebar";
-
-const COURSE_PREVIEW_SLOT_COUNT = 4;
 
 // ③ Course level: mode selection, full width. The course is drilled into,
 // not opened — no document yet.
@@ -109,11 +105,7 @@ export function CourseModesPanel({
       .filter((event) => Date.parse(event.end ?? event.start) >= Date.now())
       .slice(0, 3)
     : [];
-  const recentMaterials = materials.filter(isPdfMaterial).sort(compareMaterialsByRecency).slice(0, COURSE_PREVIEW_SLOT_COUNT);
-  const taskMaterials = materials.filter(isTaskMaterial).slice(0, COURSE_PREVIEW_SLOT_COUNT);
-  const nextTasks = studyOutline.tasks
-    .filter((task) => !isDoneTaskStatus(task.status))
-    .slice(0, COURSE_PREVIEW_SLOT_COUNT);
+  const taskMaterials = materials.filter(isTaskMaterial);
   const recordings = recordingsState?.recordings
     ? [...recordingsState.recordings].sort(compareRecordingsByDate).slice(0, 3)
     : [];
@@ -135,22 +127,12 @@ export function CourseModesPanel({
             onOpen={() => onSelectMode("materials")}
             title="Materialien"
           >
-            {recentMaterials.length > 0 ? (
-              <CoursePreviewGrid>
-                {recentMaterials.map((material) => (
-                  <CoursePreviewButton
-                    href={materialHref(courseId, material)}
-                    icon={<MaterialFileIcon material={material} size={18} />}
-                    key={material.id}
-                    meta={material.sectionName ?? material.type ?? "Material"}
-                    title={material.name}
-                    onOpen={() => onOpenMaterial(material)}
-                  />
-                ))}
-              </CoursePreviewGrid>
-            ) : (
-              materialsReady ? <CoursePreviewBlankGrid /> : <CoursePreviewSkeletonGrid />
-            )}
+            <RecentMaterialsPreview
+              materialHref={(material) => materialHref(courseId, material)}
+              materials={materials}
+              materialsReady={materialsReady}
+              onOpenMaterial={onOpenMaterial}
+            />
           </CourseOverviewSection>
 
           <CourseOverviewSection
@@ -158,36 +140,15 @@ export function CourseModesPanel({
             onOpen={() => onSelectMode("tasks")}
             title="Aufgaben"
           >
-            {nextTasks.length > 0 ? (
-              <CoursePreviewGrid>
-                {nextTasks.map((task) => (
-                  <CoursePreviewButton
-                    icon={<TaskProgressIcon status={task.status} />}
-                    iconVariant="plain"
-                    key={task.id}
-                    meta={task.sheetTitle}
-                    title={taskDisplayTitle(task.sheetTitle, task.title)}
-                    onOpen={() => onOpenTask(task.id)}
-                  />
-                ))}
-              </CoursePreviewGrid>
-            ) : taskMaterials.length > 0 ? (
-              <CoursePreviewGrid>
-                {taskMaterials.map((material) => (
-                  <CoursePreviewButton
-                    href={materialHref(courseId, material)}
-                    icon={<TaskProgressIcon status="open" />}
-                    iconVariant="plain"
-                    key={material.id}
-                    meta={material.sectionName ?? "Aufgabenblatt"}
-                    title={material.name}
-                    onOpen={() => onOpenMaterial(material)}
-                  />
-                ))}
-              </CoursePreviewGrid>
-            ) : (
-              materialsReady ? <CoursePreviewBlankGrid /> : <CoursePreviewSkeletonGrid />
-            )}
+            <TaskProgressPreview
+              materialHref={(material) => materialHref(courseId, material)}
+              materialsReady={materialsReady}
+              taskMaterials={taskMaterials}
+              tasks={studyOutline.tasks}
+              onOpenMaterial={onOpenMaterial}
+              onOpenTask={onOpenTask}
+              onSelectTasks={() => onSelectMode("tasks")}
+            />
           </CourseOverviewSection>
 
           <CourseOverviewSection
@@ -417,48 +378,6 @@ function materialHref(courseId: string, material: Material): string {
   }));
 }
 
-function TaskProgressIcon({ status }: { status: string }) {
-  return isDoneTaskStatus(status)
-    ? <CheckCircle2 aria-hidden className="size-5 text-emerald-500" />
-    : <Circle aria-hidden className="size-5" />;
-}
-
-function CoursePreviewGrid({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="grid h-[13.5rem] grid-cols-1 grid-rows-4 gap-2 sm:h-[6.5rem] sm:grid-cols-2 sm:grid-rows-2"
-    >
-      {children}
-    </div>
-  );
-}
-
-function CoursePreviewSkeletonGrid() {
-  return (
-    <CoursePreviewGrid>
-      {Array.from({ length: COURSE_PREVIEW_SLOT_COUNT }, (_, index) => (
-        <div className="flex h-12 items-center gap-3 rounded-2xl px-3 py-2.5" key={index}>
-          <Skeleton className="size-8 shrink-0 rounded-full" />
-          <span className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className="h-4 w-4/5 rounded-full" />
-            <Skeleton className="h-3 w-1/2 rounded-full" />
-          </span>
-        </div>
-      ))}
-    </CoursePreviewGrid>
-  );
-}
-
-function CoursePreviewBlankGrid() {
-  return (
-    <CoursePreviewGrid>
-      {Array.from({ length: COURSE_PREVIEW_SLOT_COUNT }, (_, index) => (
-        <div className="h-12" key={index} />
-      ))}
-    </CoursePreviewGrid>
-  );
-}
-
 function courseModePresentation(item: CourseModeItem): { label: string } {
   if (item.mode === "script") {
     return { label: item.label };
@@ -470,15 +389,6 @@ function courseModePresentation(item: CourseModeItem): { label: string } {
     return { label: "Aufzeichnungen" };
   }
   return { label: item.label };
-}
-
-function compareMaterialsByRecency(left: Material, right: Material): number {
-  const leftDate = Date.parse(left.uploadedAt ?? "");
-  const rightDate = Date.parse(right.uploadedAt ?? "");
-  if (!Number.isNaN(leftDate) || !Number.isNaN(rightDate)) {
-    return (Number.isNaN(rightDate) ? 0 : rightDate) - (Number.isNaN(leftDate) ? 0 : leftDate);
-  }
-  return 0;
 }
 
 function compareRecordingsByDate(left: { recordingDate: string }, right: { recordingDate: string }): number {
@@ -506,11 +416,6 @@ function isDoneTaskStatus(status: string): boolean {
 
 function isTaskMaterial(material: Material): boolean {
   return /aufgabenblatt\s*\d+|assignment|exercise/i.test(material.name) && !/lösung|loesung|solution/i.test(material.name);
-}
-
-function isPdfMaterial(material: Material): boolean {
-  const candidates = [material.fileType, material.type, material.name, material.url].filter(Boolean).join(" ");
-  return /\.pdf(\?|#|$)/i.test(candidates) || /\bpdf\b|aufgabenblatt|lösung|loesung|folien|slides/i.test(candidates);
 }
 
 function relevantCourseEvents(events: CalendarEventSummary[], course: Course): CalendarEventSummary[] {
