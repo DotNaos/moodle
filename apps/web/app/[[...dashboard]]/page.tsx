@@ -200,8 +200,25 @@ export default function Home() {
     [courses, activeCourseId],
   );
   const selectedMaterial = useMemo(
-    () => (selectedMaterialId ? materials.find((material) => material.id === selectedMaterialId) ?? null : null),
-    [materials, selectedMaterialId],
+    () => {
+      if (!selectedMaterialId) {
+        return null;
+      }
+      const loadedMaterial = materials.find((material) => material.id === selectedMaterialId);
+      if (loadedMaterial) {
+        return loadedMaterial;
+      }
+      if (activeDocument?.kind !== "material") {
+        return null;
+      }
+      return {
+        courseId: activeDocument.courseId,
+        fileType: "pdf",
+        id: activeDocument.materialId,
+        name: "Material",
+      };
+    },
+    [activeDocument, materials, selectedMaterialId],
   );
   const selectedRecording = activeDocument?.kind === "recording" ? selectedRecordingForCourse(activeCourseId) : null;
 
@@ -784,6 +801,7 @@ export default function Home() {
       selectedTaskId={selectedTaskId}
       studyMode={studyMode}
       studyOutline={studyOutline}
+      onEnsureMaterials={requestCourseMaterials}
       onEnterStudyMode={(mode) => activeCourseId && openCourseMode(activeCourseId, mode)}
       onSelectMaterial={(material) =>
         activeCourseId && navigator.open({ kind: "material", courseId: activeCourseId, materialId: material.id })

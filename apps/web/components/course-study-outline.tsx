@@ -17,10 +17,12 @@ import {
   filterMaterialsBySection,
   type MaterialTypeFilter,
 } from "@/lib/material-filters";
+import { buildNavigatorURL, homeState, openDocument } from "@/lib/navigator";
 import { taskDisplayTitle, type ScriptSectionOutline, type StudyOutline, type StudyTaskOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
 
 export function MaterialsOutline({
+  courseId,
   layout,
   materials,
   materialsBySection,
@@ -33,6 +35,7 @@ export function MaterialsOutline({
   onSelectMaterial,
   onTypeFilterChange,
 }: {
+  courseId: string;
   layout: GroupedItemsLayout;
   materials: Material[];
   materialsBySection: [string, Material[]][];
@@ -65,6 +68,7 @@ export function MaterialsOutline({
     const taskId = taskIdForMaterial?.(material);
     return taskId && onOpenTask ? () => onOpenTask(taskId) : undefined;
   };
+  const materialHref = (material: Material) => buildMaterialHref(courseId, material);
 
   return (
     <GroupedItemsView
@@ -85,6 +89,7 @@ export function MaterialsOutline({
       renderGridItem={(material) => (
         <MaterialGridCard
           active={material.id === selectedMaterialId}
+          href={materialHref(material)}
           material={material}
           onOpenTask={taskOpenerForMaterial(material)}
           onSelect={() => onSelectMaterial(material)}
@@ -93,6 +98,7 @@ export function MaterialsOutline({
       renderListItem={(material) => (
         <MaterialRow
           active={material.id === selectedMaterialId}
+          href={materialHref(material)}
           material={material}
           onOpenTask={taskOpenerForMaterial(material)}
           onSelect={() => onSelectMaterial(material)}
@@ -108,6 +114,14 @@ export function MaterialsOutline({
       }
     />
   );
+}
+
+function buildMaterialHref(courseId: string, material: Material): string {
+  return buildNavigatorURL(openDocument(homeState(), {
+    kind: "material",
+    courseId,
+    materialId: material.id,
+  }));
 }
 
 function MaterialTypeFilterSelect({

@@ -1,11 +1,22 @@
 "use client";
 
-import { ExternalLink, FileText, Maximize2, Minimize2, Monitor } from "lucide-react";
+import { ExternalLink, FileText, Maximize2, Minimize2, Monitor, MoreVertical, Printer } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PDFDocumentViewer } from "@/components/pdf-document-viewer";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { printPDF } from "@/lib/pdf-print-actions";
 import { cn } from "@/lib/utils";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 
@@ -20,6 +31,7 @@ type PDFDocumentViewerModeProps = {
   materialId: string;
   onExpandedChange?: (expanded: boolean) => void;
   scrollCommand: PDFScrollCommand | null;
+  toolbarExtra?: ReactNode;
   title: string;
   url: string;
   onStateChange: (state: PDFViewState | null) => void;
@@ -37,6 +49,7 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
     materialId,
     onExpandedChange,
     scrollCommand,
+    toolbarExtra,
     title,
     url,
     onStateChange,
@@ -82,7 +95,7 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
     window.localStorage.setItem(PDF_VIEWER_MODE_STORAGE_KEY, nextMode);
   }, []);
 
-  const modeControl = <PDFViewerModeControl mode={mode} onModeChange={setMode} />;
+  const viewerModeMenu = <PDFViewerModeMenuItems mode={mode} onModeChange={setMode} />;
 
   if (mode === "browser") {
     return (
@@ -91,9 +104,10 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
         expanded={expanded}
         externalUrl={externalUrl}
         onExpandedChange={onExpandedChange}
+        menuExtra={viewerModeMenu}
         targetPage={nativeTargetPage}
         title={title}
-        toolbarExtra={modeControl}
+        toolbarExtra={toolbarExtra}
         url={url}
       />
     );
@@ -111,13 +125,14 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
       onStateChange={onStateChange}
       scrollCommand={scrollCommand}
       title={title}
-      toolbarExtra={modeControl}
+      menuExtra={viewerModeMenu}
+      toolbarExtra={toolbarExtra}
       url={url}
     />
   );
 }
 
-function PDFViewerModeControl({
+function PDFViewerModeMenuItems({
   mode,
   onModeChange,
 }: {
@@ -125,50 +140,19 @@ function PDFViewerModeControl({
   onModeChange: (mode: PDFViewerMode) => void;
 }) {
   return (
-    <div aria-label="PDF viewer mode" className="flex items-center rounded-full bg-secondary p-0.5" role="group">
-      <ModeButton
-        active={mode === "app"}
-        icon={<FileText aria-hidden />}
-        label="App"
-        onClick={() => onModeChange("app")}
-      />
-      <ModeButton
-        active={mode === "browser"}
-        icon={<Monitor aria-hidden />}
-        label="Browser"
-        onClick={() => onModeChange("browser")}
-      />
-    </div>
-  );
-}
-
-function ModeButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      aria-label={`${label} PDF viewer verwenden`}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors",
-        "hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-        "[&_svg]:size-3.5",
-        active && "bg-background text-foreground shadow-sm",
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
+    <>
+      <DropdownMenuLabel className="px-2 py-1 text-xs text-muted-foreground">PDF-Ansicht</DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={mode} onValueChange={(value) => onModeChange(value as PDFViewerMode)}>
+        <DropdownMenuRadioItem value="app">
+          <FileText aria-hidden />
+          <span>App Viewer</span>
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="browser">
+          <Monitor aria-hidden />
+          <span>Browser Viewer</span>
+        </DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup>
+    </>
   );
 }
 
@@ -177,6 +161,7 @@ function NativeBrowserPDFViewer({
   expanded,
   externalUrl,
   onExpandedChange,
+  menuExtra,
   targetPage,
   title,
   toolbarExtra,
@@ -186,6 +171,7 @@ function NativeBrowserPDFViewer({
   expanded: boolean;
   externalUrl?: string;
   onExpandedChange?: (expanded: boolean) => void;
+  menuExtra?: ReactNode;
   targetPage: { commandId: number; page: number } | null;
   title: string;
   toolbarExtra: ReactNode;
@@ -238,8 +224,8 @@ function NativeBrowserPDFViewer({
           src={nativeUrl}
           title={`Browser PDF viewer: ${title}`}
         />
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-          <div className="pointer-events-auto flex max-w-full items-center gap-0.5 rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border/60 backdrop-blur-md">
+        <div className="pointer-events-none absolute bottom-3 right-3 z-20 flex justify-end">
+          <div className="pointer-events-auto flex max-w-[calc(100vw-2rem)] items-center gap-0.5 overflow-x-auto rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border/60 backdrop-blur-md">
             {toolbarExtra}
             {allowFloat || onExpandedChange ? (
               <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
@@ -265,17 +251,59 @@ function NativeBrowserPDFViewer({
                 {expanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
               </Button>
             ) : null}
-            {externalUrl ? (
-              <Button asChild aria-label="In Moodle öffnen" size="icon" variant="ghost">
-                <a href={externalUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink aria-hidden />
-                </a>
-              </Button>
-            ) : null}
+            <NativePDFOverflowMenu externalUrl={externalUrl} menuExtra={menuExtra} url={url} />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function NativePDFOverflowMenu({
+  externalUrl,
+  menuExtra,
+  url,
+}: {
+  externalUrl?: string;
+  menuExtra?: ReactNode;
+  url: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label="PDF-Aktionen öffnen" size="icon" type="button" variant="ghost">
+          <MoreVertical aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56 rounded-2xl border-0 bg-card p-1.5 shadow-xl">
+        {menuExtra ? (
+          <>
+            {menuExtra}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault();
+            printPDF(url);
+          }}
+        >
+          <Printer aria-hidden />
+          <span>PDF drucken</span>
+        </DropdownMenuItem>
+        {externalUrl ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <a href={externalUrl} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden />
+                <span>In Moodle öffnen</span>
+              </a>
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

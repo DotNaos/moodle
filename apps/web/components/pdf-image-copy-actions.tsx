@@ -4,14 +4,17 @@ import { Camera, Check, Image as ImageIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { canvasToPNGBlob, writePNGBlobToClipboard } from "@/lib/pdf-file-actions";
 
 type PNGCopyStatus = "idle" | "copying" | "copied" | "failed";
 
 export function PDFImageCopyActions({
   getCurrentPageCanvas,
+  variant = "toolbar",
 }: {
   getCurrentPageCanvas: () => HTMLCanvasElement | null;
+  variant?: "menu" | "toolbar";
 }) {
   const [pageImageCopyStatus, setPageImageCopyStatus] = useState<PNGCopyStatus>("idle");
   const [viewportCopyStatus, setViewportCopyStatus] = useState<PNGCopyStatus>("idle");
@@ -93,6 +96,33 @@ export function PDFImageCopyActions({
       scheduleViewportCopyStatusReset();
     }
   }, [scheduleViewportCopyStatusReset]);
+
+  if (variant === "menu") {
+    return (
+      <>
+        <DropdownMenuItem
+          disabled={pageImageCopyStatus === "copying"}
+          onSelect={(event) => {
+            event.preventDefault();
+            void copyCurrentPDFPageImage();
+          }}
+        >
+          {pageImageCopyStatus === "copied" ? <Check aria-hidden /> : <ImageIcon aria-hidden />}
+          <span>{pngCopyButtonTitle(pageImageCopyStatus, "PDF-Seite als PNG kopieren")}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={viewportCopyStatus === "copying"}
+          onSelect={(event) => {
+            event.preventDefault();
+            void copyViewportImage();
+          }}
+        >
+          {viewportCopyStatus === "copied" ? <Check aria-hidden /> : <Camera aria-hidden />}
+          <span>{pngCopyButtonTitle(viewportCopyStatus, "Viewport als PNG kopieren")}</span>
+        </DropdownMenuItem>
+      </>
+    );
+  }
 
   return (
     <>

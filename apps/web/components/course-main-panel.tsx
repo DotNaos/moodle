@@ -38,6 +38,7 @@ export function CourseMainPanel({
   onPDFStateChange,
   onOpenResource,
   onLoadRecordings,
+  onEnsureMaterials,
   onMaterialLayoutChange,
   onMaterialTypeFilterChange,
   onPlayRecording,
@@ -72,6 +73,7 @@ export function CourseMainPanel({
   studyOutline: StudyOutline;
   pdfScrollCommand: PDFScrollCommand | null;
   onEnterStudyMode: (mode: StudyMode) => void;
+  onEnsureMaterials?: (courseId: string) => void;
   onOpenResource: (resourceId: string) => void;
   onPDFStateChange: (state: PDFViewState | null) => void;
   onLoadRecordings: () => void;
@@ -108,6 +110,12 @@ export function CourseMainPanel({
     setTaskView(null);
     onTaskViewChange?.(null);
   }, [courseId, onTaskViewChange]);
+
+  useEffect(() => {
+    if (courseId && studyMode === "materials" && material && materials.length === 0 && !materialsLoading) {
+      onEnsureMaterials?.(courseId);
+    }
+  }, [courseId, material, materials.length, materialsLoading, onEnsureMaterials, studyMode]);
 
   if (studyMode === "pipeline") {
     return courseId ? (
@@ -183,6 +191,8 @@ export function CourseMainPanel({
           <FileViewer
             courseId={courseId}
             material={material}
+            materials={materials}
+            onOpenMaterial={onSelectMaterial}
             onPDFStateChange={onPDFStateChange}
             pdfScrollCommand={pdfScrollCommand}
           />
@@ -193,6 +203,7 @@ export function CourseMainPanel({
     return (
       <CoursePanelShell course={course}>
         <MaterialsOutline
+          courseId={courseId ?? String(course.id)}
           layout={materialLayout}
           materials={materials}
           materialsBySection={materialsBySection}

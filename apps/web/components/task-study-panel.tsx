@@ -33,6 +33,8 @@ import { PDFDocumentViewerMode } from "@/components/pdf-document-viewer-mode";
 import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseTitle } from "@/lib/dashboard-data";
+import { shouldHandleAppLinkClick } from "@/lib/link-events";
+import { buildNavigatorURL, homeState, openDocument } from "@/lib/navigator";
 import type { StudyOutline } from "@/lib/study-outline";
 import { EMPTY_STUDY_OUTLINE, taskDisplayTitle } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
@@ -897,6 +899,7 @@ export function TaskStudyPanel({
         <StudyLoadingSkeleton mode={mode} />
       ) : mode === "script" ? (
         <ScriptReader
+          courseId={courseId}
           courseTitleText={courseTitle(course)}
           onCitationClick={onOpenResource}
           onRequestImprovement={(chapter) => openFeedbackDialog({
@@ -948,6 +951,7 @@ export function TaskStudyPanel({
               <article className="mx-auto max-w-[86ch] pb-28 md:pb-0">
                 <div className="py-2">
                   <MarkdownBlock
+                    courseId={courseId}
                     onCitationClick={(resourceId) => setPreviewResourceId(resourceId)}
                     text={taskPromptText(selectedTask)}
                   />
@@ -1317,7 +1321,7 @@ function TaskTestMode({
             {contextMarkdown ? (
               <div className="mb-6 rounded-2xl bg-secondary/50 px-4 py-3 text-sm">
                 <GeneratedUIContent
-                  renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                  renderMarkdown={(markdown) => <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={markdown} />}
                   text={contextMarkdown}
                 />
               </div>
@@ -1328,7 +1332,7 @@ function TaskTestMode({
               </span>
             ) : null}
             <GeneratedUIContent
-              renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+              renderMarkdown={(markdown) => <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={markdown} />}
               text={step.prompt}
             />
 
@@ -1339,7 +1343,7 @@ function TaskTestMode({
                   Codex-Bewertung
                 </h4>
                 <GeneratedUIContent
-                  renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                  renderMarkdown={(markdown) => <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={markdown} />}
                   text={feedbackMarkdown}
                 />
               </section>
@@ -1571,7 +1575,7 @@ function TaskTestMode({
                   )}
                 >
                   <GeneratedUIContent
-                    renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+                    renderMarkdown={(markdown) => <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={markdown} />}
                     text={solutionMarkdown}
                   />
                 </div>
@@ -1706,7 +1710,7 @@ function TaskSolutionPanel({
       ) : solutionMarkdown ? (
         <div className="max-h-[50dvh] overflow-y-auto px-5 pb-4">
           <GeneratedUIContent
-            renderMarkdown={(markdown) => <MarkdownBlock onCitationClick={onCitationClick} text={markdown} />}
+            renderMarkdown={(markdown) => <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={markdown} />}
             text={solutionMarkdown}
           />
         </div>
@@ -1972,6 +1976,7 @@ function slugifyTaskId(value: string): string {
 }
 
 export function ScriptReader({
+  courseId,
   courseTitleText,
   onCitationClick,
   onRequestImprovement,
@@ -1979,6 +1984,7 @@ export function ScriptReader({
   selectedSectionId,
   view,
 }: {
+  courseId: string | null;
   courseTitleText: string;
   onCitationClick: (resourceId: string) => void;
   onRequestImprovement: (chapter: ScriptChapter) => void;
@@ -2125,7 +2131,7 @@ export function ScriptReader({
                       Verbesserung anfragen
                     </Button>
                   </div>
-                  <MarkdownBlock onCitationClick={onCitationClick} text={chapter.bodyMarkdown} />
+                  <MarkdownBlock courseId={courseId} onCitationClick={onCitationClick} text={chapter.bodyMarkdown} />
                 </section>
               ))}
             </div>
@@ -2269,10 +2275,18 @@ function normalizeContentTitle(value: string): string {
   return stripMarkdown(value).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function MarkdownBlock({ onCitationClick, text }: { onCitationClick?: (resourceId: string) => void; text: string }) {
+function MarkdownBlock({
+  courseId,
+  onCitationClick,
+  text,
+}: {
+  courseId: string | null;
+  onCitationClick?: (resourceId: string) => void;
+  text: string;
+}) {
   return (
     <div className="paper-markdown space-y-4 break-words text-[0.98rem] leading-7 text-foreground" onClick={(event) => handleMarkdownClick(event, onCitationClick)}>
-      {renderMarkdownBlocks(splitMarkdownBlocks(text)).map((block, index) => (
+      {renderMarkdownBlocks(splitMarkdownBlocks(text), courseId).map((block, index) => (
         <div key={index} dangerouslySetInnerHTML={{ __html: block }} />
       ))}
     </div>
@@ -2293,26 +2307,26 @@ function stripMarkdownFrontmatter(text: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n*/m, "");
 }
 
-function renderMarkdownBlocks(blocks: string[]): string[] {
+function renderMarkdownBlocks(blocks: string[], courseId: string | null): string[] {
   const rendered: string[] = [];
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
     if (isSourceBlock(block)) {
-      rendered.push(renderSourceLinks(block));
+      rendered.push(renderSourceLinks(block, courseId));
       continue;
     }
     const nextBlock = blocks[index + 1];
     if (isHeadingBlock(block) && nextBlock && isSourceBlock(nextBlock)) {
-      rendered.push(renderMarkdownBlock(block, nextBlock));
+      rendered.push(renderMarkdownBlock(block, nextBlock, courseId));
       index += 1;
       continue;
     }
-    rendered.push(renderMarkdownBlock(block));
+    rendered.push(renderMarkdownBlock(block, undefined, courseId));
   }
   return rendered;
 }
 
-function renderMarkdownBlock(block: string, sourceBlock?: string): string {
+function renderMarkdownBlock(block: string, sourceBlock?: string, courseId: string | null = null): string {
   if (isHtmlCommentBlock(block)) {
     return "";
   }
@@ -2327,13 +2341,13 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
     return `<div class="my-4 overflow-x-auto">${renderMath(escapeHtml(block))}</div>`;
   }
   if (isMarkdownTableBlock(block)) {
-    return renderMarkdownTable(block);
+    return renderMarkdownTable(block, courseId);
   }
   const leadingHeading = block.match(/^(#{1,3})\s+([^\n]+)\n+([\s\S]+)$/);
   if (leadingHeading) {
     return [
-      renderMarkdownBlock(`${leadingHeading[1]} ${leadingHeading[2]}`, sourceBlock),
-      renderMarkdownBlock(leadingHeading[3]),
+      renderMarkdownBlock(`${leadingHeading[1]} ${leadingHeading[2]}`, sourceBlock, courseId),
+      renderMarkdownBlock(leadingHeading[3], undefined, courseId),
     ].join("");
   }
   const heading = block.match(/^(#{1,3})\s+(.+)$/);
@@ -2341,20 +2355,20 @@ function renderMarkdownBlock(block: string, sourceBlock?: string): string {
     const level = heading[1].length + 2;
     const sizeClass = level <= 3 ? "text-xl" : "text-lg";
     const id = headingAnchorId(heading[2]);
-    return `<div id="${id}" class="mt-7 flex scroll-mt-24 flex-col gap-2 border-b border-border pb-1 sm:flex-row sm:items-baseline sm:justify-between"><h${level} class="${sizeClass} font-semibold tracking-tight text-foreground">${inlineMarkdown(heading[2])}</h${level}>${sourceBlock ? renderSourceLinks(sourceBlock) : ""}</div>`;
+    return `<div id="${id}" class="mt-7 flex scroll-mt-24 flex-col gap-2 border-b border-border pb-1 sm:flex-row sm:items-baseline sm:justify-between"><h${level} class="${sizeClass} font-semibold tracking-tight text-foreground">${inlineMarkdown(heading[2], courseId)}</h${level}>${sourceBlock ? renderSourceLinks(sourceBlock, courseId) : ""}</div>`;
   }
   if (hasMixedSlideLines(block)) {
     return block.split("\n")
       .map(cleanSlideLine)
       .filter(Boolean)
-      .map((line) => `<p>${inlineMarkdown(line)}</p>`)
+      .map((line) => `<p>${inlineMarkdown(line, courseId)}</p>`)
       .join("");
   }
   if (/^[-*]\s+/m.test(block)) {
     const items = parseListItems(block);
-    return `<ul class="ml-6 list-disc space-y-2">${items.map((item) => `<li>${renderListItem(item)}</li>`).join("")}</ul>`;
+    return `<ul class="ml-6 list-disc space-y-2">${items.map((item) => `<li>${renderListItem(item, courseId)}</li>`).join("")}</ul>`;
   }
-  return `<p>${inlineMarkdown(block).replace(/\n/g, "<br />")}</p>`;
+  return `<p>${inlineMarkdown(block, courseId).replace(/\n/g, "<br />")}</p>`;
 }
 
 function renderCodeBlock(code: string): string {
@@ -2404,7 +2418,7 @@ function isMarkdownTableBlock(block: string): boolean {
     delimiterCells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
 }
 
-function renderMarkdownTable(block: string): string {
+function renderMarkdownTable(block: string, courseId: string | null): string {
   const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
   const header = splitMarkdownTableRow(lines[0] ?? "");
   const bodyRows = lines.slice(2)
@@ -2413,10 +2427,10 @@ function renderMarkdownTable(block: string): string {
     .map((cells) => header.map((_, index) => cells[index] ?? ""));
 
   const headerHtml = header
-    .map((cell) => `<th class="px-3 py-2 font-semibold">${inlineMarkdown(cell)}</th>`)
+    .map((cell) => `<th class="px-3 py-2 font-semibold">${inlineMarkdown(cell, courseId)}</th>`)
     .join("");
   const bodyHtml = bodyRows
-    .map((cells) => `<tr class="border-b border-border/70 align-top last:border-b-0">${cells.map((cell) => `<td class="px-3 py-3">${inlineMarkdown(cell)}</td>`).join("")}</tr>`)
+    .map((cells) => `<tr class="border-b border-border/70 align-top last:border-b-0">${cells.map((cell) => `<td class="px-3 py-3">${inlineMarkdown(cell, courseId)}</td>`).join("")}</tr>`)
     .join("");
 
   return [
@@ -2506,19 +2520,23 @@ function parseListItems(block: string): string[] {
   return items;
 }
 
-function renderListItem(item: string): string {
+function renderListItem(item: string, courseId: string | null): string {
   if (isDisplayMathBlock(item) || /\$\$|\\\[/.test(item)) {
-    return renderMarkdownBlocks(splitMarkdownBlocks(item)).join("");
+    return renderMarkdownBlocks(splitMarkdownBlocks(item), courseId).join("");
   }
-  return inlineMarkdown(item).replace(/\n/g, "<br />");
+  return inlineMarkdown(item, courseId).replace(/\n/g, "<br />");
 }
 
-function inlineMarkdown(text: string): string {
+function inlineMarkdown(text: string, courseId: string | null = null): string {
   const escaped = escapeHtml(text);
   return renderMath(escaped)
     .replace(/\[([^\]]+)\]\(moodle-resource:([^)]+)\)/g, (_, label: string, resourceId: string) => {
       const decodedId = decodeHtml(resourceId);
-      return `<button class="inline max-w-full p-0 text-left text-[0.9em] font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900" data-moodle-resource-id="${escapeHtml(decodedId)}" type="button">${label}</button>`;
+      const encodedId = escapeHtml(encodeURIComponent(decodedId));
+      if (!courseId) {
+        return `<button class="inline max-w-full p-0 text-left text-[0.9em] font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900" data-moodle-resource-id="${encodedId}" type="button">${label}</button>`;
+      }
+      return `<a class="inline max-w-full text-left text-[0.9em] font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900" data-moodle-resource-id="${encodedId}" href="${escapeHtml(resourceHref(courseId, decodedId))}">${label}</a>`;
     })
     .replace(/\[([^\]]+)\]\((?!moodle-resource:)([^)]+)\)/g, (_, label: string, href: string) => {
       const decodedHref = decodeHtml(href).trim();
@@ -2529,6 +2547,14 @@ function inlineMarkdown(text: string): string {
     })
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code class=\"rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em]\">$1</code>");
+}
+
+function resourceHref(courseId: string, resourceId: string): string {
+  return buildNavigatorURL(openDocument(homeState(), {
+    kind: "material",
+    courseId,
+    materialId: normalizeMoodleResourceId(resourceId),
+  }));
 }
 
 function isHtmlCommentBlock(block: string): boolean {
@@ -2573,12 +2599,12 @@ function isSourceBlock(block: string): boolean {
   return /^(source|task source|solution source)\s*:/i.test(block.trim());
 }
 
-function renderSourceLinks(block: string): string {
-  return `<span class="inline-flex flex-wrap gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">${inlineMarkdown(block)}</span>`;
+function renderSourceLinks(block: string, courseId: string | null): string {
+  return `<span class="inline-flex flex-wrap gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">${inlineMarkdown(block, courseId)}</span>`;
 }
 
 export function renderScriptMarkdownHTML(markdown: string): string {
-  return renderMarkdownBlocks(splitMarkdownBlocks(markdown)).join("");
+  return renderMarkdownBlocks(splitMarkdownBlocks(markdown), null).join("");
 }
 
 export function extractScriptSections(markdown: string) {
@@ -2693,6 +2719,9 @@ function handleMarkdownClick(
     : null;
   const resourceId = target?.dataset.moodleResourceId;
   if (!resourceId) {
+    return;
+  }
+  if (!shouldHandleAppLinkClick(event)) {
     return;
   }
   event.preventDefault();

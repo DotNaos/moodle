@@ -9,8 +9,12 @@ import { CalendarEventsPanel, ChatSessionsPanel, COURSE_MODE_ITEMS } from "@/com
 import type { CalendarEventSummary } from "@/hooks/use-calendar-events";
 import type { Course, Material, WebexRecordingState } from "@/lib/dashboard-data";
 import { HOME_NAV_ITEMS } from "@/lib/home-navigation";
+import { shouldHandleAppLinkClick } from "@/lib/link-events";
 import {
+  buildNavigatorURL,
+  homeState,
   navigatorBreadcrumbs,
+  openDocument,
   type NavigatorDocument,
   type NavigatorLabelResolvers,
   type NavigatorPath,
@@ -205,6 +209,7 @@ function SidebarContent({
         return (
           <MaterialDrillList
             activeMaterialId={activeDocument?.kind === "material" ? activeDocument.materialId : null}
+            courseId={path.courseId}
             materialsBySection={materialsBySection}
             materialsLoading={materialsLoading}
             onOpenMaterial={(material) =>
@@ -337,12 +342,14 @@ function SidebarRowButton({
 
 function MaterialDrillList({
   activeMaterialId,
+  courseId,
   materialsBySection,
   materialsLoading,
   onOpenMaterial,
   onOpenMaterialTask,
 }: {
   activeMaterialId: string | null;
+  courseId: string;
   materialsBySection: [string, Material[]][];
   materialsLoading: boolean;
   onOpenMaterial: (material: Material) => void;
@@ -382,10 +389,20 @@ function MaterialDrillList({
                   )}
                   key={material.id}
                 >
-                  <button
+                  <a
                     className="min-w-0 flex-1 px-2.5 py-2 text-left text-xs"
-                    onClick={() => onOpenMaterial(material)}
-                    type="button"
+                    href={buildNavigatorURL(openDocument(homeState(), {
+                      kind: "material",
+                      courseId,
+                      materialId: material.id,
+                    }))}
+                    onClick={(event) => {
+                      if (!shouldHandleAppLinkClick(event)) {
+                        return;
+                      }
+                      event.preventDefault();
+                      onOpenMaterial(material);
+                    }}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <FileText aria-hidden className={cn("size-3.5 shrink-0", active ? "text-foreground" : "text-muted-foreground")} />
@@ -393,7 +410,7 @@ function MaterialDrillList({
                         {material.name}
                       </span>
                     </span>
-                  </button>
+                  </a>
                   {isTaskSheet ? (
                     <button
                       aria-label={`${material.name} als Aufgabe öffnen`}
