@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 
 import type { Course, Material } from "@/lib/dashboard-data";
 import { courseImageUrl, courseTitle } from "@/lib/dashboard-data";
+import { shouldHandleAppLinkClick } from "@/lib/link-events";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -248,11 +249,13 @@ export function CourseGridCard({
 
 export function MaterialGridCard({
   active = false,
+  href,
   material,
   onOpenTask,
   onSelect,
 }: {
   active?: boolean;
+  href: string;
   material: Material;
   onOpenTask?: () => void;
   onSelect: () => void;
@@ -264,10 +267,20 @@ export function MaterialGridCard({
         active ? "bg-primary text-primary-foreground" : "bg-secondary/60 hover:bg-secondary",
       )}
     >
-      <button className="flex flex-col items-start gap-2 text-left" type="button" onClick={onSelect}>
+      <a
+        className="flex flex-col items-start gap-2 text-left"
+        href={href}
+        onClick={(event) => {
+          if (!shouldHandleAppLinkClick(event)) {
+            return;
+          }
+          event.preventDefault();
+          onSelect();
+        }}
+      >
         <MaterialFileIcon className="shrink-0 text-muted-foreground" material={material} size={28} />
         <span className="line-clamp-2 text-sm font-medium leading-snug break-words">{material.name}</span>
-      </button>
+      </a>
       {onOpenTask ? (
         <button
           aria-label={`${material.name} als Aufgabe öffnen`}
@@ -302,11 +315,13 @@ export function MaterialGridCard({
 
 export function MaterialRow({
   active = false,
+  href,
   material,
   onOpenTask,
   onSelect,
 }: {
   active?: boolean;
+  href: string;
   material: Material;
   onOpenTask?: () => void;
   onSelect: () => void;
@@ -318,7 +333,17 @@ export function MaterialRow({
         active ? "bg-primary text-primary-foreground" : "hover:bg-secondary hover:text-secondary-foreground",
       )}
     >
-      <button className="flex min-w-0 flex-1 items-center gap-3 text-left" type="button" onClick={onSelect}>
+      <a
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        href={href}
+        onClick={(event) => {
+          if (!shouldHandleAppLinkClick(event)) {
+            return;
+          }
+          event.preventDefault();
+          onSelect();
+        }}
+      >
         <span
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary",
@@ -330,7 +355,7 @@ export function MaterialRow({
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{material.name}</span>
         </span>
-      </button>
+      </a>
       {onOpenTask ? (
         <button
           aria-label={`${material.name} als Aufgabe öffnen`}

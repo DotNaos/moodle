@@ -238,30 +238,86 @@ describe("navigator breadcrumbs", () => {
 });
 
 describe("navigator history", () => {
-  test("push, back and forward walk the drill history", () => {
+  test("push, back and forward walk the course tree history", () => {
     let history = createNavigatorHistory(homeState());
-    history = pushNavigatorState(history, { path: { kind: "courses" }, document: null });
     history = pushNavigatorState(history, { path: { kind: "course", courseId: "42" }, document: null });
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
 
     expect(canGoBack(history)).toBe(true);
     expect(canGoForward(history)).toBe(false);
 
     history = goBack(history);
-    expect(currentNavigatorState(history).path).toEqual({ kind: "courses" });
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course", courseId: "42" });
     expect(canGoForward(history)).toBe(true);
 
     history = goForward(history);
-    expect(currentNavigatorState(history).path).toEqual({ kind: "course", courseId: "42" });
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course-mode", courseId: "42", mode: "materials" });
   });
 
-  test("pushing after going back drops the forward branch", () => {
-    let history = createNavigatorHistory(homeState());
-    history = pushNavigatorState(history, { path: { kind: "courses" }, document: null });
+  test("direct course deep links are seeded with their tree parents", () => {
+    let history = createNavigatorHistory(
+      openDocument(homeState(), { kind: "material", courseId: "42", materialId: "pdf-1" }),
+    );
+
+    expect(canGoBack(history)).toBe(true);
+
     history = goBack(history);
-    history = pushNavigatorState(history, { path: { kind: "calendar" }, document: null });
+    expect(currentNavigatorState(history)).toEqual({
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+
+    history = goBack(history);
+    expect(currentNavigatorState(history)).toEqual({ path: { kind: "course", courseId: "42" }, document: null });
+
+    history = goForward(history);
+    expect(currentNavigatorState(history)).toEqual({
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+  });
+
+  test("sibling document navigation still backs up to the parent list", () => {
+    let history = createNavigatorHistory(
+      openDocument(homeState(), { kind: "material", courseId: "42", materialId: "pdf-1" }),
+    );
+    history = pushNavigatorState(
+      history,
+      openDocument(homeState(), { kind: "material", courseId: "42", materialId: "pdf-2" }),
+    );
+
+    history = goBack(history);
+    expect(currentNavigatorState(history)).toEqual({
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+
+    history = goForward(history);
+    expect(currentNavigatorState(history).document).toEqual({
+      kind: "material",
+      courseId: "42",
+      materialId: "pdf-2",
+    });
+  });
+
+  test("pushing after going back drops only the current course forward branch", () => {
+    let history = createNavigatorHistory(homeState());
+    history = pushNavigatorState(history, { path: { kind: "course", courseId: "42" }, document: null });
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+    history = goBack(history);
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "42", mode: "tasks" },
+      document: null,
+    });
 
     expect(canGoForward(history)).toBe(false);
-    expect(currentNavigatorState(history).path).toEqual({ kind: "calendar" });
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course-mode", courseId: "42", mode: "tasks" });
   });
 
   test("pushing the current state is a no-op", () => {
@@ -274,9 +330,33 @@ describe("navigator history", () => {
     history = pushNavigatorState(history, { path: { kind: "chat" }, document: null });
     history = replaceNavigatorState(history, openDocument(homeState(), { kind: "chat-session", sessionId: "s1", courseId: null }));
 
-    expect(history.entries).toHaveLength(2);
     expect(currentNavigatorState(history).document).toEqual({ kind: "chat-session", sessionId: "s1", courseId: null });
     history = goBack(history);
     expect(currentNavigatorState(history).path.kind).toBe("home");
+  });
+
+  test("course histories stay independent", () => {
+    let history = createNavigatorHistory(homeState());
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "99", mode: "tasks" },
+      document: null,
+    });
+
+    history = goBack(history);
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course", courseId: "99" });
+
+    history = pushNavigatorState(history, {
+      path: { kind: "course-mode", courseId: "42", mode: "materials" },
+      document: null,
+    });
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course-mode", courseId: "42", mode: "materials" });
+    expect(canGoBack(history)).toBe(true);
+
+    history = goBack(history);
+    expect(currentNavigatorState(history).path).toEqual({ kind: "course", courseId: "42" });
   });
 });

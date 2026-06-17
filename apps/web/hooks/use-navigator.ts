@@ -35,11 +35,15 @@ function readNavigatorState(): NavigatorState {
   return parseNavigatorLocation(window.location.pathname, window.location.search);
 }
 
-function syncBrowserURL(state: NavigatorState) {
+function syncBrowserURL(state: NavigatorState, mode: "push" | "replace") {
   const nextUrl = buildNavigatorURL(state);
   const currentUrl = window.location.pathname + window.location.search;
   if (nextUrl !== currentUrl) {
-    window.history.replaceState({ ...window.history.state, as: nextUrl, url: nextUrl }, "", nextUrl);
+    window.history[mode === "push" ? "pushState" : "replaceState"](
+      { ...window.history.state, as: nextUrl, url: nextUrl },
+      "",
+      nextUrl,
+    );
   }
 }
 
@@ -49,19 +53,22 @@ export function useNavigator() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const applyHistory = useCallback((update: (current: NavigatorHistory) => NavigatorHistory) => {
-    setHistory((current) => {
-      const next = update(current);
-      if (next !== current) {
-        syncBrowserURL(currentNavigatorState(next));
-      }
-      return next;
-    });
-  }, []);
+  const applyHistory = useCallback(
+    (update: (current: NavigatorHistory) => NavigatorHistory, mode: "push" | "replace") => {
+      setHistory((current) => {
+        const next = update(current);
+        if (next !== current) {
+          syncBrowserURL(currentNavigatorState(next), mode);
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const navigate = useCallback(
     (next: NavigatorState) => {
-      applyHistory((current) => pushNavigatorState(current, next));
+      applyHistory((current) => pushNavigatorState(current, next), "push");
     },
     [applyHistory],
   );
@@ -92,14 +99,15 @@ export function useNavigator() {
   }, [navigate]);
 
   const back = useCallback(() => {
-    applyHistory(goBack);
+    applyHistory(goBack, "replace");
   }, [applyHistory]);
 
   const forward = useCallback(() => {
-    applyHistory(goForward);
+    applyHistory(goForward, "replace");
   }, [applyHistory]);
 
   useEffect(() => {
+    syncBrowserURL(stateRef.current, "replace");
     const syncFromBrowser = () => {
       const browserState = readNavigatorState();
       setHistory((current) =>

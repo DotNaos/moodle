@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Download, ExternalLink, Maximize2, Minimize2, Minus, Plus, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Maximize2, Minimize2, Minus, MoreVertical, Plus, Printer, X } from "lucide-react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type React from "react";
 import type { CSSProperties } from "react";
@@ -8,6 +8,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { PDFImageCopyActions } from "@/components/pdf-image-copy-actions";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -17,6 +24,7 @@ import {
   fetchPDFBlob,
   startPDFDownload,
 } from "@/lib/pdf-file-actions";
+import { printPDF } from "@/lib/pdf-print-actions";
 import type {
   PDFPageContext,
   PDFScrollCommand,
@@ -46,6 +54,7 @@ export function PDFDocumentViewer({
   scrollCommand,
   title,
   toolbarExtra,
+  menuExtra,
   url,
   onStateChange,
 }: {
@@ -63,6 +72,7 @@ export function PDFDocumentViewer({
   scrollCommand: PDFScrollCommand | null;
   title: string;
   toolbarExtra?: React.ReactNode;
+  menuExtra?: React.ReactNode;
   url: string;
   onStateChange: (state: PDFViewState | null) => void;
 }) {
@@ -743,39 +753,42 @@ export function PDFDocumentViewer({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-          <div className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border/60 backdrop-blur-md">
-            <Button
-              aria-label="Kleiner zoomen"
-              disabled={visualZoom <= MIN_ZOOM}
-              onClick={() => applyVisualZoomAtCenter(visualZoomRef.current - ZOOM_STEP)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Minus aria-hidden />
-            </Button>
-            <button
-              aria-label="Zoom zurücksetzen"
-              className="min-w-13 rounded-full px-1.5 text-center text-sm font-medium tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              onClick={() => applyVisualZoomAtCenter(1)}
-              type="button"
-            >
-              {Math.round(visualZoom * 100)}%
-            </button>
-            <Button
-              aria-label="Größer zoomen"
-              disabled={visualZoom >= MAX_ZOOM}
-              onClick={() => applyVisualZoomAtCenter(visualZoomRef.current + ZOOM_STEP)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Plus aria-hidden />
-            </Button>
-            {allowFloat || onExpandedChange ? (
-              <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
-            ) : null}
+        <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex flex-col items-center rounded-full bg-background/90 p-0.5 shadow-lg ring-1 ring-border/60 backdrop-blur-md">
+          <Button
+            aria-label="Größer zoomen"
+            className="pointer-events-auto rounded-full"
+            disabled={visualZoom >= MAX_ZOOM}
+            onClick={() => applyVisualZoomAtCenter(visualZoomRef.current + ZOOM_STEP)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <Plus aria-hidden />
+          </Button>
+          <button
+            aria-label="Zoom zurücksetzen"
+            className="pointer-events-auto flex h-7 w-8 items-center justify-center rounded-full px-0 text-center text-[10px] font-medium leading-none tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            onClick={() => applyVisualZoomAtCenter(1)}
+            type="button"
+          >
+            {Math.round(visualZoom * 100)}%
+          </button>
+          <Button
+            aria-label="Kleiner zoomen"
+            className="pointer-events-auto rounded-full"
+            disabled={visualZoom <= MIN_ZOOM}
+            onClick={() => applyVisualZoomAtCenter(visualZoomRef.current - ZOOM_STEP)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <Minus aria-hidden />
+          </Button>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-3 right-3 z-20 flex justify-end px-0">
+          <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] items-center gap-0.5 overflow-x-auto rounded-full bg-background/90 p-1 shadow-lg ring-1 ring-border/60 backdrop-blur-md">
+            {toolbarExtra ? toolbarExtra : null}
             {allowFloat ? (
               <Button
                 aria-label={floating ? "Großansicht schließen" : "Großansicht öffnen"}
@@ -797,45 +810,92 @@ export function PDFDocumentViewer({
                 {expanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
               </Button>
             ) : null}
-            <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
-            <Button asChild aria-label="PDF herunterladen" size="icon" title="PDF herunterladen" variant="ghost">
-              <a download={downloadFilename} href={url}>
-                <Download aria-hidden />
-              </a>
-            </Button>
-            <Button
-              aria-label={copyButtonAriaLabel(copyStatus)}
-              disabled={copyStatus === "copying"}
-              onClick={() => void copyPDF()}
-              size="icon"
-              title={copyButtonTitle(copyStatus)}
-              type="button"
-              variant="ghost"
-            >
-              {copyStatus === "copied-file" || copyStatus === "downloaded" ? (
-                <Check aria-hidden />
-              ) : (
-                <Copy aria-hidden />
-              )}
-            </Button>
-            <PDFImageCopyActions getCurrentPageCanvas={getCurrentPageCanvas} />
-            {toolbarExtra ? (
-              <>
-                <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
-                {toolbarExtra}
-              </>
-            ) : null}
-            {externalUrl ? (
-              <Button asChild aria-label="In Moodle öffnen" size="icon" variant="ghost">
-                <a href={externalUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink aria-hidden />
-                </a>
-              </Button>
-            ) : null}
+            <PDFOverflowMenu
+              copyPDF={copyPDF}
+              copyStatus={copyStatus}
+              downloadFilename={downloadFilename}
+              externalUrl={externalUrl}
+              getCurrentPageCanvas={getCurrentPageCanvas}
+              menuExtra={menuExtra}
+              url={url}
+            />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function PDFOverflowMenu({
+  copyPDF,
+  copyStatus,
+  downloadFilename,
+  externalUrl,
+  getCurrentPageCanvas,
+  menuExtra,
+  url,
+}: {
+  copyPDF: () => Promise<void>;
+  copyStatus: PDFCopyStatus;
+  downloadFilename: string;
+  externalUrl?: string;
+  getCurrentPageCanvas: () => HTMLCanvasElement | null;
+  menuExtra?: React.ReactNode;
+  url: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label="PDF-Aktionen öffnen" size="icon" type="button" variant="ghost">
+          <MoreVertical aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64 rounded-2xl border-0 bg-card p-1.5 shadow-xl">
+        {menuExtra ? (
+          <>
+            {menuExtra}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        <DropdownMenuItem asChild>
+          <a download={downloadFilename} href={url}>
+            <Download aria-hidden />
+            <span>PDF herunterladen</span>
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault();
+            printPDF(url);
+          }}
+        >
+          <Printer aria-hidden />
+          <span>PDF drucken</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={copyStatus === "copying"}
+          onSelect={(event) => {
+            event.preventDefault();
+            void copyPDF();
+          }}
+        >
+          {copyStatus === "copied-file" || copyStatus === "downloaded" ? <Check aria-hidden /> : <Copy aria-hidden />}
+          <span>{copyButtonTitle(copyStatus)}</span>
+        </DropdownMenuItem>
+        <PDFImageCopyActions getCurrentPageCanvas={getCurrentPageCanvas} variant="menu" />
+        {externalUrl ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <a href={externalUrl} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden />
+                <span>In Moodle öffnen</span>
+              </a>
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

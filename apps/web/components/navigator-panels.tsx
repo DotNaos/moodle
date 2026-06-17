@@ -24,7 +24,8 @@ import { Spinner } from "@/components/ui/spinner";
 import type { CalendarEventSummary } from "@/hooks/use-calendar-events";
 import type { Course, Material, WebexRecordingState } from "@/lib/dashboard-data";
 import { courseSubtitle, courseTitle } from "@/lib/dashboard-data";
-import { COURSE_MODE_LABELS, type CourseMode } from "@/lib/navigator";
+import { shouldHandleAppLinkClick } from "@/lib/link-events";
+import { buildNavigatorURL, COURSE_MODE_LABELS, homeState, openDocument, type CourseMode } from "@/lib/navigator";
 import { readRecentChats, subscribeRecentChats, type RecentChatEntry } from "@/lib/recent-chat-storage";
 import { taskDisplayTitle, type StudyOutline } from "@/lib/study-outline";
 import { cn } from "@/lib/utils";
@@ -138,6 +139,7 @@ export function CourseModesPanel({
               <CoursePreviewGrid>
                 {recentMaterials.map((material) => (
                   <CoursePreviewButton
+                    href={materialHref(courseId, material)}
                     icon={<MaterialFileIcon material={material} size={18} />}
                     key={material.id}
                     meta={material.sectionName ?? material.type ?? "Material"}
@@ -173,6 +175,7 @@ export function CourseModesPanel({
               <CoursePreviewGrid>
                 {taskMaterials.map((material) => (
                   <CoursePreviewButton
+                    href={materialHref(courseId, material)}
                     icon={<TaskProgressIcon status="open" />}
                     iconVariant="plain"
                     key={material.id}
@@ -343,24 +346,23 @@ function CourseOverviewSection({
 }
 
 function CoursePreviewButton({
+  href,
   icon,
   iconVariant = "badge",
   meta,
   onOpen,
   title,
 }: {
+  href?: string;
   icon?: React.ReactNode;
   iconVariant?: "badge" | "plain";
   meta?: string;
   onOpen: () => void;
   title: string;
 }) {
-  return (
-    <button
-      className="flex h-12 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-secondary"
-      onClick={onOpen}
-      type="button"
-    >
+  const className = "flex h-12 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-secondary";
+  const content = (
+    <>
       {icon ? (
         <span
           className={cn(
@@ -375,8 +377,44 @@ function CoursePreviewButton({
         <span className="block line-clamp-1 text-sm font-semibold leading-snug">{title}</span>
         {meta ? <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">{meta}</span> : null}
       </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a
+        className={className}
+        href={href}
+        onClick={(event) => {
+          if (!shouldHandleAppLinkClick(event)) {
+            return;
+          }
+          event.preventDefault();
+          onOpen();
+        }}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      className={className}
+      onClick={onOpen}
+      type="button"
+    >
+      {content}
     </button>
   );
+}
+
+function materialHref(courseId: string, material: Material): string {
+  return buildNavigatorURL(openDocument(homeState(), {
+    kind: "material",
+    courseId,
+    materialId: material.id,
+  }));
 }
 
 function TaskProgressIcon({ status }: { status: string }) {
