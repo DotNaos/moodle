@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 export type GroupedItemsLayout = "list" | "grid";
 
 export type GroupedItemsSection<T> = {
+  action?: ReactNode;
   items: T[];
   key: string;
   label: string;
@@ -26,6 +27,7 @@ export function GroupedItemsView<T>({
   showLayoutToggle = true,
   stickySectionHeaders = true,
   sectionDividers = true,
+  toolbarControls,
 }: {
   emptyState?: ReactNode;
   header?: ReactNode;
@@ -38,19 +40,23 @@ export function GroupedItemsView<T>({
   showLayoutToggle?: boolean;
   stickySectionHeaders?: boolean;
   sectionDividers?: boolean;
+  toolbarControls?: ReactNode;
 }) {
-  const showToolbar = Boolean(header) || (showLayoutToggle && onLayoutChange);
+  const showToolbar = Boolean(header) || Boolean(toolbarControls) || (showLayoutToggle && onLayoutChange);
   const hasItems = sections.some((section) => section.items.length > 0);
 
   return (
     <div className="flex flex-col gap-3">
       {showToolbar ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {showLayoutToggle && onLayoutChange ? (
-            <div className="flex-none">
-              <GroupedItemsLayoutToggle layout={layout} onLayoutChange={onLayoutChange} />
-            </div>
-          ) : null}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {showLayoutToggle && onLayoutChange ? (
+              <div className="flex-none">
+                <GroupedItemsLayoutToggle layout={layout} onLayoutChange={onLayoutChange} />
+              </div>
+            ) : null}
+            {toolbarControls ? <div className="min-w-0 flex-none">{toolbarControls}</div> : null}
+          </div>
           {header ? <div className="flex-none">{header}</div> : null}
         </div>
       ) : null}
@@ -64,7 +70,7 @@ export function GroupedItemsView<T>({
               key={section.key}
               className="flex flex-col"
             >
-              <GroupedSectionHeader label={section.label} sticky={stickySectionHeaders} />
+              <GroupedSectionHeader action={section.action} label={section.label} sticky={stickySectionHeaders} />
               {layout === "list" ? (
                 <div className="relative z-0 flex flex-col gap-0.5">
                   {section.items.map((item) => (
@@ -88,16 +94,17 @@ export function GroupedItemsView<T>({
   );
 }
 
-export function GroupedSectionHeader({ label, sticky = true }: { label: string; sticky?: boolean }) {
+export function GroupedSectionHeader({ action, label, sticky = true }: { action?: ReactNode; label: string; sticky?: boolean }) {
   return (
-    <h3
+    <div
       className={cn(
-        "px-2 py-2.5 text-sm font-semibold text-foreground",
+        "flex items-center gap-2 px-2 py-2.5 text-sm font-semibold text-foreground",
         sticky && "sticky top-0 z-20 bg-background px-3 shadow-[0_1px_0_0_hsl(var(--border))]",
       )}
     >
-      {label}
-    </h3>
+      {action}
+      <h3>{label}</h3>
+    </div>
   );
 }
 

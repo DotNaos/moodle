@@ -5,14 +5,16 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { CourseHero } from "@/components/course-hero";
 import { CoursePipelineInspector } from "@/components/course-pipeline-inspector";
-import { MaterialsOutline, TaskOutline } from "@/components/course-study-outline";
+import { TaskOutline } from "@/components/course-study-outline";
 import { FileViewer } from "@/components/file-viewer";
 import { FormulaCollectionPanel } from "@/components/formula-collection-panel";
+import { MaterialsOutline } from "@/components/materials-outline";
 import { StudyPipelineAction } from "@/components/study-pipeline-action";
 import { buildScriptPDFMapping, TaskStudyPanel, type TaskViewResponse } from "@/components/task-study-panel";
 import { WebexRecordingsPanel } from "@/components/webex-recordings-panel";
 import type { StudyTestContext } from "@/lib/codex-chat";
 import type { Course, Material, WebexRecording, WebexRecordingState } from "@/lib/dashboard-data";
+import { courseTitle } from "@/lib/dashboard-data";
 import type { CourseResourcesLayout } from "@/lib/material-display-preferences";
 import type { MaterialTypeFilter } from "@/lib/material-filters";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
@@ -204,6 +206,7 @@ export function CourseMainPanel({
       <CoursePanelShell course={course}>
         <MaterialsOutline
           courseId={courseId ?? String(course.id)}
+          courseName={courseTitle(course)}
           layout={materialLayout}
           materials={materials}
           materialsBySection={materialsBySection}

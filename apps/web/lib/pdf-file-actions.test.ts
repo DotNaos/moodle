@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildDownloadFilename,
   buildPDFDownloadFilename,
   canWritePDFClipboardItem,
   canWritePNGClipboardItem,
@@ -12,6 +13,12 @@ describe("PDF file actions", () => {
     expect(buildPDFDownloadFilename("Aufgabenblatt 01.pdf")).toBe("Aufgabenblatt-01.pdf");
     expect(buildPDFDownloadFilename('Lösung: A/B * final')).toBe("Lösung-A-B-final.pdf");
     expect(buildPDFDownloadFilename("   ")).toBe("moodle-pdf.pdf");
+  });
+
+  test("builds safe generic download filenames", () => {
+    expect(buildDownloadFilename("Deep Learning: FS26.zip", "zip")).toBe("Deep-Learning-FS26.zip");
+    expect(buildDownloadFilename("Deep Learning: FS26", "pdf")).toBe("Deep-Learning-FS26.pdf");
+    expect(buildDownloadFilename("   ", "zip", "bundle")).toBe("bundle.zip");
   });
 
   test("detects whether the browser can write PDF clipboard items", () => {

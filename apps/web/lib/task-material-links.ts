@@ -15,6 +15,9 @@ export function buildTaskLinksByResourceId(
     if (resourceId && !links.has(resourceId)) {
       links.set(resourceId, task.id);
     }
+    if (sheet?.solutionResourceId && !links.has(sheet.solutionResourceId)) {
+      links.set(sheet.solutionResourceId, task.id);
+    }
   }
   return links;
 }
