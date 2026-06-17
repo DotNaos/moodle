@@ -111,12 +111,19 @@ export type GeneratedUIChunk =
   | { type: "pending" }
   | { type: "error" };
 
+type JsonRenderPatch = {
+  op: "add" | "replace";
+  path: string;
+  value: unknown;
+};
+
 export function generatedUIPromptBlock(): string {
   return [
     "Generative UI:",
     "- When a visual study aid would help, you may append exactly one fenced json-render block after your normal answer.",
     "- The block must use this fence language exactly: ```json-render",
     "- The block must contain only one JSON spec with root and elements.",
+    "- Do not output JSON Patch, JSONL patch operations, or separate lines like {\"op\":\"add\",\"path\":...}.",
     "- Use only the catalog below. Do not invent component names, props, HTML, JavaScript, or event handlers.",
     "- Keep the UI small: prefer 3-6 elements and only include it when it adds real value.",
     "- If the user asks to be quizzed, tested, or abgefragt, prefer one Quiz component with 2-5 questions.",
@@ -193,9 +200,9 @@ export function splitGeneratedUIContent(text: string): GeneratedUIChunk[] {
 }
 
 export function stripGeneratedUIBlocks(text: string): string {
-  return text
-    .replace(/```json-render[^\n]*\n[\s\S]*?```/gi, "")
-    .replace(/```json-render[^\n]*\n[\s\S]*$/gi, "")
+  return splitGeneratedUIContent(text)
+    .map((chunk) => chunk.type === "markdown" ? chunk.text : "")
+    .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -222,6 +229,25 @@ function parseGeneratedUISpec(source: string): GeneratedUISpec | null {
   }
 
   return sanitized;
+}
+
+function parseGeneratedUIPatchSpec(source: string): GeneratedUISpec | null {
+  if (source.length > MAX_GENERATED_UI_SOURCE_LENGTH) {
+    return null;
+  }
+  const patches = source
+    .split(/\r?\n/)
+    .map((line) => parsePatchLine(line.trim()))
+    .filter((patch): patch is JsonRenderPatch => patch !== null);
+  if (patches.length === 0) {
+    return null;
+  }
+
+  const candidate: unknown = {};
+  for (const patch of patches) {
+    applyJsonPointer(candidate, patch.path, patch.value);
+  }
+  return parseGeneratedUISpec(JSON.stringify(resolveStateBindings(candidate)));
 }
 
 function sanitizeSpec(spec: Spec): Spec {
@@ -269,6 +295,24 @@ function normalizeSpecCandidate(value: unknown): unknown {
   return { ...value, elements };
 }
 
+function resolveStateBindings(value: unknown, root: unknown = value): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveStateBindings(item, root));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.$state === "string" && Object.keys(record).length === 1) {
+    const stateRoot = root && typeof root === "object" ? (root as { state?: unknown }).state : undefined;
+    const resolved = readJsonPointer(stateRoot, record.$state) ?? readJsonPointer(root, record.$state);
+    return resolved === undefined ? value : resolveStateBindings(resolved, root);
+  }
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [key, resolveStateBindings(item, root)]),
+  );
+}
+
 function isSafeSpec(spec: Spec): boolean {
   const elementEntries = Object.entries(spec.elements);
   if (elementEntries.length > 40) {
@@ -292,11 +336,147 @@ function pushMarkdown(chunks: GeneratedUIChunk[], text: string): void {
 function pushTrailingContent(chunks: GeneratedUIChunk[], text: string): void {
   const openFence = /```json-render[^\n]*\n/i.exec(text);
   if (!openFence) {
-    pushMarkdown(chunks, text);
+    pushPatchAwareContent(chunks, text);
     return;
   }
   if (openFence.index > 0) {
-    pushMarkdown(chunks, text.slice(0, openFence.index));
+    pushPatchAwareContent(chunks, text.slice(0, openFence.index));
   }
   chunks.push({ type: "pending" });
+}
+
+function pushPatchAwareContent(chunks: GeneratedUIChunk[], text: string): void {
+  let position = 0;
+  let markdownStart = 0;
+
+  while (position < text.length) {
+    const lineEnd = text.indexOf("\n", position);
+    const nextPosition = lineEnd === -1 ? text.length : lineEnd + 1;
+    const line = text.slice(position, lineEnd === -1 ? text.length : lineEnd);
+    const trimmed = line.trim();
+
+    if (!parsePatchLine(trimmed) && !isLikelyIncompletePatchLine(trimmed)) {
+      position = nextPosition;
+      continue;
+    }
+
+    if (position > markdownStart) {
+      pushMarkdown(chunks, text.slice(markdownStart, position));
+    }
+
+    const patchStart = position;
+    let patchEnd = position;
+    let hasIncompletePatch = false;
+    while (patchEnd < text.length) {
+      const currentLineEnd = text.indexOf("\n", patchEnd);
+      const currentNextPosition = currentLineEnd === -1 ? text.length : currentLineEnd + 1;
+      const currentLine = text.slice(patchEnd, currentLineEnd === -1 ? text.length : currentLineEnd);
+      const currentTrimmed = currentLine.trim();
+      if (!currentTrimmed) {
+        break;
+      }
+      if (parsePatchLine(currentTrimmed)) {
+        patchEnd = currentNextPosition;
+        continue;
+      }
+      if (isLikelyIncompletePatchLine(currentTrimmed)) {
+        hasIncompletePatch = true;
+        patchEnd = currentNextPosition;
+      }
+      break;
+    }
+
+    const patchSource = text.slice(patchStart, patchEnd);
+    const parsed = hasIncompletePatch ? null : parseGeneratedUIPatchSpec(patchSource);
+    chunks.push(parsed ? { type: "spec", spec: parsed, source: patchSource } : { type: "pending" });
+    position = patchEnd;
+    markdownStart = patchEnd;
+  }
+
+  if (markdownStart < text.length) {
+    pushMarkdown(chunks, text.slice(markdownStart));
+  }
+}
+
+function parsePatchLine(line: string): JsonRenderPatch | null {
+  if (!line.startsWith("{") || !line.endsWith("}")) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  const patch = parsed as { op?: unknown; path?: unknown; value?: unknown };
+  if ((patch.op !== "add" && patch.op !== "replace") || typeof patch.path !== "string") {
+    return null;
+  }
+  return { op: patch.op, path: patch.path, value: patch.value };
+}
+
+function isLikelyIncompletePatchLine(line: string): boolean {
+  return line.startsWith("{") && /"op"\s*:/.test(line);
+}
+
+function applyJsonPointer(target: unknown, path: string, value: unknown): void {
+  if (!path.startsWith("/")) {
+    return;
+  }
+  const parts = path.slice(1).split("/").map(decodePointerPart);
+  let current = target as Record<string, unknown> | unknown[];
+
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index];
+    const nextPart = parts[index + 1];
+    const nextContainer = isArrayIndex(nextPart) ? [] : {};
+    if (Array.isArray(current)) {
+      const arrayIndex = part === "-" ? current.length : Number(part);
+      if (!current[arrayIndex]) {
+        current[arrayIndex] = nextContainer;
+      }
+      current = current[arrayIndex] as Record<string, unknown> | unknown[];
+      continue;
+    }
+    if (!current[part] || typeof current[part] !== "object") {
+      current[part] = nextContainer;
+    }
+    current = current[part] as Record<string, unknown> | unknown[];
+  }
+
+  const lastPart = parts[parts.length - 1];
+  if (Array.isArray(current)) {
+    const arrayIndex = lastPart === "-" ? current.length : Number(lastPart);
+    current[arrayIndex] = value;
+    return;
+  }
+  current[lastPart] = value;
+}
+
+function readJsonPointer(target: unknown, path: string): unknown {
+  if (!path.startsWith("/")) {
+    return undefined;
+  }
+  let current = target;
+  for (const part of path.slice(1).split("/").map(decodePointerPart)) {
+    if (Array.isArray(current)) {
+      current = current[Number(part)];
+    } else if (current && typeof current === "object") {
+      current = (current as Record<string, unknown>)[part];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+function decodePointerPart(part: string): string {
+  return part.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+function isArrayIndex(value: string): boolean {
+  return value === "-" || /^\d+$/.test(value);
 }
