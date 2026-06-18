@@ -99,22 +99,25 @@ export function WebexRecordingsPanel({
           </form>
         </div>
       ) : course ? (
-        <div className="grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-4 2xl:grid-cols-[minmax(0,1fr)_290px]">
-          <div className="flex min-h-0 flex-col gap-3">
+        <div className="grid min-h-0 flex-1 gap-5 overflow-auto px-4 pb-4 md:px-6 md:pb-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="flex min-h-0 flex-col gap-4">
             {state?.error ? (
               <div className="rounded-3xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {state.error}
               </div>
             ) : null}
-            <div className="overflow-hidden rounded-[1.5rem] bg-black">
+            <div className="relative shrink-0 overflow-hidden rounded-[1.75rem] bg-black shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
               {activeRecording?.streamUrl ? (
-                <WebexRecordingPlayer
-                  key={activeRecording.recordingUuid}
-                  poster={activeRecording.coverUrl}
-                  src={activeRecording.streamUrl}
-                />
+                <>
+                  <WebexRecordingPlayer
+                    key={activeRecording.recordingUuid}
+                    poster={activeRecording.coverUrl}
+                    src={activeRecording.streamUrl}
+                  />
+                  <ActiveRecordingOverlay recording={activeRecording} />
+                </>
               ) : (
-                <div className="grid aspect-video min-h-[260px] place-items-center px-6 text-center">
+                <div className="grid aspect-video min-h-[320px] place-items-center px-6 text-center">
                   <div className="max-w-sm">
                     <Video className="mx-auto mb-3 text-muted-foreground" aria-hidden />
                     <p className="font-medium text-background">{state?.loading ? "Loading recordings" : "No recording selected"}</p>
@@ -125,7 +128,6 @@ export function WebexRecordingsPanel({
                 </div>
               )}
             </div>
-            {activeRecording ? <ActiveRecordingMeta recording={activeRecording} /> : null}
           </div>
 
           <aside className="flex min-h-0 flex-col overflow-hidden">
@@ -141,17 +143,19 @@ export function WebexRecordingsPanel({
   );
 }
 
-function ActiveRecordingMeta({ recording }: { recording: WebexRecording }) {
+function ActiveRecordingOverlay({ recording }: { recording: WebexRecording }) {
   const duration = formatDuration(recording.durationSeconds);
   return (
-    <div className="flex flex-col gap-2 rounded-[1.25rem] bg-secondary px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-5 pb-5 pt-16 text-white md:px-6 md:pb-6">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{recording.sessionTitle || recording.recordingName}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{formatRecordingDate(recording.recordingDate)}</p>
+        <p className="truncate text-xl font-semibold tracking-tight md:text-2xl">
+          {recording.sessionTitle || recording.recordingName}
+        </p>
+        <p className="mt-1 text-sm text-white/75">{formatRecordingDate(recording.recordingDate)}</p>
       </div>
       {duration ? (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock size={14} aria-hidden />
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/14 px-3 py-1.5 text-sm text-white backdrop-blur">
+          <Clock size={16} aria-hidden />
           {duration}
         </span>
       ) : null}
@@ -183,25 +187,24 @@ function RecordingList({
         <button
           key={recording.recordingUuid}
           className={cn(
-            "flex w-full items-center gap-3 rounded-3xl px-3 py-2.5 text-left transition-colors",
+            "group grid w-full grid-cols-[132px_minmax(0,1fr)] items-center gap-3 rounded-[1.5rem] p-2 text-left transition-colors sm:grid-cols-[168px_minmax(0,1fr)]",
             active ? "bg-secondary text-foreground" : "hover:bg-secondary/70",
           )}
           type="button"
           onClick={() => onPlay(recording)}
         >
-          <span
-            className={cn(
-              "grid h-10 w-10 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground",
-              active && "bg-primary text-primary-foreground",
-            )}
-          >
-            <Play size={16} aria-hidden />
-          </span>
+          <EpisodeThumbnail recording={recording} active={active} />
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{formatRecordingDate(recording.recordingDate)}</span>
-            <span className="block line-clamp-2 text-xs text-muted-foreground">
+            <span className="block truncate text-base font-semibold">{formatRecordingDate(recording.recordingDate)}</span>
+            <span className="mt-1 block line-clamp-2 text-sm text-muted-foreground">
               {recording.sessionTitle || recording.recordingName}
             </span>
+            {recording.durationSeconds ? (
+              <span className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock size={13} aria-hidden />
+                {formatDuration(recording.durationSeconds)}
+              </span>
+            ) : null}
           </span>
         </button>
       );
@@ -216,8 +219,41 @@ function RecordingList({
           <span>{recordings.length}</span>
         </div>
       ) : null}
-      <div className="flex flex-col gap-1">{content}</div>
+      <div className="flex flex-col gap-2">{content}</div>
     </div>
+  );
+}
+
+function EpisodeThumbnail({
+  active,
+  recording,
+}: {
+  active: boolean;
+  recording: WebexRecording;
+}) {
+  return (
+    <span className="relative block aspect-video overflow-hidden rounded-[1.1rem] bg-black">
+      {recording.coverUrl ? (
+        <img
+          alt=""
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          src={recording.coverUrl}
+        />
+      ) : (
+        <span className="grid h-full w-full place-items-center bg-[linear-gradient(135deg,#111_0%,#30343b_100%)] text-white/60">
+          <Video size={24} aria-hidden />
+        </span>
+      )}
+      <span className="absolute inset-0 bg-black/20" />
+      <span
+        className={cn(
+          "absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-white shadow-lg backdrop-blur",
+          active ? "bg-white/28" : "bg-black/55",
+        )}
+      >
+        <Play className="ml-0.5" size={18} aria-hidden />
+      </span>
+    </span>
   );
 }
 
