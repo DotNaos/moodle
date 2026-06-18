@@ -120,7 +120,6 @@ export function WebexRecordingsPanel({
                     poster={activeRecording.coverUrl}
                     src={activeRecording.streamUrl}
                   />
-                  <ActiveRecordingOverlay recording={activeRecording} />
                 </>
               ) : (
                 <div className="grid aspect-video min-h-[320px] place-items-center px-6 text-center">
@@ -147,26 +146,6 @@ export function WebexRecordingsPanel({
         </div>
       )}
     </section>
-  );
-}
-
-function ActiveRecordingOverlay({ recording }: { recording: WebexRecording }) {
-  const duration = formatDuration(recording.durationSeconds);
-  return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden items-end justify-between gap-4 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-5 pb-5 pt-16 text-white md:flex md:px-6 md:pb-6">
-      <div className="min-w-0">
-        <p className="truncate text-xl font-semibold tracking-tight md:text-2xl">
-          {recording.sessionTitle || recording.recordingName}
-        </p>
-        <p className="mt-1 text-sm text-white/75">{formatRecordingDate(recording.recordingDate)}</p>
-      </div>
-      {duration ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/14 px-3 py-1.5 text-sm text-white backdrop-blur">
-          <Clock size={16} aria-hidden />
-          {duration}
-        </span>
-      ) : null}
-    </div>
   );
 }
 
