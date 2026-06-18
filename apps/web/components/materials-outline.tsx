@@ -213,7 +213,7 @@ export function MaterialsOutline({
   }
 
   return (
-    <div className="flex items-start gap-6">
+    <div className="flex items-start gap-4">
       <MaterialsSectionOutline sections={outlineSections} scrollSelector="[data-course-scroll]" />
       <div className="min-w-0 flex-1">
         <GroupedItemsView

@@ -82,17 +82,17 @@ export function MaterialsSectionOutline({
   }
 
   return (
-    <aside className="sticky top-3 hidden w-52 shrink-0 self-start lg:block">
-      <nav aria-label="Material-Kapitel" className="flex flex-col gap-1">
+    <aside className="sticky top-4 hidden w-40 shrink-0 self-start lg:block">
+      <nav aria-label="Material-Kapitel" className="flex flex-col border-l border-border/40 pl-3">
         {sections.map((section) => {
           const isActive = section.anchorId === activeAnchor;
           return (
             <a
               className={cn(
-                "block rounded-2xl px-3 py-2 text-sm transition-colors",
+                "group relative block py-1.5 text-xs leading-snug transition-colors",
                 isActive
-                  ? "bg-secondary text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
+                  ? "text-foreground"
+                  : "text-muted-foreground/70 hover:text-foreground",
               )}
               href={`#${encodeURIComponent(section.anchorId)}`}
               key={section.key}
@@ -103,10 +103,17 @@ export function MaterialsSectionOutline({
                 setActiveAnchor(section.anchorId);
               }}
             >
-              <span className={cn("block truncate", isActive && "font-semibold")}>{section.label}</span>
-              {isActive ? (
-                <span className="mt-0.5 block text-xs text-muted-foreground">{section.count} Materialien</span>
-              ) : null}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute -left-[13px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-muted-foreground/25 transition-colors",
+                  isActive ? "bg-foreground" : "group-hover:bg-foreground/50",
+                )}
+              />
+              <span className={cn("block truncate", isActive && "font-medium")}>
+                {section.label}
+                {isActive ? <span className="ml-1 text-[11px] font-normal text-muted-foreground">/{section.count}</span> : null}
+              </span>
             </a>
           );
         })}
