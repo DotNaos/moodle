@@ -21,6 +21,7 @@ import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import type { StudyOutline } from "@/lib/study-outline";
 import type { StudyMode } from "@/components/study-mode-actions";
 import { buildTaskLinksByResourceId, taskIdForMaterial } from "@/lib/task-material-links";
+import { cn } from "@/lib/utils";
 
 export function CourseMainPanel({
   course,
@@ -203,7 +204,7 @@ export function CourseMainPanel({
     }
 
     return (
-      <CoursePanelShell course={course}>
+      <CoursePanelShell course={course} wide>
         <MaterialsOutline
           courseId={courseId ?? String(course.id)}
           courseName={courseTitle(course)}
@@ -264,12 +265,12 @@ export function CourseMainPanel({
   );
 }
 
-function CoursePanelShell({ children, course }: { children: ReactNode; course?: Course | null }) {
+function CoursePanelShell({ children, course, wide = false }: { children: ReactNode; course?: Course | null; wide?: boolean }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-full">
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" data-course-scroll>
         {course ? <CourseHero course={course} /> : null}
-        <div className="mx-auto w-full max-w-3xl px-4 py-4 md:px-6 md:py-5">
+        <div className={cn("mx-auto w-full px-4 py-4 md:px-6 md:py-5", wide ? "max-w-5xl" : "max-w-3xl")}>
           {children}
         </div>
       </div>

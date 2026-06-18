@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EmptyState, LoadingRows, MaterialGridCard, MaterialGridPair, MaterialListPair, MaterialRow } from "@/components/dashboard-ui";
 import { GroupedItemsView, type GroupedItemsLayout } from "@/components/grouped-items-view";
+import { MaterialsSectionOutline, sectionAnchorId } from "@/components/materials-section-outline";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -71,6 +72,15 @@ export function MaterialsOutline({
   const filteredCount = useMemo(
     () => filteredSections.reduce((total, [, sectionMaterials]) => total + sectionMaterials.length, 0),
     [filteredSections],
+  );
+  const outlineSections = useMemo(
+    () => displaySections.map(([section, sectionItems]) => ({
+      anchorId: sectionAnchorId(section),
+      count: sectionItems.reduce((total, item) => total + item.materials.length, 0),
+      key: section,
+      label: section,
+    })),
+    [displaySections],
   );
   const pdfMaterials = useMemo(() => materials.filter(isPdfMaterial), [materials]);
   const selectedMaterials = useMemo(
@@ -203,115 +213,119 @@ export function MaterialsOutline({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <GroupedItemsView
-        header={
-          <MaterialTypeFilterSelect
-            filter={typeFilter}
-            onFilterChange={onTypeFilterChange}
-          />
-        }
-        layout={layout}
-        toolbarControls={
-          <MaterialSelectionControls
-            actionState={actionState}
-            allVisiblePDFsSelected={allVisiblePDFsSelected}
-            disabled={!courseId}
-            selectMode={selectMode}
-            selectedCount={selectedMaterials.length}
-            visiblePDFCount={visiblePDFMaterials.length}
-            onExportPDF={() => void runExportAction("pdf")}
-            onPrint={() => void runExportAction("print")}
-            onToggleSelectMode={toggleSelectMode}
-            onToggleVisiblePDFSelection={toggleVisiblePDFSelection}
-            onZip={() => void runExportAction("zip")}
-          />
-        }
-        sections={displaySections.map(([section, sectionItems]) => {
-          const sectionMaterials = sectionItems.flatMap((item) => item.materials);
-          return {
-          action: selectMode ? (
-            <MaterialSectionSelectionCheckbox
-              materials={sectionMaterials}
-              sectionLabel={section}
-              selectedMaterialIds={selectedMaterialIds}
-              onToggle={() => toggleSectionPDFSelection(sectionMaterials)}
+    <div className="flex items-start gap-6">
+      <MaterialsSectionOutline sections={outlineSections} scrollSelector="[data-course-scroll]" />
+      <div className="min-w-0 flex-1">
+        <GroupedItemsView
+          header={
+            <MaterialTypeFilterSelect
+              filter={typeFilter}
+              onFilterChange={onTypeFilterChange}
             />
-          ) : undefined,
-          key: section,
-          label: section,
-          items: sectionItems,
-          };
-        })}
-        getItemKey={(item) => item.key}
-        onLayoutChange={onLayoutChange}
-        renderGridItem={(item) => {
-          if (item.materials.length === 2) {
+          }
+          layout={layout}
+          toolbarControls={
+            <MaterialSelectionControls
+              actionState={actionState}
+              allVisiblePDFsSelected={allVisiblePDFsSelected}
+              disabled={!courseId}
+              selectMode={selectMode}
+              selectedCount={selectedMaterials.length}
+              visiblePDFCount={visiblePDFMaterials.length}
+              onExportPDF={() => void runExportAction("pdf")}
+              onPrint={() => void runExportAction("print")}
+              onToggleSelectMode={toggleSelectMode}
+              onToggleVisiblePDFSelection={toggleVisiblePDFSelection}
+              onZip={() => void runExportAction("zip")}
+            />
+          }
+          sections={displaySections.map(([section, sectionItems]) => {
+            const sectionMaterials = sectionItems.flatMap((item) => item.materials);
+            return {
+              action: selectMode ? (
+                <MaterialSectionSelectionCheckbox
+                  materials={sectionMaterials}
+                  sectionLabel={section}
+                  selectedMaterialIds={selectedMaterialIds}
+                  onToggle={() => toggleSectionPDFSelection(sectionMaterials)}
+                />
+              ) : undefined,
+              anchorId: sectionAnchorId(section),
+              key: section,
+              label: section,
+              items: sectionItems,
+            };
+          })}
+          getItemKey={(item) => item.key}
+          onLayoutChange={onLayoutChange}
+          renderGridItem={(item) => {
+            if (item.materials.length === 2) {
+              return (
+                <MaterialGridPair
+                  activeMaterialId={selectedMaterialId}
+                  hrefForMaterial={materialHref}
+                  materials={item.materials}
+                  onOpenTask={taskOpenerForMaterial(item.materials[0])}
+                  onSelect={(material) => selectMode && isPdfMaterial(material) ? toggleSelection(material) : onSelectMaterial(material)}
+                  onToggleSelection={selectMode ? toggleSelection : undefined}
+                  selectedMaterialIds={selectedMaterialIds}
+                />
+              );
+            }
+
+            const material = item.materials[0];
             return (
-              <MaterialGridPair
-                activeMaterialId={selectedMaterialId}
-                hrefForMaterial={materialHref}
-                materials={item.materials}
-                onOpenTask={taskOpenerForMaterial(item.materials[0])}
-                onSelect={(material) => selectMode && isPdfMaterial(material) ? toggleSelection(material) : onSelectMaterial(material)}
-                onToggleSelection={selectMode ? toggleSelection : undefined}
-                selectedMaterialIds={selectedMaterialIds}
+              <MaterialGridCard
+                active={material.id === selectedMaterialId}
+                href={materialHref(material)}
+                material={material}
+                openTaskLabel={materialTaskActionLabel(material.name)}
+                onOpenTask={taskOpenerForMaterial(material)}
+                onSelect={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : () => onSelectMaterial(material)}
+                onToggleSelection={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : undefined}
+                selectedForExport={selectedMaterialIds.has(material.id)}
               />
             );
-          }
+          }}
+          renderListItem={(item) => {
+            if (item.materials.length === 2) {
+              return (
+                <MaterialListPair
+                  activeMaterialId={selectedMaterialId}
+                  hrefForMaterial={materialHref}
+                  materials={item.materials}
+                  onOpenTask={taskOpenerForMaterial(item.materials[0])}
+                  onSelect={(material) => selectMode && isPdfMaterial(material) ? toggleSelection(material) : onSelectMaterial(material)}
+                  onToggleSelection={selectMode ? toggleSelection : undefined}
+                  selectedMaterialIds={selectedMaterialIds}
+                />
+              );
+            }
 
-          const material = item.materials[0];
-          return (
-            <MaterialGridCard
-              active={material.id === selectedMaterialId}
-              href={materialHref(material)}
-              material={material}
-              openTaskLabel={materialTaskActionLabel(material.name)}
-              onOpenTask={taskOpenerForMaterial(material)}
-              onSelect={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : () => onSelectMaterial(material)}
-              onToggleSelection={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : undefined}
-              selectedForExport={selectedMaterialIds.has(material.id)}
-            />
-          );
-        }}
-        renderListItem={(item) => {
-          if (item.materials.length === 2) {
+            const material = item.materials[0];
             return (
-              <MaterialListPair
-                activeMaterialId={selectedMaterialId}
-                hrefForMaterial={materialHref}
-                materials={item.materials}
-                onOpenTask={taskOpenerForMaterial(item.materials[0])}
-                onSelect={(material) => selectMode && isPdfMaterial(material) ? toggleSelection(material) : onSelectMaterial(material)}
-                onToggleSelection={selectMode ? toggleSelection : undefined}
-                selectedMaterialIds={selectedMaterialIds}
+              <MaterialRow
+                active={material.id === selectedMaterialId}
+                href={materialHref(material)}
+                material={material}
+                openTaskLabel={materialTaskActionLabel(material.name)}
+                onOpenTask={taskOpenerForMaterial(material)}
+                onSelect={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : () => onSelectMaterial(material)}
+                onToggleSelection={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : undefined}
+                selectedForExport={selectedMaterialIds.has(material.id)}
               />
             );
+          }}
+          emptyState={
+            filteredCount === 0 ? (
+              <EmptyState
+                title={typeFilter === "pdf" ? "Keine PDFs gefunden" : "Keine Seiten & Ressourcen gefunden"}
+                description="Probiere einen anderen Typ-Filter oder wähle „Alle Typen“."
+              />
+            ) : null
           }
-
-          const material = item.materials[0];
-          return (
-            <MaterialRow
-              active={material.id === selectedMaterialId}
-              href={materialHref(material)}
-              material={material}
-              openTaskLabel={materialTaskActionLabel(material.name)}
-              onOpenTask={taskOpenerForMaterial(material)}
-              onSelect={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : () => onSelectMaterial(material)}
-              onToggleSelection={selectMode && isPdfMaterial(material) ? () => toggleSelection(material) : undefined}
-              selectedForExport={selectedMaterialIds.has(material.id)}
-            />
-          );
-        }}
-        emptyState={
-          filteredCount === 0 ? (
-            <EmptyState
-              title={typeFilter === "pdf" ? "Keine PDFs gefunden" : "Keine Seiten & Ressourcen gefunden"}
-              description="Probiere einen anderen Typ-Filter oder wähle „Alle Typen“."
-            />
-          ) : null
-        }
-      />
+        />
+      </div>
     </div>
   );
 }

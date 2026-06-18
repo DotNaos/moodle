@@ -4,7 +4,7 @@ import { Check, Copy, Download, ExternalLink, Maximize2, Minimize2, Minus, MoreV
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type React from "react";
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { PDFImageCopyActions } from "@/components/pdf-image-copy-actions";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   startPDFDownload,
 } from "@/lib/pdf-file-actions";
 import { printPDF } from "@/lib/pdf-print-actions";
+import { ensureReadableStreamAsyncIterator } from "@/lib/readable-stream-async-iterator";
 import type {
   PDFPageContext,
   PDFScrollCommand,
@@ -39,9 +40,23 @@ const ZOOM_STEP = 0.15;
 const ZOOM_COMMIT_DELAY = 180;
 const FLOAT_TRANSITION_MS = 320;
 const FLOAT_INSET = 16;
+const PAGE_RENDER_OVERSCAN = 1;
+const PAGE_VISIBILITY_MARGIN = 500;
+const PDF_FALLBACK_PAGE_SIZE = { width: 612, height: 792 };
+const PDF_PAGE_GAP_AT_MIN_ZOOM = 20;
 
 type FloatState = "inline" | "opening" | "open" | "closing";
 type PDFCopyStatus = "idle" | "copying" | "copied-file" | "downloaded" | "failed";
+type ZoomAnchor = {
+  page: number;
+  viewportX: number;
+  viewportY: number;
+  xRatio: number;
+  yRatio: number;
+};
+type PageElementRegistrar = (page: number, element: HTMLDivElement | null) => void;
+
+const pdfScrollPositions = new Map<string, { page: number; offset: number }>();
 
 export function PDFDocumentViewer({
   allowFloat = false,
@@ -80,6 +95,8 @@ export function PDFDocumentViewer({
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pages, setPages] = useState<Record<number, PDFPageContext>>({});
+  const [visiblePageNumbers, setVisiblePageNumbers] = useState<number[]>([1]);
+  const [defaultPageSize, setDefaultPageSize] = useState(PDF_FALLBACK_PAGE_SIZE);
   const [currentViewImageDataURL, setCurrentViewImageDataURL] = useState<string | null>(null);
   // `zoom` is the scale pdf.js rendered at; `visualZoom` is what the user sees.
   // Gestures only move `visualZoom` via cheap CSS zoom and commit to a crisp
@@ -100,10 +117,15 @@ export function PDFDocumentViewer({
   const zoomRef = useRef(zoom);
   const visualZoomRef = useRef(1);
   const gestureBaseZoomRef = useRef(1);
+  const pendingZoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const activeZoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const pendingVisualZoomRef = useRef(1);
+  const visualZoomFrameRef = useRef<number | null>(null);
   const zoomCommitTimeoutRef = useRef<number | null>(null);
   const fitWidthTimeoutRef = useRef<number | null>(null);
   const floatTimeoutRef = useRef<number | null>(null);
   const copyStatusTimeoutRef = useRef<number | null>(null);
+  const handledScrollCommandIdRef = useRef<number | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     scrollLeft: number;
@@ -114,7 +136,18 @@ export function PDFDocumentViewer({
   const captureTimeoutRef = useRef<number | null>(null);
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  const materialIdRef = useRef(materialId);
+  materialIdRef.current = materialId;
   const downloadFilename = useMemo(() => buildPDFDownloadFilename(title), [title]);
+  const visiblePageSet = useMemo(() => new Set(visiblePageNumbers), [visiblePageNumbers]);
+  const pageGap = useMemo(() => Math.round((PDF_PAGE_GAP_AT_MIN_ZOOM / MIN_ZOOM) * zoom), [zoom]);
+  const registerPageElement = useCallback<PageElementRegistrar>((page, element) => {
+    if (element) {
+      pageRefs.current[page] = element;
+    } else {
+      delete pageRefs.current[page];
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,11 +155,17 @@ export function PDFDocumentViewer({
     setPageCount(0);
     setCurrentPage(1);
     setPages({});
+    setVisiblePageNumbers([1]);
+    setDefaultPageSize(PDF_FALLBACK_PAGE_SIZE);
     setCurrentViewImageDataURL(null);
     setZoom(1);
     setVisualZoom(1);
     zoomRef.current = 1;
     visualZoomRef.current = 1;
+    activeZoomAnchorRef.current = null;
+    pendingZoomAnchorRef.current = null;
+    pendingVisualZoomRef.current = 1;
+    handledScrollCommandIdRef.current = null;
     setPanning(false);
     setError(null);
     setCopyStatus("idle");
@@ -205,6 +244,47 @@ export function PDFDocumentViewer({
     };
   }, [pdf]);
 
+  const updateVisiblePageNumbers = useCallback((preferredPage?: number) => {
+    const container = containerRef.current;
+    if (!container || !pageCount) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const nextPages = new Set<number>();
+    const addPageRange = (page: number) => {
+      for (let offset = -PAGE_RENDER_OVERSCAN; offset <= PAGE_RENDER_OVERSCAN; offset += 1) {
+        const nextPage = page + offset;
+        if (nextPage >= 1 && nextPage <= pageCount) {
+          nextPages.add(nextPage);
+        }
+      }
+    };
+
+    Object.entries(pageRefs.current).forEach(([pageValue, element]) => {
+      if (!element) {
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const nearViewport = rect.bottom > containerRect.top - PAGE_VISIBILITY_MARGIN
+        && rect.top < containerRect.bottom + PAGE_VISIBILITY_MARGIN;
+      if (nearViewport) {
+        addPageRange(Number(pageValue));
+      }
+    });
+
+    addPageRange(preferredPage ?? currentPage);
+    setVisiblePageNumbers((current) => {
+      const next = [...nextPages].sort((left, right) => left - right);
+      return arraysEqual(current, next) ? current : next;
+    });
+  }, [currentPage, pageCount]);
+
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => updateVisiblePageNumbers());
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fitWidth, pageCount, updateVisiblePageNumbers]);
+
   const syncCurrentPageFromScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) {
@@ -214,6 +294,7 @@ export function PDFDocumentViewer({
     const containerRect = container.getBoundingClientRect();
     let nextPage: number | null = null;
     let nextDistance = Number.POSITIVE_INFINITY;
+    let nextOffset = 0;
 
     Object.entries(pageRefs.current).forEach(([page, element]) => {
       if (!element) {
@@ -230,11 +311,13 @@ export function PDFDocumentViewer({
       if (distance < nextDistance) {
         nextDistance = distance;
         nextPage = Number(page);
+        nextOffset = Math.max(0, containerRect.top - pageRect.top);
       }
     });
 
     if (nextPage) {
       setCurrentPage(nextPage);
+      pdfScrollPositions.set(materialIdRef.current, { page: nextPage, offset: nextOffset });
     }
   }, []);
 
@@ -291,16 +374,16 @@ export function PDFDocumentViewer({
     setCurrentViewImageDataURL(outputCanvas.toDataURL("image/jpeg", 0.68));
   }, [currentPage]);
 
-  useEffect(() => {
-    captureCurrentView();
-  }, [captureCurrentView, currentPage, pages, zoom]);
-
   const scheduleCurrentViewCapture = useCallback(() => {
     if (captureTimeoutRef.current) {
       window.clearTimeout(captureTimeoutRef.current);
     }
-    captureTimeoutRef.current = window.setTimeout(captureCurrentView, 120);
+    captureTimeoutRef.current = window.setTimeout(captureCurrentView, 260);
   }, [captureCurrentView]);
+
+  useEffect(() => {
+    scheduleCurrentViewCapture();
+  }, [currentPage, scheduleCurrentViewCapture, zoom]);
 
   const scrollToPage = useCallback((page: number): boolean => {
     const container = containerRef.current;
@@ -313,12 +396,32 @@ export function PDFDocumentViewer({
     const pageRect = pageElement.getBoundingClientRect();
     container.scrollTop += pageRect.top - containerRect.top;
     setCurrentPage(page);
+    updateVisiblePageNumbers(page);
     scheduleCurrentViewCapture();
     return true;
-  }, [scheduleCurrentViewCapture]);
+  }, [scheduleCurrentViewCapture, updateVisiblePageNumbers]);
+
+  const restoreScrollPosition = useCallback((saved: { page: number; offset: number }): boolean => {
+    const container = containerRef.current;
+    const pageElement = pageRefs.current[saved.page];
+    if (!container || !pageElement) {
+      return false;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const pageRect = pageElement.getBoundingClientRect();
+    container.scrollTop += pageRect.top - containerRect.top + saved.offset;
+    setCurrentPage(saved.page);
+    updateVisiblePageNumbers(saved.page);
+    scheduleCurrentViewCapture();
+    return true;
+  }, [scheduleCurrentViewCapture, updateVisiblePageNumbers]);
 
   useEffect(() => {
     if (!scrollCommand || !pageCount) {
+      return;
+    }
+    if (handledScrollCommandIdRef.current === scrollCommand.id) {
       return;
     }
 
@@ -329,6 +432,7 @@ export function PDFDocumentViewer({
     const run = () => {
       attempts += 1;
       if (scrollToPage(page) || attempts >= 10) {
+        handledScrollCommandIdRef.current = scrollCommand.id;
         return;
       }
       animationFrame = window.requestAnimationFrame(run);
@@ -338,10 +442,45 @@ export function PDFDocumentViewer({
     return () => window.cancelAnimationFrame(animationFrame);
   }, [pageCount, scrollCommand, scrollToPage]);
 
+  const restoredPdfRef = useRef<PDFDocumentProxy | null>(null);
+  useEffect(() => {
+    if (!pdf || !pageCount || scrollCommand) {
+      return;
+    }
+    if (restoredPdfRef.current === pdf) {
+      return;
+    }
+
+    const saved = pdfScrollPositions.get(materialId);
+    if (!saved || (saved.page <= 1 && saved.offset <= 0)) {
+      restoredPdfRef.current = pdf;
+      return;
+    }
+
+    const targetPage = Math.min(saved.page, pageCount);
+    let attempts = 0;
+    let animationFrame = 0;
+
+    const run = () => {
+      attempts += 1;
+      if (restoreScrollPosition({ page: targetPage, offset: saved.offset }) || attempts >= 10) {
+        restoredPdfRef.current = pdf;
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(run);
+    };
+
+    animationFrame = window.requestAnimationFrame(run);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [materialId, pageCount, pdf, restoreScrollPosition, scrollCommand]);
+
   useEffect(() => {
     return () => {
       if (captureTimeoutRef.current) {
         window.clearTimeout(captureTimeoutRef.current);
+      }
+      if (visualZoomFrameRef.current) {
+        window.cancelAnimationFrame(visualZoomFrameRef.current);
       }
       if (zoomCommitTimeoutRef.current) {
         window.clearTimeout(zoomCommitTimeoutRef.current);
@@ -390,17 +529,90 @@ export function PDFDocumentViewer({
     [currentPage],
   );
 
+  const captureZoomAnchor = useCallback((anchor?: { x: number; y: number }): ZoomAnchor | null => {
+    const container = containerRef.current;
+    if (!container) {
+      return null;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const anchorX = anchor?.x ?? containerRect.left + containerRect.width / 2;
+    const anchorY = anchor?.y ?? containerRect.top + containerRect.height / 2;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestElement: HTMLDivElement | null = null;
+    let bestPage = 1;
+
+    for (const [pageValue, element] of Object.entries(pageRefs.current)) {
+      if (!element) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      const visible = rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+      if (!visible) {
+        continue;
+      }
+      const distance = anchorY < rect.top ? rect.top - anchorY : anchorY > rect.bottom ? anchorY - rect.bottom : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestElement = element;
+        bestPage = Number(pageValue);
+      }
+    }
+
+    if (!bestElement) {
+      return null;
+    }
+
+    const pageRect = bestElement.getBoundingClientRect();
+    return {
+      page: bestPage,
+      viewportX: anchorX - containerRect.left,
+      viewportY: anchorY - containerRect.top,
+      xRatio: pageRect.width > 0 ? clamp((anchorX - pageRect.left) / pageRect.width, 0, 1) : 0.5,
+      yRatio: pageRect.height > 0 ? clamp((anchorY - pageRect.top) / pageRect.height, 0, 1) : 0.5,
+    };
+  }, []);
+
+  const restoreZoomAnchor = useCallback((anchor: ZoomAnchor) => {
+    const container = containerRef.current;
+    const pageElement = pageRefs.current[anchor.page];
+    if (!container || !pageElement) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const pageRect = pageElement.getBoundingClientRect();
+    const pointX = pageRect.left + pageRect.width * anchor.xRatio;
+    const pointY = pageRect.top + pageRect.height * anchor.yRatio;
+    container.scrollLeft += pointX - (containerRect.left + anchor.viewportX);
+    container.scrollTop += pointY - (containerRect.top + anchor.viewportY);
+    scheduleCurrentViewCapture();
+  }, [scheduleCurrentViewCapture]);
+
   const scheduleZoomCommit = useCallback(() => {
     if (zoomCommitTimeoutRef.current) {
       window.clearTimeout(zoomCommitTimeoutRef.current);
     }
     zoomCommitTimeoutRef.current = window.setTimeout(() => {
       const next = visualZoomRef.current;
+      pendingZoomAnchorRef.current = activeZoomAnchorRef.current ?? captureZoomAnchor();
       zoomRef.current = next;
       setZoom(next);
       scheduleCurrentViewCapture();
     }, ZOOM_COMMIT_DELAY);
-  }, [scheduleCurrentViewCapture]);
+  }, [captureZoomAnchor, scheduleCurrentViewCapture]);
+
+  const scheduleVisualZoomState = useCallback((nextZoom: number) => {
+    pendingVisualZoomRef.current = nextZoom;
+    if (visualZoomFrameRef.current) {
+      return;
+    }
+
+    visualZoomFrameRef.current = window.requestAnimationFrame(() => {
+      visualZoomFrameRef.current = null;
+      setVisualZoom(pendingVisualZoomRef.current);
+    });
+  }, []);
 
   // Cheap visual zoom (CSS) so trackpad pinches stay buttery; the crisp
   // pdf.js re-render happens in scheduleZoomCommit once the gesture settles.
@@ -414,11 +626,18 @@ export function PDFDocumentViewer({
         return;
       }
 
+      const zoomAnchor = captureZoomAnchor(anchor);
+      if (zoomAnchor) {
+        activeZoomAnchorRef.current = zoomAnchor;
+        pendingZoomAnchorRef.current = zoomAnchor;
+      }
       visualZoomRef.current = clamped;
       if (content) {
         content.style.zoom = String(clamped / zoomRef.current);
       }
-      if (container && anchor) {
+      if (zoomAnchor) {
+        restoreZoomAnchor(zoomAnchor);
+      } else if (container && anchor) {
         const rect = container.getBoundingClientRect();
         const offsetX = anchor.x - rect.left;
         const offsetY = anchor.y - rect.top;
@@ -426,10 +645,10 @@ export function PDFDocumentViewer({
         container.scrollLeft = (container.scrollLeft + offsetX) * ratio - offsetX;
         container.scrollTop = (container.scrollTop + offsetY) * ratio - offsetY;
       }
-      setVisualZoom(clamped);
+      scheduleVisualZoomState(clamped);
       scheduleZoomCommit();
     },
-    [scheduleZoomCommit],
+    [captureZoomAnchor, restoreZoomAnchor, scheduleVisualZoomState, scheduleZoomCommit],
   );
 
   // Once the committed render catches up, the CSS zoom compensation collapses
@@ -439,7 +658,17 @@ export function PDFDocumentViewer({
     if (content) {
       content.style.zoom = String(visualZoomRef.current / zoom);
     }
-  }, [zoom]);
+    const anchor = pendingZoomAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+    const animationFrame = window.requestAnimationFrame(() => {
+      restoreZoomAnchor(anchor);
+      pendingZoomAnchorRef.current = null;
+      activeZoomAnchorRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [restoreZoomAnchor, zoom]);
 
   const applyVisualZoomAtCenter = useCallback(
     (nextZoom: number) => {
@@ -640,6 +869,27 @@ export function PDFDocumentViewer({
     scheduleCurrentViewCapture();
   }
 
+  const handlePageBaseSize = useCallback((baseSize: { width: number; height: number }) => {
+    setDefaultPageSize((current) =>
+      Math.abs(current.width - baseSize.width) < 0.5 && Math.abs(current.height - baseSize.height) < 0.5
+        ? current
+        : baseSize,
+    );
+  }, []);
+
+  const handlePageRendered = useCallback((pageContext: PDFPageContext) => {
+    setPages((current) => {
+      const existing = current[pageContext.page];
+      if (existing?.text === pageContext.text && existing.imageDataURL === pageContext.imageDataURL) {
+        return current;
+      }
+      return { ...current, [pageContext.page]: pageContext };
+    });
+    if (pageContext.page === currentPage) {
+      scheduleCurrentViewCapture();
+    }
+  }, [currentPage, scheduleCurrentViewCapture]);
+
   const pageNumbers = useMemo(
     () => Array.from({ length: pageCount }, (_, index) => index + 1),
     [pageCount],
@@ -719,7 +969,7 @@ export function PDFDocumentViewer({
         <div
           ref={containerRef}
           className={cn(
-            "min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-16 [-webkit-overflow-scrolling:touch] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4",
+            "min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-16 [overflow-anchor:none] [-webkit-overflow-scrolling:touch] data-[pannable=true]:cursor-grab data-[panning=true]:cursor-grabbing sm:px-4",
             embedded ? "pt-3" : "pt-12",
             visualZoom > 1.01 ? "[touch-action:none]" : "[touch-action:pan-y_pinch-zoom]",
           )}
@@ -731,22 +981,26 @@ export function PDFDocumentViewer({
           onPointerUp={stopDragging}
           onScroll={() => {
             syncCurrentPageFromScroll();
+            updateVisiblePageNumbers();
             scheduleCurrentViewCapture();
           }}
         >
-          <div ref={contentRef} className="mx-auto flex w-fit min-w-full flex-col items-center gap-5">
+          <div
+            ref={contentRef}
+            className="mx-auto flex w-fit min-w-full flex-col items-center [overflow-anchor:none]"
+            style={{ rowGap: pageGap }}
+          >
             {pageNumbers.map((page) => (
               <PDFPageCanvas
                 key={page}
                 fitWidth={fitWidth}
-                onRendered={(pageContext) =>
-                  setPages((current) => ({ ...current, [pageContext.page]: pageContext }))
-                }
+                fallbackBaseSize={defaultPageSize}
+                onRendered={handlePageRendered}
+                onBaseSize={handlePageBaseSize}
                 pageNumber={page}
                 pdf={pdf}
-                setPageRef={(element) => {
-                  pageRefs.current[page] = element;
-                }}
+                registerPageElement={registerPageElement}
+                shouldRender={visiblePageSet.has(page)}
                 zoom={zoom}
               />
             ))}
@@ -929,19 +1183,25 @@ function copyButtonTitle(status: PDFCopyStatus): string {
   }
 }
 
-function PDFPageCanvas({
+const PDFPageCanvas = memo(function PDFPageCanvas({
+  fallbackBaseSize,
   fitWidth,
+  onBaseSize,
   onRendered,
   pageNumber,
   pdf,
-  setPageRef,
+  registerPageElement,
+  shouldRender,
   zoom,
 }: {
+  fallbackBaseSize: { width: number; height: number };
   fitWidth: number;
+  onBaseSize: (size: { width: number; height: number }) => void;
   onRendered: (page: PDFPageContext) => void;
   pageNumber: number;
   pdf: PDFDocumentProxy;
-  setPageRef: (element: HTMLDivElement | null) => void;
+  registerPageElement: PageElementRegistrar;
+  shouldRender: boolean;
   zoom: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -949,15 +1209,16 @@ function PDFPageCanvas({
   const baseSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
-    setPageRef(pageRef.current);
-    return () => setPageRef(null);
-  }, [setPageRef]);
+    registerPageElement(pageNumber, pageRef.current);
+    return () => registerPageElement(pageNumber, null);
+  }, [pageNumber, registerPageElement]);
 
-  // Pre-size the canvas synchronously from the last known page dimensions so
-  // a zoom commit swaps in without a visible size jump while pdf.js renders.
+  // Pre-size the canvas synchronously from the last known or fallback page
+  // dimensions so offscreen pages keep stable scroll geometry without render
+  // work, and a zoom commit swaps in without a visible size jump.
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
-    const base = baseSizeRef.current;
+    const base = baseSizeRef.current ?? fallbackBaseSize;
     if (!canvas || !base || !fitWidth) {
       return;
     }
@@ -965,10 +1226,22 @@ function PDFPageCanvas({
     const scale = (availableWidth / base.width) * zoom;
     canvas.style.width = `${Math.floor(base.width * scale)}px`;
     canvas.style.height = `${Math.floor(base.height * scale)}px`;
-  }, [fitWidth, zoom]);
+  }, [fallbackBaseSize, fitWidth, zoom]);
 
   useEffect(() => {
-    if (!fitWidth) {
+    if (shouldRender) {
+      return;
+    }
+    const canvas = canvasRef.current;
+    if (!canvas || (canvas.width <= 1 && canvas.height <= 1)) {
+      return;
+    }
+    canvas.width = 1;
+    canvas.height = 1;
+  }, [shouldRender]);
+
+  useEffect(() => {
+    if (!fitWidth || !shouldRender) {
       return;
     }
     let cancelled = false;
@@ -986,6 +1259,7 @@ function PDFPageCanvas({
       }
       const defaultViewport = page.getViewport({ scale: 1 });
       baseSizeRef.current = { width: defaultViewport.width, height: defaultViewport.height };
+      onBaseSize(baseSizeRef.current);
       const availableWidth = Math.max(fitWidth - 32, 320);
       const fitScale = availableWidth / defaultViewport.width;
       const scale = fitScale * zoom;
@@ -1010,7 +1284,7 @@ function PDFPageCanvas({
         onRendered({
           page: pageNumber,
           text,
-          imageDataURL: capturePageImage(canvas),
+          imageDataURL: null,
         });
       }
     }
@@ -1025,17 +1299,18 @@ function PDFPageCanvas({
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [fitWidth, onRendered, pageNumber, pdf, zoom]);
+  }, [fitWidth, onBaseSize, onRendered, pageNumber, pdf, shouldRender, zoom]);
 
   return (
     <div ref={pageRef} className="mx-auto w-fit rounded-sm bg-card shadow-sm">
       <canvas ref={canvasRef} className="block max-w-none" />
     </div>
   );
-}
+});
 
 async function readPageText(page: PDFPageProxy): Promise<string> {
   try {
+    ensureReadableStreamAsyncIterator();
     const textContent = await page.getTextContent();
     return textContent.items
       .map((item) => ("str" in item ? item.str : ""))
@@ -1053,6 +1328,10 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+function arraysEqual(left: number[], right: number[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -1063,24 +1342,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function isRenderCancelled(error: unknown): boolean {
   return error instanceof Error && error.name === "RenderingCancelledException";
-}
-
-function capturePageImage(canvas: HTMLCanvasElement): string | null {
-  const maxWidth = 1200;
-  if (canvas.width <= maxWidth) {
-    return canvas.toDataURL("image/jpeg", 0.64);
-  }
-
-  const scale = maxWidth / canvas.width;
-  const previewCanvas = document.createElement("canvas");
-  previewCanvas.width = maxWidth;
-  previewCanvas.height = Math.floor(canvas.height * scale);
-  const context = previewCanvas.getContext("2d");
-  if (!context) {
-    return null;
-  }
-  context.drawImage(canvas, 0, 0, previewCanvas.width, previewCanvas.height);
-  return previewCanvas.toDataURL("image/jpeg", 0.64);
 }
 
 function PDFLoading() {

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { Material } from "@/lib/dashboard-data";
 import { Button } from "@/components/ui/button";
-import { PDFDocumentViewerMode } from "@/components/pdf-document-viewer-mode";
 import { Spinner } from "@/components/ui/spinner";
 import { SplitPDFPairViewer } from "@/components/split-pdf-pair-viewer";
 import { findTaskSheetSolutionPair } from "@/lib/material-pairs";
@@ -43,17 +42,6 @@ export function FileViewer({
     () => (materialKind === "pdf" ? findTaskSheetSolutionPair(material, materials) : null),
     [material, materialKind, materials],
   );
-  const pdfUrl = useMemo(
-    () => (courseId && material && materialKind === "pdf" ? pdfPreviewUrl(courseId, material) : ""),
-    [courseId, material, materialKind],
-  );
-
-  useEffect(() => {
-    if (!taskSheetPair) {
-      setSplitOpen(false);
-    }
-  }, [taskSheetPair]);
-
   useEffect(() => {
     setText("");
     setError(null);
@@ -126,29 +114,17 @@ export function FileViewer({
 
       <div className="min-h-0 flex-1 overflow-hidden bg-muted">
         {materialKind === "pdf" ? (
-          taskSheetPair ? (
-            <SplitPDFPairViewer
-              courseId={courseId}
-              material={material}
-              onOpenMaterial={onOpenMaterial}
-              onPDFStateChange={onPDFStateChange}
-              onSplitOpenChange={setSplitOpen}
-              pair={taskSheetPair}
-              pdfScrollCommand={pdfScrollCommand}
-              splitOpen={splitOpen}
-            />
-          ) : (
-            <PDFDocumentViewerMode
-              allowFloat
-              courseId={courseId}
-              externalUrl={material.url}
-              materialId={material.id}
-              onStateChange={onPDFStateChange}
-              scrollCommand={pdfScrollCommand}
-              title={material.name}
-              url={pdfUrl}
-            />
-          )
+          <SplitPDFPairViewer
+            courseId={courseId}
+            material={material}
+            materials={materials}
+            onOpenMaterial={onOpenMaterial}
+            onPDFStateChange={onPDFStateChange}
+            onSplitOpenChange={setSplitOpen}
+            pair={taskSheetPair}
+            pdfScrollCommand={pdfScrollCommand}
+            splitOpen={splitOpen}
+          />
         ) : loadingText ? (
           <PreviewLoading />
         ) : error ? (
@@ -205,10 +181,6 @@ function PreviewMessage({
 function getMaterialKind(material: Material | null): "pdf" | "text" {
   const value = [material?.fileType, material?.url, material?.name].filter(Boolean).join(" ").toLowerCase();
   return value.includes("pdf") ? "pdf" : "text";
-}
-
-function pdfPreviewUrl(courseId: string, material: Material): string {
-  return `/api/moodle/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(material.id)}/pdf`;
 }
 
 function textPreviewUrl(courseId: string, materialId: string): string {
