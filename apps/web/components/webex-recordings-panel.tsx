@@ -105,7 +105,7 @@ export function WebexRecordingsPanel({
           </form>
         </div>
       ) : course ? (
-        <div className="grid min-h-0 flex-1 gap-5 overflow-auto px-0 pb-5 md:px-6 md:pb-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid min-h-0 flex-1 gap-5 overflow-auto px-0 pb-5 md:px-6 md:pb-6 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-h-0 flex-col gap-0 md:gap-4">
             {state?.error ? (
               <div className="mx-4 mb-4 rounded-3xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-0 md:mb-0">
