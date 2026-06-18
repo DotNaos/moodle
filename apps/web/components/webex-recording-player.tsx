@@ -3,7 +3,7 @@
 import { AlertTriangle, FastForward, Maximize, Minimize, Pause, Play, Rewind, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isHLSStreamUrl, nativeHLSMimeTypes } from "@/lib/webex-recording-playback";
+import { isHLSStreamUrl, nativeHLSMimeTypes, shouldUseNativeHLS } from "@/lib/webex-recording-playback";
 import { cn } from "@/lib/utils";
 
 type PlaybackState = "ready" | "unsupported" | "failed";
@@ -55,7 +55,7 @@ export function WebexRecordingPlayer({
     video.removeAttribute("src");
     video.load();
 
-    if (canPlayNativeHLS(video)) {
+    if (shouldUseNativeHLS(navigator.userAgent) && canPlayNativeHLS(video)) {
       video.src = src;
       video.load();
       return () => {

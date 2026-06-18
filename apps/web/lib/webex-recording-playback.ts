@@ -17,3 +17,11 @@ export function nativeHLSMimeTypes(): string[] {
     "application/x-mpegURL",
   ];
 }
+
+export function shouldUseNativeHLS(userAgent: string): boolean {
+  if (/\b(iPad|iPhone|iPod)\b/i.test(userAgent)) {
+    return true;
+  }
+
+  return /\bSafari\//i.test(userAgent) && !/\b(Chrome|Chromium|CriOS|FxiOS|Edg|OPR)\//i.test(userAgent);
+}
