@@ -153,7 +153,11 @@ export function WebexRecordingPlayer({
     }
 
     if (video.paused) {
-      void video.play().catch(() => setState("failed"));
+      void video.play().catch(() => {
+        if (video.error || video.readyState === 0) {
+          setState("failed");
+        }
+      });
       return;
     }
 
@@ -349,6 +353,8 @@ export function WebexRecordingPlayer({
         onClick={togglePlay}
         onDoubleClick={toggleFullscreen}
         onLoadedMetadata={handleLoadedMetadata}
+        onCanPlay={() => setState("ready")}
+        onError={() => setState("failed")}
         onPause={handlePause}
         onEnded={handleEnded}
         onPlay={() => setIsPlaying(true)}
