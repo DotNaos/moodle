@@ -69,6 +69,7 @@ export function MaterialsOutline({
     () => filteredSections.map(([section, sectionMaterials]) => [section, buildMaterialDisplayItems(sectionMaterials)] as const),
     [filteredSections],
   );
+  const materialHref = useCallback((material: Material) => courseId ? buildMaterialHref(courseId, material) : "#", [courseId]);
   const filteredCount = useMemo(
     () => filteredSections.reduce((total, [, sectionMaterials]) => total + sectionMaterials.length, 0),
     [filteredSections],
@@ -77,10 +78,15 @@ export function MaterialsOutline({
     () => displaySections.map(([section, sectionItems]) => ({
       anchorId: sectionAnchorId(section),
       count: sectionItems.reduce((total, item) => total + item.materials.length, 0),
+      children: sectionItems.flatMap((item) => item.materials.map((material) => ({
+        href: materialHref(material),
+        key: material.id,
+        label: material.name,
+      }))),
       key: section,
       label: section,
     })),
-    [displaySections],
+    [displaySections, materialHref],
   );
   const pdfMaterials = useMemo(() => materials.filter(isPdfMaterial), [materials]);
   const selectedMaterials = useMemo(
@@ -106,8 +112,6 @@ export function MaterialsOutline({
     const taskId = taskIdForMaterial?.(material) ?? taskIdForPairedSheetMaterial(material, materials, taskIdForMaterial);
     return taskId && onOpenTask ? () => onOpenTask(taskId) : undefined;
   };
-  const materialHref = (material: Material) => courseId ? buildMaterialHref(courseId, material) : "#";
-
   const toggleSelection = (material: Material) => {
     setActionState({ kind: "idle" });
     setSelectedMaterialIds((current) => {
@@ -213,7 +217,7 @@ export function MaterialsOutline({
   }
 
   return (
-    <div className="flex items-start gap-4">
+    <div className="flex items-start gap-8">
       <MaterialsSectionOutline sections={outlineSections} scrollSelector="[data-course-scroll]" />
       <div className="min-w-0 flex-1">
         <GroupedItemsView
@@ -325,6 +329,7 @@ export function MaterialsOutline({
             ) : null
           }
         />
+        <div aria-hidden="true" className="h-[80dvh]" />
       </div>
     </div>
   );

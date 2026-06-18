@@ -6,6 +6,11 @@ import { cn } from "@/lib/utils";
 
 export type MaterialsSectionOutlineItem = {
   anchorId: string;
+  children: Array<{
+    href: string;
+    key: string;
+    label: string;
+  }>;
   count: number;
   key: string;
   label: string;
@@ -37,6 +42,11 @@ export function MaterialsSectionOutline({
     }
 
     const updateActive = () => {
+      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2) {
+        setActiveAnchor(sections[sections.length - 1]?.anchorId ?? null);
+        return;
+      }
+
       const rootTop = root.getBoundingClientRect().top;
       let current = sections[0]?.anchorId ?? null;
       for (const section of sections) {
@@ -87,34 +97,41 @@ export function MaterialsSectionOutline({
         {sections.map((section) => {
           const isActive = section.anchorId === activeAnchor;
           return (
-            <a
-              className={cn(
-                "group relative block py-1.5 text-xs leading-snug transition-colors",
-                isActive
-                  ? "text-foreground"
-                  : "text-muted-foreground/70 hover:text-foreground",
-              )}
-              href={`#${encodeURIComponent(section.anchorId)}`}
-              key={section.key}
-              onClick={(event) => {
-                event.preventDefault();
-                window.history.pushState(null, "", `#${encodeURIComponent(section.anchorId)}`);
-                jumpToSection(scrollSelector, section.anchorId);
-                setActiveAnchor(section.anchorId);
-              }}
-            >
-              <span
-                aria-hidden="true"
+            <div className="py-1" key={section.key}>
+              <a
                 className={cn(
-                  "absolute -left-[13px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-muted-foreground/25 transition-colors",
-                  isActive ? "bg-foreground" : "group-hover:bg-foreground/50",
+                  "block text-xs leading-snug transition-colors",
+                  isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground/70 hover:text-foreground",
                 )}
-              />
-              <span className={cn("block truncate", isActive && "font-medium")}>
-                {section.label}
-                {isActive ? <span className="ml-1 text-[11px] font-normal text-muted-foreground">/{section.count}</span> : null}
-              </span>
-            </a>
+                href={`#${encodeURIComponent(section.anchorId)}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.history.pushState(null, "", `#${encodeURIComponent(section.anchorId)}`);
+                  jumpToSection(scrollSelector, section.anchorId);
+                  setActiveAnchor(section.anchorId);
+                }}
+              >
+                <span className={cn("block truncate", isActive && "font-medium")}>
+                  {section.label}
+                  {isActive ? <span className="ml-1 text-[11px] font-normal text-muted-foreground">/{section.count}</span> : null}
+                </span>
+              </a>
+              {isActive ? (
+                <div className="mt-1.5 flex flex-col gap-1 pl-2">
+                  {section.children.map((child) => (
+                    <a
+                      className="block truncate text-[11px] leading-snug text-muted-foreground/75 transition-colors hover:text-foreground"
+                      href={child.href}
+                      key={child.key}
+                    >
+                      {child.label}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </nav>
