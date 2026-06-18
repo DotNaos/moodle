@@ -24,6 +24,19 @@ export type CodexImageInput = {
   dataURL: string;
 };
 
+export function parsePDFPageHash(hash: string): number | null {
+  const value = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!value) {
+    return null;
+  }
+  const page = new URLSearchParams(value).get("page");
+  if (!page) {
+    return null;
+  }
+  const parsed = Number.parseInt(page, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function buildPDFPromptContext(pdf: PDFViewState | null) {
   if (!pdf) {
     return null;

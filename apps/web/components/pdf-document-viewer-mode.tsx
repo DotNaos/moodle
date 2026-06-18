@@ -38,6 +38,7 @@ type PDFDocumentViewerModeProps = {
 };
 
 const PDF_VIEWER_MODE_STORAGE_KEY = "moodle.pdfViewer.mode";
+const PDF_VIEWER_MODE_EVENT = "moodle:pdf-viewer-mode";
 
 export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
   const {
@@ -70,6 +71,28 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
   }, []);
 
   useEffect(() => {
+    const handleModeChange = (event: Event) => {
+      const modeValue = event instanceof CustomEvent ? event.detail : window.localStorage.getItem(PDF_VIEWER_MODE_STORAGE_KEY);
+      if (modeValue === "app" || modeValue === "browser") {
+        setModeState(modeValue);
+      }
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === PDF_VIEWER_MODE_STORAGE_KEY && (event.newValue === "app" || event.newValue === "browser")) {
+        setModeState(event.newValue);
+      }
+    };
+
+    window.addEventListener(PDF_VIEWER_MODE_EVENT, handleModeChange);
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener(PDF_VIEWER_MODE_EVENT, handleModeChange);
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
     setNativeTargetPage(null);
   }, [url]);
 
@@ -93,6 +116,7 @@ export function PDFDocumentViewerMode(props: PDFDocumentViewerModeProps) {
   const setMode = useCallback((nextMode: PDFViewerMode) => {
     setModeState(nextMode);
     window.localStorage.setItem(PDF_VIEWER_MODE_STORAGE_KEY, nextMode);
+    window.dispatchEvent(new CustomEvent(PDF_VIEWER_MODE_EVENT, { detail: nextMode }));
   }, []);
 
   const viewerModeMenu = <PDFViewerModeMenuItems mode={mode} onModeChange={setMode} />;

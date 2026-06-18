@@ -75,7 +75,7 @@ import {
   courseResourcesLayoutFromSettings,
   courseResourcesTypeFilterFromSettings,
 } from "@/lib/material-display-preferences";
-import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
+import { parsePDFPageHash, type PDFScrollCommand, type PDFViewState } from "@/lib/pdf-context";
 import type { StudyChatContext, StudyTestContext } from "@/lib/codex-chat";
 import { readRecentChats } from "@/lib/recent-chat-storage";
 import { upsertRecentTask } from "@/lib/recent-task-storage";
@@ -221,6 +221,45 @@ export default function Home() {
     [activeDocument, materials, selectedMaterialId],
   );
   const selectedRecording = activeDocument?.kind === "recording" ? selectedRecordingForCourse(activeCourseId) : null;
+
+  const appliedHashMaterialRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedMaterialId) {
+      appliedHashMaterialRef.current = null;
+      return;
+    }
+    if (appliedHashMaterialRef.current === selectedMaterialId) {
+      return;
+    }
+
+    appliedHashMaterialRef.current = selectedMaterialId;
+    const page = parsePDFPageHash(window.location.hash);
+    setPDFScrollCommand(page ? { id: Date.now(), page } : null);
+  }, [selectedMaterialId]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const page = parsePDFPageHash(window.location.hash);
+      if (page) {
+        setPDFScrollCommand({ id: Date.now(), page });
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  const activePDFPage = pdfState?.materialId === selectedMaterialId ? pdfState.currentPage : null;
+  useEffect(() => {
+    if (!selectedMaterialId || activePDFPage === null) {
+      return;
+    }
+    const base = window.location.pathname + window.location.search;
+    const nextUrl = activePDFPage > 1 ? `${base}#page=${activePDFPage}` : base;
+    const currentUrl = base + window.location.hash;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState({ ...window.history.state, as: nextUrl, url: nextUrl }, "", nextUrl);
+    }
+  }, [activePDFPage, selectedMaterialId]);
 
   const calendarEnabled =
     Boolean(isSignedIn) &&

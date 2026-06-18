@@ -2,14 +2,16 @@
 
 import { ChevronLeft, ChevronRight, Columns2, FileCheck2, FileText } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PDFDocumentViewerMode } from "@/components/pdf-document-viewer-mode";
+import { ComparePlaceholder, GenericSplitActions, PDFMaterialPicker } from "@/components/split-pdf-generic-tools";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Material } from "@/lib/dashboard-data";
 import { shouldHandleAppLinkClick } from "@/lib/link-events";
 import type { findTaskSheetSolutionPair } from "@/lib/material-pairs";
+import { isPdfMaterial } from "@/lib/material-filters";
 import { buildNavigatorURL, homeState, openDocument } from "@/lib/navigator";
 import type { PDFScrollCommand, PDFViewState } from "@/lib/pdf-context";
 import { cn } from "@/lib/utils";
@@ -21,10 +23,19 @@ const SPLIT_PANEL_KEYBOARD_STEP = 4;
 
 type TaskSheetPair = NonNullable<ReturnType<typeof findTaskSheetSolutionPair>>;
 type TaskSheetPairRole = "sheet" | "solution";
+type SplitPaneLabels = {
+  left: string;
+  right: string;
+  leftReveal: string;
+  rightReveal: string;
+  leftFloating: string;
+  rightFloating: string;
+};
 
 export function SplitPDFPairViewer({
   courseId,
   material,
+  materials = [],
   onOpenMaterial,
   onPDFStateChange,
   onSplitOpenChange,
@@ -34,22 +45,55 @@ export function SplitPDFPairViewer({
 }: {
   courseId: string;
   material: Material;
+  materials?: Material[];
   onOpenMaterial?: (material: Material) => void;
   onPDFStateChange: (state: PDFViewState | null) => void;
   onSplitOpenChange: (open: boolean) => void;
-  pair: TaskSheetPair;
+  pair: TaskSheetPair | null;
   pdfScrollCommand: PDFScrollCommand | null;
   splitOpen: boolean;
 }) {
-  const leftMaterial = pair.sheet;
-  const rightMaterial = pair.solution;
+  const [comparisonMaterial, setComparisonMaterial] = useState<Material | null>(null);
+  const leftMaterial = pair ? pair.sheet : material;
+  const rightMaterial = pair ? pair.solution : comparisonMaterial;
   const selectedOnLeft = material.id === leftMaterial.id;
-  const selectedOnRight = material.id === rightMaterial.id;
+  const selectedOnRight = Boolean(rightMaterial && material.id === rightMaterial.id);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [leftPercent, setLeftPercent] = useState(50);
   const [edgeHoverRole, setEdgeHoverRole] = useState<TaskSheetPairRole | null>(null);
   const [previewRole, setPreviewRole] = useState<TaskSheetPairRole | null>(null);
   const [resizing, setResizing] = useState(false);
+  const pdfCandidates = useMemo(
+    () => materials.filter((candidate) => candidate.id !== material.id && isPdfMaterial(candidate)),
+    [material.id, materials],
+  );
+  const labels: SplitPaneLabels = pair
+    ? {
+      left: "Aufgabenblatt",
+      right: "Lösung",
+      leftReveal: "Aufgabenblatt einblenden",
+      rightReveal: "Lösung einblenden",
+      leftFloating: "Show assignment",
+      rightFloating: "Show solution",
+    }
+    : {
+      left: material.name,
+      right: comparisonMaterial?.name ?? "Zweites PDF",
+      leftReveal: "Aktuelles PDF einblenden",
+      rightReveal: "Zweites PDF auswählen",
+      leftFloating: "Aktuelles PDF",
+      rightFloating: "PDF vergleichen",
+    };
+
+  useEffect(() => {
+    if (!pair) {
+      setComparisonMaterial(null);
+      setEdgeHoverRole(null);
+      setPreviewRole(null);
+      setResizing(false);
+      onSplitOpenChange(false);
+    }
+  }, [material.id, onSplitOpenChange, pair]);
 
   useEffect(() => {
     if (splitOpen) {
@@ -64,7 +108,7 @@ export function SplitPDFPairViewer({
     setResizing(false);
     setPreviewRole(null);
     onSplitOpenChange(false);
-    if (target.id !== material.id) {
+    if (target && target.id !== material.id) {
       onOpenMaterial?.(target);
     }
   }, [leftMaterial, material.id, onOpenMaterial, onSplitOpenChange, rightMaterial]);
@@ -163,18 +207,31 @@ export function SplitPDFPairViewer({
           scrollCommand={selectedOnLeft ? pdfScrollCommand : null}
           title={leftMaterial.name}
           toolbarExtra={selectedOnLeft ? (
-            <TaskSheetPairActions
-              courseId={courseId}
-              onOpenMaterial={onOpenMaterial}
-              onSplitOpenChange={onSplitOpenChange}
-              pair={pair}
-              splitOpen={splitOpen}
-            />
+            pair ? (
+              <TaskSheetPairActions
+                courseId={courseId}
+                onOpenMaterial={onOpenMaterial}
+                onSplitOpenChange={onSplitOpenChange}
+                pair={pair}
+                splitOpen={splitOpen}
+              />
+            ) : (
+              <GenericSplitActions
+                hasComparison={Boolean(comparisonMaterial)}
+                onRepick={() => {
+                  setComparisonMaterial(null);
+                  onSplitOpenChange(true);
+                }}
+                onSplitOpenChange={onSplitOpenChange}
+                splitOpen={splitOpen}
+              />
+            )
           ) : null}
           url={pdfPreviewUrl(courseId, leftMaterial)}
         />
         {!splitOpen && selectedOnLeft ? (
           <SplitEdgeHoverZone
+            label={labels.rightReveal}
             onHoverChange={(hovering) => setPreviewRole(hovering ? "solution" : null)}
             onOpen={openSplit}
             role="solution"
@@ -183,16 +240,18 @@ export function SplitPDFPairViewer({
         {!splitOpen && !selectedOnLeft ? (
           <SplitEdgeRevealButton
             active={edgeHoverRole === "sheet"}
+            floatingLabel={labels.leftFloating}
             onHoverChange={(hovering) => {
               setEdgeHoverRole(hovering ? "sheet" : null);
               setPreviewRole(hovering ? "sheet" : null);
             }}
             onOpen={openSplit}
+            opensLabel={labels.leftReveal}
             role="sheet"
           />
         ) : null}
       </div>
-      {splitOpen ? (
+      {splitOpen && rightMaterial ? (
         <SplitPanelResizeHandle
           onResizeBy={(delta) => setLeftPercent((current) => clampSplitPanelPercent(current + delta))}
           onResizeStart={(event) => {
@@ -226,27 +285,41 @@ export function SplitPDFPairViewer({
           }
         }}
       >
-        <PDFDocumentViewerMode
-          allowFloat={!splitOpen && selectedOnRight}
-          courseId={courseId}
-          externalUrl={rightMaterial.url}
-          materialId={rightMaterial.id}
-          onStateChange={selectedOnRight ? onPDFStateChange : noopPDFStateChange}
-          scrollCommand={selectedOnRight ? pdfScrollCommand : null}
-          title={rightMaterial.name}
-          toolbarExtra={selectedOnRight ? (
-            <TaskSheetPairActions
-              courseId={courseId}
-              onOpenMaterial={onOpenMaterial}
-              onSplitOpenChange={onSplitOpenChange}
-              pair={pair}
-              splitOpen={splitOpen}
-            />
-          ) : null}
-          url={pdfPreviewUrl(courseId, rightMaterial)}
-        />
+        {rightMaterial ? (
+          <PDFDocumentViewerMode
+            allowFloat={!splitOpen && selectedOnRight}
+            courseId={courseId}
+            externalUrl={rightMaterial.url}
+            materialId={rightMaterial.id}
+            onStateChange={selectedOnRight ? onPDFStateChange : noopPDFStateChange}
+            scrollCommand={selectedOnRight ? pdfScrollCommand : null}
+            title={rightMaterial.name}
+            toolbarExtra={selectedOnRight && pair ? (
+              <TaskSheetPairActions
+                courseId={courseId}
+                onOpenMaterial={onOpenMaterial}
+                onSplitOpenChange={onSplitOpenChange}
+                pair={pair}
+                splitOpen={splitOpen}
+              />
+            ) : null}
+            url={pdfPreviewUrl(courseId, rightMaterial)}
+          />
+        ) : splitOpen ? (
+          <PDFMaterialPicker
+            candidates={pdfCandidates}
+            onCancel={() => onSplitOpenChange(false)}
+            onSelect={(candidate) => {
+              setComparisonMaterial(candidate);
+              onSplitOpenChange(true);
+            }}
+          />
+        ) : (
+          <ComparePlaceholder onOpen={openSplit} />
+        )}
         {!splitOpen && selectedOnRight ? (
           <SplitEdgeHoverZone
+            label={labels.leftReveal}
             onHoverChange={(hovering) => setPreviewRole(hovering ? "sheet" : null)}
             onOpen={openSplit}
             role="sheet"
@@ -255,11 +328,13 @@ export function SplitPDFPairViewer({
         {!splitOpen && !selectedOnRight ? (
           <SplitEdgeRevealButton
             active={edgeHoverRole === "solution"}
+            floatingLabel={labels.rightFloating}
             onHoverChange={(hovering) => {
               setEdgeHoverRole(hovering ? "solution" : null);
               setPreviewRole(hovering ? "solution" : null);
             }}
             onOpen={openSplit}
+            opensLabel={labels.rightReveal}
             role="solution"
           />
         ) : null}
@@ -304,17 +379,19 @@ function getSplitPanelClass({
 }
 
 function SplitEdgeHoverZone({
+  label,
   onHoverChange,
   onOpen,
   role,
 }: {
+  label: string;
   onHoverChange: (hovering: boolean) => void;
   onOpen: () => void;
   role: TaskSheetPairRole;
 }) {
   return (
     <button
-      aria-label={role === "sheet" ? "Aufgabenblatt einblenden" : "Lösung einblenden"}
+      aria-label={label}
       className={cn("absolute top-0 z-40 hidden h-full w-12 bg-transparent p-0 md:block", role === "sheet" ? "left-0" : "right-0")}
       onClick={onOpen}
       onMouseEnter={() => onHoverChange(true)}
@@ -391,17 +468,19 @@ function clampSplitPanelPercent(value: number): number {
 
 function SplitEdgeRevealButton({
   active,
+  floatingLabel,
   onHoverChange,
   onOpen,
+  opensLabel,
   role,
 }: {
   active: boolean;
+  floatingLabel: string;
   onHoverChange: (hovering: boolean) => void;
   onOpen: () => void;
+  opensLabel: string;
   role: TaskSheetPairRole;
 }) {
-  const opensLabel = role === "sheet" ? "Aufgabenblatt einblenden" : "Lösung einblenden";
-  const floatingLabel = role === "sheet" ? "Show assignment" : "Show solution";
   const Icon = role === "sheet" ? ChevronRight : ChevronLeft;
   const edgeClass = role === "sheet" ? "right-0" : "left-0";
   const gradientClass = role === "sheet"

@@ -10,6 +10,7 @@ export type GroupedItemsLayout = "list" | "grid";
 
 export type GroupedItemsSection<T> = {
   action?: ReactNode;
+  anchorId?: string;
   items: T[];
   key: string;
   label: string;
@@ -65,10 +66,11 @@ export function GroupedItemsView<T>({
 
       {hasItems ? (
         <div className="flex flex-col gap-6">
-          {sections.map((section, index) => (
+          {sections.map((section) => (
             <section
               key={section.key}
-              className="flex flex-col"
+              className="flex scroll-mt-3 flex-col"
+              id={section.anchorId}
             >
               <GroupedSectionHeader action={section.action} label={section.label} sticky={stickySectionHeaders} />
               {layout === "list" ? (
