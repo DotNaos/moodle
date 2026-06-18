@@ -16,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
   buildPDFDownloadFilename,
@@ -35,7 +34,7 @@ import type {
 type PDFJS = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
 const MIN_ZOOM = 0.55;
-const MAX_ZOOM = 3.5;
+const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.15;
 const ZOOM_COMMIT_DELAY = 180;
 const FLOAT_TRANSITION_MS = 320;
@@ -1346,12 +1345,30 @@ function isRenderCancelled(error: unknown): boolean {
 
 function PDFLoading() {
   return (
-    <div className="relative h-full min-h-[520px] bg-muted p-3">
-      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 rounded-full bg-background/92 px-3 py-2 text-sm text-muted-foreground shadow-lg backdrop-blur-md">
-        <Spinner aria-hidden />
-        Loading PDF
+    <div className="h-full min-h-[520px] overflow-hidden bg-muted px-3 pb-16 pt-12 sm:px-4">
+      <div className="mx-auto flex w-fit min-w-full flex-col items-center gap-9">
+        <PDFPageSkeleton active />
+        <PDFPageSkeleton />
+        <PDFPageSkeleton compact />
       </div>
-      <Skeleton className="h-full min-h-[496px] rounded-[1.5rem]" />
+    </div>
+  );
+}
+
+function PDFPageSkeleton({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
+  return (
+    <div className="mx-auto w-fit rounded-sm bg-card shadow-sm">
+      <div className={cn("w-[min(58rem,calc(100vw-2rem))] bg-card p-10", compact ? "h-72" : "aspect-[16/9]")}>
+        <div className="space-y-7">
+          <Skeleton className={cn("h-9 rounded-full", active ? "w-2/3" : "w-1/2")} />
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-full rounded-full" />
+            <Skeleton className="h-4 w-11/12 rounded-full" />
+            <Skeleton className="h-4 w-4/5 rounded-full" />
+          </div>
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        </div>
+      </div>
     </div>
   );
 }
