@@ -52,15 +52,21 @@ export function WebexRecordingsPanel({
   const showSignInOnly = Boolean(course && needsBrowserSignIn);
 
   return (
-    <section className="flex min-h-[560px] flex-col overflow-hidden rounded-[1.5rem] bg-card md:min-h-0 md:rounded-[2rem]">
-      <div className="flex items-start justify-between gap-4 px-5 py-5 md:px-6">
+    <section className="flex min-h-[560px] flex-col overflow-hidden bg-card text-foreground dark:bg-[#0f0f0f] dark:text-white md:min-h-0 md:rounded-[2rem] md:bg-card md:text-foreground">
+      <div className="flex items-start justify-between gap-4 px-5 py-6 md:px-6 md:py-5">
         <div className="min-w-0">
-          <h2 className="mt-1 line-clamp-2 text-2xl font-semibold tracking-tight">
+          <h2 className="line-clamp-2 text-2xl font-semibold tracking-tight md:mt-1">
             {course ? courseTitle(course) : "No course selected"}
           </h2>
         </div>
         {showSignInOnly ? null : (
-          <Button type="button" variant="secondary" onClick={onLoad} disabled={!course || state?.loading}>
+          <Button
+            className="bg-secondary text-secondary-foreground hover:bg-secondary/80 dark:bg-white/10 dark:text-white dark:hover:bg-white/15 md:bg-secondary md:text-secondary-foreground"
+            type="button"
+            variant="secondary"
+            onClick={onLoad}
+            disabled={!course || state?.loading}
+          >
             {state?.loading ? <Spinner aria-hidden /> : <RefreshCw aria-hidden />}
             Refresh
           </Button>
@@ -99,14 +105,14 @@ export function WebexRecordingsPanel({
           </form>
         </div>
       ) : course ? (
-        <div className="grid min-h-0 flex-1 gap-5 overflow-auto px-4 pb-4 md:px-6 md:pb-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex min-h-0 flex-col gap-4">
+        <div className="grid min-h-0 flex-1 gap-5 overflow-auto px-0 pb-5 md:px-6 md:pb-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="flex min-h-0 flex-col gap-0 md:gap-4">
             {state?.error ? (
-              <div className="rounded-3xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <div className="mx-4 mb-4 rounded-3xl bg-destructive/10 px-4 py-3 text-sm text-destructive md:mx-0 md:mb-0">
                 {state.error}
               </div>
             ) : null}
-            <div className="relative shrink-0 overflow-hidden rounded-[1.75rem] bg-black shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
+            <div className="relative shrink-0 overflow-hidden bg-black md:rounded-[1.75rem] md:shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
               {activeRecording?.streamUrl ? (
                 <>
                   <WebexRecordingPlayer
@@ -128,9 +134,10 @@ export function WebexRecordingsPanel({
                 </div>
               )}
             </div>
+            {activeRecording ? <ActiveRecordingMobileMeta recording={activeRecording} /> : null}
           </div>
 
-          <aside className="flex min-h-0 flex-col overflow-hidden">
+          <aside className="flex min-h-0 flex-col overflow-hidden px-4 md:px-0">
             <RecordingList recordings={recordings} selected={activeRecording} loading={state?.loading} onPlay={onPlay} />
           </aside>
         </div>
@@ -146,7 +153,7 @@ export function WebexRecordingsPanel({
 function ActiveRecordingOverlay({ recording }: { recording: WebexRecording }) {
   const duration = formatDuration(recording.durationSeconds);
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-5 pb-5 pt-16 text-white md:px-6 md:pb-6">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden items-end justify-between gap-4 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-5 pb-5 pt-16 text-white md:flex md:px-6 md:pb-6">
       <div className="min-w-0">
         <p className="truncate text-xl font-semibold tracking-tight md:text-2xl">
           {recording.sessionTitle || recording.recordingName}
@@ -159,6 +166,21 @@ function ActiveRecordingOverlay({ recording }: { recording: WebexRecording }) {
           {duration}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+function ActiveRecordingMobileMeta({ recording }: { recording: WebexRecording }) {
+  const duration = formatDuration(recording.durationSeconds);
+  return (
+    <div className="flex flex-col gap-2 px-4 pb-5 pt-3 md:hidden">
+      <p className="line-clamp-2 text-lg font-semibold leading-tight">
+        {recording.sessionTitle || recording.recordingName}
+      </p>
+      <p className="text-sm text-muted-foreground dark:text-white/62">
+        {formatRecordingDate(recording.recordingDate)}
+        {duration ? ` · ${duration}` : ""}
+      </p>
     </div>
   );
 }
@@ -187,20 +209,22 @@ function RecordingList({
         <button
           key={recording.recordingUuid}
           className={cn(
-            "group grid w-full grid-cols-[132px_minmax(0,1fr)] items-center gap-3 rounded-[1.5rem] p-2 text-left transition-colors sm:grid-cols-[168px_minmax(0,1fr)]",
-            active ? "bg-secondary text-foreground" : "hover:bg-secondary/70",
+            "group grid w-full grid-cols-[46%_minmax(0,1fr)] items-start gap-3 rounded-none py-2 text-left text-foreground transition-colors sm:grid-cols-[168px_minmax(0,1fr)] dark:text-white md:items-center md:rounded-[1.5rem] md:p-2 md:text-foreground",
+            active ? "md:bg-secondary" : "md:hover:bg-secondary/70",
           )}
           type="button"
           onClick={() => onPlay(recording)}
         >
           <EpisodeThumbnail recording={recording} active={active} />
-          <span className="min-w-0">
-            <span className="block truncate text-base font-semibold">{formatRecordingDate(recording.recordingDate)}</span>
-            <span className="mt-1 block line-clamp-2 text-sm text-muted-foreground">
+          <span className="min-w-0 pr-2">
+            <span className="block line-clamp-2 text-base font-semibold leading-tight md:truncate">
+              {formatRecordingDate(recording.recordingDate)}
+            </span>
+            <span className="mt-1 block line-clamp-2 text-sm text-muted-foreground dark:text-white/60 md:text-muted-foreground">
               {recording.sessionTitle || recording.recordingName}
             </span>
             {recording.durationSeconds ? (
-              <span className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground dark:text-white/55 md:mt-3 md:text-muted-foreground">
                 <Clock size={13} aria-hidden />
                 {formatDuration(recording.durationSeconds)}
               </span>
@@ -214,12 +238,12 @@ function RecordingList({
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       {recordings.length > 0 ? (
-        <div className="mb-2 flex items-center justify-between px-2 text-xs text-muted-foreground">
+        <div className="mb-2 flex items-center justify-between px-0 text-xl font-semibold text-foreground dark:text-white md:px-2 md:text-xs md:font-normal md:text-muted-foreground">
           <span>Recordings</span>
-          <span>{recordings.length}</span>
+          <span className="text-sm font-normal text-muted-foreground dark:text-white/55 md:text-xs md:text-muted-foreground">{recordings.length}</span>
         </div>
       ) : null}
-      <div className="flex flex-col gap-2">{content}</div>
+      <div className="flex flex-col gap-2 md:gap-2">{content}</div>
     </div>
   );
 }
@@ -232,7 +256,7 @@ function EpisodeThumbnail({
   recording: WebexRecording;
 }) {
   return (
-    <span className="relative block aspect-video overflow-hidden rounded-[1.1rem] bg-black">
+    <span className="relative block aspect-video overflow-hidden rounded-xl bg-black md:rounded-[1.1rem]">
       {recording.coverUrl ? (
         <img
           alt=""
