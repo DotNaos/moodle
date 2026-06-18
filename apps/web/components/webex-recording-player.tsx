@@ -30,6 +30,7 @@ export function WebexRecordingPlayer({
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
   const [seekOverlay, setSeekOverlay] = useState<SeekOverlay>(null);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usesHLS = isHLSStreamUrl(src);
@@ -100,6 +101,7 @@ export function WebexRecordingPlayer({
     setCurrentTime(0);
     setDuration(0);
     setSpeed(1);
+    setSpeedMenuOpen(false);
     video.playbackRate = 1;
   }, [src]);
 
@@ -274,6 +276,9 @@ export function WebexRecordingPlayer({
       event.preventDefault();
       skip(10);
     }
+    if (event.key === "Escape") {
+      setSpeedMenuOpen(false);
+    }
   };
 
   const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0;
@@ -320,7 +325,7 @@ export function WebexRecordingPlayer({
       ) : null}
       {state === "ready" && !isPlaying ? (
         <button
-          className="absolute left-1/2 top-1/2 z-20 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/92 text-black shadow-2xl transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:size-20"
+          className="absolute left-1/2 top-1/2 z-20 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-transparent text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.8)] transition hover:bg-white/18 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:size-20"
           type="button"
           aria-label="Play recording"
           onClick={(event) => {
@@ -386,7 +391,7 @@ export function WebexRecordingPlayer({
             <PlayerIconButton label="Forward 10 seconds" onClick={() => skip(10)}>
               <FastForward className="size-4 fill-current md:size-5" aria-hidden />
             </PlayerIconButton>
-            <PlayerIconButton label={isMuted ? "Unmute recording" : "Mute recording"} onClick={toggleMute}>
+            <PlayerIconButton active={isMuted} label={isMuted ? "Unmute recording" : "Mute recording"} onClick={toggleMute}>
               {isMuted ? <VolumeX className="size-4 md:size-5" aria-hidden /> : <Volume2 className="size-4 md:size-5" aria-hidden />}
             </PlayerIconButton>
             <span className="hidden text-xs font-medium tabular-nums text-white/78 sm:inline">
@@ -394,19 +399,16 @@ export function WebexRecordingPlayer({
             </span>
           </div>
           <div className="flex items-center gap-1.5 md:gap-2">
-            <select
-              aria-label="Playback speed"
-              className="h-9 rounded-full border-0 bg-white/14 px-3 text-sm font-semibold text-white outline-none transition-colors hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white/80"
-              value={speed}
-              onChange={(event) => changeSpeed(Number(event.target.value))}
-            >
-              {playbackSpeeds.map((playbackSpeed) => (
-                <option key={playbackSpeed} className="bg-black text-white" value={playbackSpeed}>
-                  {playbackSpeed}x
-                </option>
-              ))}
-            </select>
-            <PlayerIconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
+            <PlaybackSpeedMenu
+              open={speedMenuOpen}
+              speed={speed}
+              onOpenChange={setSpeedMenuOpen}
+              onSelect={(nextSpeed) => {
+                changeSpeed(nextSpeed);
+                setSpeedMenuOpen(false);
+              }}
+            />
+            <PlayerIconButton active={isFullscreen} label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
               {isFullscreen ? <Minimize className="size-4 md:size-5" aria-hidden /> : <Maximize className="size-4 md:size-5" aria-hidden />}
             </PlayerIconButton>
           </div>
@@ -424,17 +426,22 @@ function canPlayNativeHLS(video: HTMLVideoElement): boolean {
 }
 
 function PlayerIconButton({
+  active = false,
   children,
   label,
   onClick,
 }: {
+  active?: boolean;
   children: React.ReactNode;
   label: string;
   onClick: () => void;
 }) {
   return (
     <button
-      className="grid size-9 place-items-center rounded-full bg-white/12 text-white transition hover:bg-white/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:size-10"
+      className={cn(
+        "grid size-9 place-items-center rounded-full border-0 text-white transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:size-10",
+        active ? "bg-white/18" : "bg-transparent",
+      )}
       type="button"
       aria-label={label}
       title={label}
@@ -442,6 +449,63 @@ function PlayerIconButton({
     >
       {children}
     </button>
+  );
+}
+
+function PlaybackSpeedMenu({
+  onOpenChange,
+  onSelect,
+  open,
+  speed,
+}: {
+  onOpenChange: (open: boolean) => void;
+  onSelect: (speed: number) => void;
+  open: boolean;
+  speed: number;
+}) {
+  return (
+    <div className="relative">
+      <button
+        className={cn(
+          "h-9 rounded-full border-0 bg-transparent px-3 text-sm font-semibold tabular-nums text-white transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+          open && "bg-white/18",
+        )}
+        type="button"
+        aria-label="Playback speed"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => onOpenChange(!open)}
+      >
+        {speed}x
+      </button>
+      {open ? (
+        <div
+          className="absolute bottom-11 right-0 z-40 flex min-w-0 flex-row rounded-full bg-black/72 p-1 text-white shadow-2xl backdrop-blur-xl md:min-w-24 md:flex-col md:rounded-2xl md:p-1.5"
+          role="menu"
+          aria-label="Playback speed"
+        >
+          {playbackSpeeds.map((playbackSpeed) => {
+            const selected = playbackSpeed === speed;
+            return (
+              <button
+                key={playbackSpeed}
+                className={cn(
+                  "flex h-8 items-center justify-center rounded-full px-2.5 text-left text-xs font-semibold tabular-nums transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:h-9 md:w-full md:justify-between md:px-3 md:text-sm",
+                  selected ? "bg-white/18 text-white" : "bg-transparent text-white/82",
+                )}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => onSelect(playbackSpeed)}
+              >
+                <span>{playbackSpeed}x</span>
+                {selected ? <span className="ml-2 hidden size-1.5 rounded-full bg-white md:block" aria-hidden /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
