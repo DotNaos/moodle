@@ -349,6 +349,16 @@ export function WebexRecordingPlayer({
           </div>
         </div>
       ) : null}
+      {speedMenuOpen ? (
+        <MobilePlaybackSpeedSheet
+          speed={speed}
+          onClose={() => setSpeedMenuOpen(false)}
+          onSelect={(nextSpeed) => {
+            changeSpeed(nextSpeed);
+            setSpeedMenuOpen(false);
+          }}
+        />
+      ) : null}
       <div
         className={cn(
           "absolute inset-x-0 bottom-0 z-30 flex flex-col gap-2 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 transition-opacity duration-300 md:gap-3 md:px-5 md:pb-5",
@@ -480,7 +490,7 @@ function PlaybackSpeedMenu({
       </button>
       {open ? (
         <div
-          className="absolute bottom-11 right-0 z-40 flex min-w-0 flex-row rounded-full bg-black/72 p-1 text-white shadow-2xl backdrop-blur-xl md:min-w-24 md:flex-col md:rounded-2xl md:p-1.5"
+          className="absolute bottom-11 right-0 z-40 hidden min-w-24 flex-col rounded-2xl bg-black/72 p-1.5 text-white shadow-2xl backdrop-blur-xl md:flex"
           role="menu"
           aria-label="Playback speed"
         >
@@ -505,6 +515,54 @@ function PlaybackSpeedMenu({
           })}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function MobilePlaybackSpeedSheet({
+  onClose,
+  onSelect,
+  speed,
+}: {
+  onClose: () => void;
+  onSelect: (speed: number) => void;
+  speed: number;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end bg-black/45 md:hidden" role="dialog" aria-modal="true" aria-label="Playback speed">
+      <button className="absolute inset-0 cursor-default" type="button" aria-label="Close playback speed menu" onClick={onClose} />
+      <div className="relative w-full rounded-t-[1.75rem] bg-black/88 px-4 pb-[max(env(safe-area-inset-bottom),1.25rem)] pt-3 text-white shadow-2xl backdrop-blur-xl">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/35" />
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold text-white/72">Playback speed</p>
+          <button
+            className="rounded-full bg-transparent px-3 py-1.5 text-sm font-semibold text-white/80 transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+            type="button"
+            onClick={onClose}
+          >
+            Done
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {playbackSpeeds.map((playbackSpeed) => {
+            const selected = playbackSpeed === speed;
+            return (
+              <button
+                key={playbackSpeed}
+                className={cn(
+                  "h-11 rounded-full bg-transparent text-sm font-semibold tabular-nums text-white transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+                  selected && "bg-white/18",
+                )}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onSelect(playbackSpeed)}
+              >
+                {playbackSpeed}x
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
