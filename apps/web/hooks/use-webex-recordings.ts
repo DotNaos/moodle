@@ -58,7 +58,7 @@ export function useWebexRecordings() {
 
     try {
       const response = await apiRequest<{ recordings?: WebexRecording[] }>(
-        `/courses/${encodeURIComponent(courseId)}/recordings`,
+        `/courses/${encodeURIComponent(courseId)}/recordings${options.refresh ? "?refresh=1" : ""}`,
       );
       const recordings = response.recordings ?? [];
       setRecordingsByCourseId((current) => ({
