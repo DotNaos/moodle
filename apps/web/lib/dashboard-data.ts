@@ -33,12 +33,22 @@ export type Material = {
 export type WebexRecording = {
   recordingDate: string;
   recordingName: string;
-  streamUrl: string;
+  streamUrl?: string;
   sourceUrl?: string;
   recordingUuid: string;
   coverUrl?: string;
   sessionTitle: string;
   durationSeconds?: number;
+  progress?: WebexRecordingProgress;
+};
+
+export type WebexRecordingProgress = {
+  courseId: string;
+  recordingUuid: string;
+  positionSeconds: number;
+  durationSeconds?: number;
+  completed: boolean;
+  updatedAt: string;
 };
 
 export type WebexRecordingState = {
@@ -46,6 +56,8 @@ export type WebexRecordingState = {
   loaded: boolean;
   error: string | null;
   recordings: WebexRecording[];
+  resolvingRecordingUuid?: string | null;
+  streamError?: string | null;
 };
 
 export type CategoryOption = {
