@@ -79,17 +79,16 @@ bun ./scripts/study-pipeline-cli.ts self-test
 bunx tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck --types node scripts/study-pipeline-cli.ts scripts/study-pipeline-readiness.ts scripts/study-pipeline-cli-core.ts scripts/study-pipeline-curation-promote.ts
 cd services/moodle && go test ./pkg/studypipeline
 bun ./scripts/study-pipeline-cli.ts readiness --course 22584 --artifact-root ~/.moodle/study --output plans/task-sheet-readiness-22584-goal1.json --raw
+cd services/moodle && go run ./cmd/study-pipeline-local-evidence --course 22584 --artifact-root ~/.moodle/study --resource 947753 --readiness-report ../../plans/task-sheet-readiness-22584-goal1.json --output ../../plans/task-view-22584-goal1-evidence.json
 ```
 
 The readiness command exits with code `2` for the current course state because
 8 sheets are still unprocessed.
 
-The task-view evidence was also regenerated through a local
-`studypipeline.LoadTaskView` smoke using:
-
-- artifact root: `/Users/oli/.moodle/study`
-- resource source: `/Users/oli/.moodle/study/courses/22584/raw/resources.json`
-- evidence output: `plans/task-view-22584-goal1-evidence.json`
+The task-view evidence command uses `studypipeline.LoadTaskView` locally and
+fails if the promoted sheet is not ready, remains read-only, loses the Moodle
+source link, still contains the unprocessed placeholder, or omits extracted
+image evidence when extracted images exist.
 
 ## Acceptance
 
@@ -98,6 +97,7 @@ Goal 1 can be accepted if the user agrees that:
 1. The non-UI inventory/verifier shape is sufficient.
 2. The verifier is allowed to fail while unprocessed sheets remain.
 3. The `Aufgabenblatt 12` promotion proves the end-to-end API/CLI path.
-4. The remaining 8 sheets have enough machine-readable status for Goal 2.
+4. The remaining 8 sheets have enough machine-readable status for the next
+   goals.
 
 After explicit acceptance, Goal 1.5 can start.
