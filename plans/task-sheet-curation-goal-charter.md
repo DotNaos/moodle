@@ -211,11 +211,42 @@ Goal 1 is complete only when:
 5. The remaining sheets have a clear machine-readable status.
 6. The user has reviewed and accepted the non-UI result.
 
-Do not proceed to Goal 2 before the user explicitly accepts Goal 1.
+Goal 1 was accepted by the user on 2026-06-22. Do not proceed to Goal 2 before
+Goal 1.5 is complete.
+
+### Goal 1.5: Codex Transport Split
+
+Align the Codex integration with the intended runtime boundary before scaling
+the pipeline across the remaining sheets.
+
+Target architecture:
+
+1. Web/chat uses the Codex app-server path.
+   - the browser talks to the app/backend bridge, not directly to Codex
+   - streaming deltas remain visible during generation
+   - chat session behavior stays interactive and user-facing
+
+2. The task-sheet pipeline uses the Codex SDK path.
+   - pipeline curation and refinement run through the SDK, not shell-only
+     `codex exec` command construction
+   - structured output schemas remain enforced
+   - rendered page images and extracted assets remain available to Codex
+   - the non-UI readiness verifier remains the acceptance gate for pipeline
+     output quality
+
+Goal 1.5 is complete only when:
+
+1. The web/chat route no longer depends on direct SDK chat execution.
+2. The pipeline has a SDK-based runner for curation/refinement work.
+3. Existing Goal 1 readiness checks still pass after the transport change.
+4. The implementation has a clear local verification path that does not require
+   frontend clicks.
+5. Any remaining Codex transport limitation is documented with a concrete
+   follow-up before Goal 2 starts.
 
 ### Goal 2: Full Course Completion And UI Dogfood
 
-After Goal 1 is accepted, finish the rest of the course and verify the user
+After Goal 1.5 is complete, finish the rest of the course and verify the user
 experience.
 
 Goal 2 is complete only when:
