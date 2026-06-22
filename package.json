@@ -27,6 +27,7 @@
     "mobile:android": "node ./scripts/with-op-env.cjs node ./scripts/mobile-with-proxy-dev.cjs android",
     "mobile:sentry:smoke": "node ./scripts/sentry-mobile-smoke-test.mjs",
     "moodle:fetch-login": "node ./scripts/with-op-env.cjs bun ./scripts/fhgr-fetch-login.mjs",
+    "name:scan": "bun ./scripts/name-scan.ts",
     "webex:fetch-poc": "node ./scripts/with-op-env.cjs bun ./scripts/webex-fetch-poc.mjs",
     "extension:dev": "bun run --filter @moodle-clients/extension dev",
     "extension:build": "bun run --filter @moodle-clients/extension build"
