@@ -4,6 +4,7 @@ Course: `22584`
 
 This document is the human review companion for:
 
+- `plans/task-sheet-goal1-acceptance-audit.json`
 - `plans/task-sheet-promotion-22584-goal1.json`
 - `plans/task-sheet-readiness-22584-goal1.json`
 - `plans/task-view-22584-goal1-evidence.json`
@@ -15,6 +16,13 @@ Goal 1 non-UI verification is ready for user review, but not complete until the
 user explicitly accepts it.
 
 Last refreshed from local artifacts on `2026-06-22T18:21:40Z`.
+
+Acceptance audit:
+
+| Criteria | Status |
+| --- | --- |
+| Technical criteria 1-5 | met |
+| User acceptance criterion 6 | pending |
 
 Current machine-readable status:
 
@@ -85,6 +93,7 @@ cd services/moodle && go test ./pkg/studypipeline
 bun ./scripts/study-pipeline-cli.ts promote-curation --course 22584 --artifact-root ~/.moodle/study --resource 947753 --curation-file /Users/oli/.moodle/study/codex-users/user_3db8bdscor0b5mnrzgq755t4ihz/last-curation-task-947753-aufgabenblatt-12-gpt-5.5.md --model gpt-5.5 --output plans/task-sheet-promotion-22584-goal1.json --raw
 bun ./scripts/study-pipeline-cli.ts readiness --course 22584 --artifact-root ~/.moodle/study --output plans/task-sheet-readiness-22584-goal1.json --raw
 cd services/moodle && go run ./cmd/study-pipeline-local-evidence --course 22584 --artifact-root ~/.moodle/study --resource 947753 --readiness-report ../../plans/task-sheet-readiness-22584-goal1.json --output ../../plans/task-view-22584-goal1-evidence.json
+bun ./scripts/study-pipeline-goal1-audit.ts
 ```
 
 The readiness command exits with code `2` for the current course state because

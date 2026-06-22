@@ -1,0 +1,92 @@
+{
+  "ok": false,
+  "courseId": "22584",
+  "generatedAt": "2026-06-22T18:24:37.402Z",
+  "summary": {
+    "totalSheets": 12,
+    "ready": 4,
+    "blocked": 0,
+    "unprocessed": 8,
+    "invalid": 0,
+    "technicalCriteriaMet": 5,
+    "pendingCriteria": [
+      6
+    ]
+  },
+  "criteria": [
+    {
+      "id": 1,
+      "status": "met",
+      "requirement": "Machine-readable inventory exists for every detected task sheet with readiness, solution status, rendered-page availability, and extracted-image availability.",
+      "evidence": [
+        "plans/task-sheet-readiness-22584-goal1.json"
+      ],
+      "notes": [
+        "12 detected task sheets are listed.",
+        "Each sheet includes readiness, solutionStatus, renderedPageCount, and extractedImageAssetCount."
+      ]
+    },
+    {
+      "id": 2,
+      "status": "met",
+      "requirement": "Verifier exists and fails unless every real task sheet is ready or has accepted blocker reason 1-5.",
+      "evidence": [
+        "plans/task-sheet-readiness-22584-goal1.json"
+      ],
+      "notes": [
+        "Accepted blocker reason IDs are 1,2,3,4,5.",
+        "Current report has ok=false because 8 sheets are still unprocessed."
+      ]
+    },
+    {
+      "id": 3,
+      "status": "met",
+      "requirement": "At least one previously unprocessed sheet is curated through API/CLI, not frontend clicks.",
+      "evidence": [
+        "plans/task-sheet-promotion-22584-goal1.json"
+      ],
+      "notes": [
+        "Promotion action is promote-curation.",
+        "Resource 947753 / Aufgabenblatt 12 was written to the improved task artifact."
+      ]
+    },
+    {
+      "id": 4,
+      "status": "met",
+      "requirement": "The curated sheet is verified through artifacts and task-view as ready with readOnly=false, preserved Moodle source reference, no raw placeholder, and image evidence used or accounted for.",
+      "evidence": [
+        "plans/task-view-22584-goal1-evidence.json",
+        "plans/task-sheet-readiness-22584-goal1.json"
+      ],
+      "notes": [
+        "Task-view evidence shows ready, readOnly=false, contentStatus=codex-improved.",
+        "Task-view prompt preserves moodle-resource:947753, has extracted image evidence, and has no unprocessed placeholder."
+      ]
+    },
+    {
+      "id": 5,
+      "status": "met",
+      "requirement": "Remaining sheets have clear machine-readable status.",
+      "evidence": [
+        "plans/task-sheet-readiness-22584-goal1.json",
+        "plans/task-sheet-curation-goal1-review.md"
+      ],
+      "notes": [
+        "Current summary is 4 ready, 8 unprocessed, 0 blocked, 0 invalid.",
+        "Every remaining unprocessed sheet still has solution, rendered-page, and extracted-image status."
+      ]
+    },
+    {
+      "id": 6,
+      "status": "pending",
+      "requirement": "The user reviews and explicitly accepts the non-UI result before Goal 1.5 or Goal 2 starts.",
+      "evidence": [
+        "plans/task-sheet-curation-goal1-review.md"
+      ],
+      "notes": [
+        "This criterion cannot be completed by code.",
+        "Goal 1 stays open until the user explicitly accepts the non-UI result."
+      ]
+    }
+  ]
+}
