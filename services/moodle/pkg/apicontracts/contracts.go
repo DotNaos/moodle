@@ -413,6 +413,11 @@ type StudyPipelineTaskSheet struct {
 	ResourceID         string                  `json:"resourceId"`
 	Title              string                  `json:"title"`
 	Kind               string                  `json:"kind"`
+	ContentState       StudyPipelineContentRef `json:"contentState"`
+	Readiness          string                  `json:"readiness"`
+	ReadinessLabel     string                  `json:"readinessLabel"`
+	ReadinessReason    string                  `json:"readinessReason,omitempty"`
+	ReadOnly           bool                    `json:"readOnly"`
 	SolutionResourceID string                  `json:"solutionResourceId,omitempty"`
 	SolutionTitle      string                  `json:"solutionTitle,omitempty"`
 	SolutionMarkdown   string                  `json:"solutionMarkdown,omitempty"`

@@ -22,9 +22,11 @@ export function TaskOutline({
   }
   const groups = groupStudyTasksBySection(tasks);
   const orderedTasks = groups.flatMap((group) => group.sheets.flatMap((sheet) => sheet.tasks));
-  const doneCount = orderedTasks.filter((task) => isDoneTaskStatus(task.status)).length;
-  const progress = Math.round((doneCount / orderedTasks.length) * 100);
-  const nextTask = orderedTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
+  const usableTasks = orderedTasks.filter((task) => !task.readOnly);
+  const unprocessedCount = orderedTasks.length - usableTasks.length;
+  const doneCount = usableTasks.filter((task) => isDoneTaskStatus(task.status)).length;
+  const progress = usableTasks.length > 0 ? Math.round((doneCount / usableTasks.length) * 100) : 0;
+  const nextTask = usableTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -33,13 +35,20 @@ export function TaskOutline({
           <div className="min-w-0">
             <p className="text-2xl font-semibold tracking-tight">
               {doneCount}
-              <span className="text-muted-foreground">/{orderedTasks.length} erledigt</span>
+              <span className="text-muted-foreground">/{usableTasks.length} erledigt</span>
             </p>
             <p className="mt-0.5 truncate text-sm text-muted-foreground">
               {nextTask
                 ? `Als Nächstes: ${taskDisplayTitle(nextTask.sheetTitle, nextTask.title)}`
-                : "Du hast alle Aufgaben abgeschlossen."}
+                : usableTasks.length > 0
+                  ? "Du hast alle aufbereiteten Aufgaben abgeschlossen."
+                  : "Noch keine aufbereiteten Aufgaben verfügbar."}
             </p>
+            {unprocessedCount > 0 ? (
+              <p className="mt-1 text-xs text-amber-700">
+                {unprocessedCount} Aufgabenblatt{unprocessedCount === 1 ? "" : "er"} noch nicht aufbereitet.
+              </p>
+            ) : null}
           </div>
           {nextTask ? (
             <button
@@ -50,10 +59,14 @@ export function TaskOutline({
               {doneCount > 0 ? "Weiter üben" : "Jetzt starten"}
               <ArrowRight aria-hidden className="size-4" />
             </button>
-          ) : (
+          ) : usableTasks.length > 0 ? (
             <span className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-emerald-500/15 px-5 py-2 text-sm font-semibold text-emerald-600">
               <CheckCircle2 aria-hidden className="size-4" />
               Alles erledigt
+            </span>
+          ) : (
+            <span className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-amber-500/15 px-5 py-2 text-sm font-semibold text-amber-700">
+              Nicht bereit
             </span>
           )}
         </div>
@@ -67,10 +80,11 @@ export function TaskOutline({
 
       {groups.map((group) => {
         const groupTasks = group.sheets.flatMap((sheet) => sheet.tasks);
-        const groupDone = groupTasks.filter((task) => isDoneTaskStatus(task.status)).length;
-        const groupProgress = Math.round((groupDone / groupTasks.length) * 100);
-        const groupComplete = groupDone === groupTasks.length;
-        const groupNextTask = groupTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
+        const groupUsableTasks = groupTasks.filter((task) => !task.readOnly);
+        const groupDone = groupUsableTasks.filter((task) => isDoneTaskStatus(task.status)).length;
+        const groupProgress = groupUsableTasks.length > 0 ? Math.round((groupDone / groupUsableTasks.length) * 100) : 0;
+        const groupComplete = groupUsableTasks.length > 0 && groupDone === groupUsableTasks.length;
+        const groupNextTask = groupUsableTasks.find((task) => !isDoneTaskStatus(task.status)) ?? null;
         return (
           <section className="flex flex-col gap-1.5" key={group.title}>
             <div className="flex items-center justify-between gap-3 px-1">
@@ -82,7 +96,7 @@ export function TaskOutline({
                     groupComplete ? "bg-emerald-500/15 text-emerald-600" : "bg-secondary text-muted-foreground",
                   )}
                 >
-                  {groupDone}/{groupTasks.length}
+                  {groupDone}/{groupUsableTasks.length}
                 </span>
                 {groupNextTask ? (
                   <button
@@ -106,13 +120,18 @@ export function TaskOutline({
               {groupTasks.map((task) => {
                 const done = isDoneTaskStatus(task.status);
                 const active = selectedTaskId === task.id;
-                const statusPill = !done && task.status !== "open" ? taskStatusLabel(task.status) : null;
+                const statusPill = task.readOnly
+                  ? task.readinessLabel ?? "Nicht aufbereitet"
+                  : !done && task.status !== "open"
+                    ? taskStatusLabel(task.status)
+                    : null;
                 const displayTitle = taskDisplayTitle(task.sheetTitle, task.title);
                 return (
                   <div
                     className={cn(
                       "group flex items-center gap-0.5 rounded-xl pr-2 transition-colors",
                       active ? "bg-primary text-primary-foreground" : "hover:bg-secondary",
+                      task.readOnly && !active && "opacity-70",
                     )}
                     key={task.id}
                   >
@@ -126,7 +145,12 @@ export function TaskOutline({
                             ? "text-primary-foreground/80 hover:bg-primary-foreground/15"
                             : "text-muted-foreground hover:bg-background hover:text-foreground",
                       )}
-                      onClick={() => onTaskStatusChange(task.id, done ? "open" : "done")}
+                      disabled={task.readOnly}
+                      onClick={() => {
+                        if (!task.readOnly) {
+                          onTaskStatusChange(task.id, done ? "open" : "done");
+                        }
+                      }}
                       type="button"
                     >
                       {done ? <CheckCircle2 className="size-[18px]" aria-hidden /> : <Circle className="size-[18px]" aria-hidden />}
@@ -148,7 +172,13 @@ export function TaskOutline({
                         <span
                           className={cn(
                             "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                            active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-background text-muted-foreground",
+                            task.readOnly
+                              ? active
+                                ? "bg-primary-foreground/15 text-primary-foreground"
+                                : "bg-amber-500/15 text-amber-700"
+                              : active
+                                ? "bg-primary-foreground/15 text-primary-foreground"
+                                : "bg-background text-muted-foreground",
                           )}
                         >
                           {statusPill}

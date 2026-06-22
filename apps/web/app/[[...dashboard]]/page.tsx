@@ -1406,6 +1406,9 @@ function buildStudyOutlineFromTaskView(view: TaskViewResponse): StudyOutline {
     tasks: view.sheets.flatMap((sheet) =>
       sheet.tasks.map((task) => ({
         id: task.taskId,
+        readOnly: Boolean(sheet.readOnly),
+        readiness: sheet.readiness,
+        readinessLabel: sheet.readinessLabel,
         sheetTitle: sheet.title,
         status: task.status,
         title: task.title,

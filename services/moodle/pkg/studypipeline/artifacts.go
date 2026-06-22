@@ -279,6 +279,8 @@ func LoadTaskView(courseID string, resources []moodle.Resource, includeScript bo
 
 	for _, link := range taskLinks {
 		taskID := taskID(link.Task)
+		contentState := taskContentState(root, courseID, link)
+		readiness, readinessLabel, readinessReason, readOnly := taskSheetReadiness(contentState)
 		attempt := state.Attempts[taskID]
 		status := "open"
 		var latest *contract.StudyPipelineAttempt
@@ -309,15 +311,20 @@ func LoadTaskView(courseID string, resources []moodle.Resource, includeScript bo
 		}
 
 		sheet := contract.StudyPipelineTaskSheet{
-			ResourceID: link.Task.ID,
-			Title:      link.Task.Name,
-			Kind:       "task",
+			ResourceID:      link.Task.ID,
+			Title:           link.Task.Name,
+			Kind:            "task",
+			ContentState:    contentState,
+			Readiness:       readiness,
+			ReadinessLabel:  readinessLabel,
+			ReadinessReason: readinessReason,
+			ReadOnly:        readOnly,
 			Tasks: []contract.StudyPipelineTaskItem{{
 				TaskID:           taskID,
 				SourceResourceID: link.Task.ID,
 				Title:            link.Task.Name,
 				PromptMarkdown:   taskPrompt(root, courseID, link),
-				ContentState:     taskContentState(root, courseID, link),
+				ContentState:     contentState,
 				Parts: []contract.StudyPipelineTaskPart{{
 					ID:             taskID + "-main",
 					Label:          "Aufgabe",
@@ -810,6 +817,13 @@ func taskPrompt(root string, courseID string, link contract.StudyPipelineTaskLin
 
 func taskContentState(root string, courseID string, link contract.StudyPipelineTaskLink) contract.StudyPipelineContentRef {
 	return contentState(root, courseID, link.Task, "task")
+}
+
+func taskSheetReadiness(state contract.StudyPipelineContentRef) (string, string, string, bool) {
+	if state.Status == "codex-improved" {
+		return "ready", "Aufbereitet", "Codex curation has produced the active task output.", false
+	}
+	return "unprocessed", "Nicht aufbereitet", "Only machine-extracted content is available. Run Codex curation before using this sheet for practice.", true
 }
 
 func effectiveTaskLinks(materials []contract.StudyPipelineMaterial, links []contract.StudyPipelineTaskLink) []contract.StudyPipelineTaskLink {
