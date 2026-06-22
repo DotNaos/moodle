@@ -78,6 +78,7 @@ type PromoteCurationOptions = CourseOptions & {
   artifactRoot: string;
   curationFile: string;
   model?: string;
+  output?: string;
   resource: string;
 };
 
@@ -310,6 +311,7 @@ program
   .requiredOption("--resource <id>", "Task sheet resource ID")
   .requiredOption("--curation-file <path>", "Saved Codex curation JSON file")
   .option("--model <id>", "Model label to store in the improved artifact")
+  .option("--output <path>", "Write the promotion result to a JSON file")
   .action(async function (this: Command) {
     const options = this.optsWithGlobals<PromoteCurationOptions>();
     const result = await promoteCurationToImprovedArtifact({
@@ -319,6 +321,9 @@ program
       model: options.model,
       resourceId: options.resource,
     });
+    if (options.output) {
+      await writeJSONFile(options.output, result);
+    }
     printJSON(result, options);
   });
 

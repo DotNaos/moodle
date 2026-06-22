@@ -48,6 +48,8 @@ export async function promoteCurationToImprovedArtifact(input: {
     courseId: input.courseId,
     resourceId: input.resourceId,
     title,
+    action: "promote-curation",
+    generatedAt: new Date().toISOString(),
     source: expandHome(input.curationFile),
     targetPath,
   };

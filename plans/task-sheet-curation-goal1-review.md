@@ -4,6 +4,7 @@ Course: `22584`
 
 This document is the human review companion for:
 
+- `plans/task-sheet-promotion-22584-goal1.json`
 - `plans/task-sheet-readiness-22584-goal1.json`
 - `plans/task-view-22584-goal1-evidence.json`
 - `plans/task-sheet-curation-goal-charter.md`
@@ -13,7 +14,7 @@ This document is the human review companion for:
 Goal 1 non-UI verification is ready for user review, but not complete until the
 user explicitly accepts it.
 
-Last refreshed from local artifacts on `2026-06-22T18:15:28Z`.
+Last refreshed from local artifacts on `2026-06-22T18:21:40Z`.
 
 Current machine-readable status:
 
@@ -26,14 +27,17 @@ Current machine-readable status:
 | Invalid | 0 |
 
 The verifier intentionally exits with code `2` while unprocessed sheets remain.
-This proves the gate is hard enough for Goal 2: the course cannot be treated as
-fully complete until every real task sheet is either `ready` or accepted
-`blocked`.
+This proves the gate is hard enough for the later full-course goal: the course
+cannot be treated as fully complete until every real task sheet is either
+`ready` or accepted `blocked`.
 
 ## Verified Non-UI Curation
 
 `Aufgabenblatt 12` (`947753`) was promoted through the CLI from a saved Codex
 curation artifact, not through frontend clicks.
+
+The promotion command wrote its own machine-readable record to
+`plans/task-sheet-promotion-22584-goal1.json`.
 
 The promoted sheet was rechecked through `studypipeline.LoadTaskView` against
 the local artifact root and the stored course resource list.
@@ -78,6 +82,7 @@ The current state was verified with:
 bun ./scripts/study-pipeline-cli.ts self-test
 bunx tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck --types node scripts/study-pipeline-cli.ts scripts/study-pipeline-readiness.ts scripts/study-pipeline-cli-core.ts scripts/study-pipeline-curation-promote.ts
 cd services/moodle && go test ./pkg/studypipeline
+bun ./scripts/study-pipeline-cli.ts promote-curation --course 22584 --artifact-root ~/.moodle/study --resource 947753 --curation-file /Users/oli/.moodle/study/codex-users/user_3db8bdscor0b5mnrzgq755t4ihz/last-curation-task-947753-aufgabenblatt-12-gpt-5.5.md --model gpt-5.5 --output plans/task-sheet-promotion-22584-goal1.json --raw
 bun ./scripts/study-pipeline-cli.ts readiness --course 22584 --artifact-root ~/.moodle/study --output plans/task-sheet-readiness-22584-goal1.json --raw
 cd services/moodle && go run ./cmd/study-pipeline-local-evidence --course 22584 --artifact-root ~/.moodle/study --resource 947753 --readiness-report ../../plans/task-sheet-readiness-22584-goal1.json --output ../../plans/task-view-22584-goal1-evidence.json
 ```
