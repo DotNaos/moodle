@@ -33,6 +33,7 @@ type MoodleConfig = {
 };
 
 export type CommonOptions = {
+  directServices?: boolean;
   web?: string;
   services?: string;
   raw?: boolean;
@@ -59,9 +60,10 @@ export async function pipelineRequest(input: {
   path: string;
 }) {
   const credentials = await loadCredentials({ required: true });
-  const webUrl = resolveWebUrl(input.options);
   const normalizedPath = input.path.startsWith("/") ? input.path : `/${input.path}`;
-  const url = new URL(`/api/study-pipeline${normalizedPath}`, webUrl);
+  const url = input.options.directServices
+    ? new URL(`/api${normalizedPath}`, resolveServicesUrl(input.options))
+    : new URL(`/api/study-pipeline${normalizedPath}`, resolveWebUrl(input.options));
   const response = await fetch(url, {
     body: input.body === undefined ? undefined : JSON.stringify(input.body),
     headers: {
