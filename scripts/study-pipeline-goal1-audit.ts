@@ -65,7 +65,7 @@ const remainingClear = Number(summary.totalSheets ?? 0) === sheets.length
 const audit = {
   ok: false,
   courseId,
-  generatedAt: new Date().toISOString(),
+  generatedAt: auditGeneratedAt(),
   summary: {
     totalSheets: summary.totalSheets ?? null,
     ready: summary.ready ?? null,
@@ -167,4 +167,18 @@ function asObject(value: unknown): JsonObject {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function auditGeneratedAt(): string {
+  const candidates = [
+    taskViewEvidence.generatedAt,
+    readiness.generatedAt,
+    promotion.generatedAt,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+  return "unknown";
 }
