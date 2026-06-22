@@ -75,11 +75,18 @@ type ReadinessOptions = CourseOptions & {
 };
 
 type PromoteCurationOptions = CourseOptions & {
-  artifactRoot: string;
-  curationFile: string;
-  model?: string;
-  output?: string;
-  resource: string;
+	artifactRoot: string;
+	curationFile: string;
+	model?: string;
+	output?: string;
+	resource: string;
+};
+
+type PromoteRemoteCurationOptions = CourseOptions & {
+	curationPath: string;
+	model?: string;
+	output?: string;
+	resource: string;
 };
 
 const program = new Command()
@@ -304,8 +311,8 @@ program
   });
 
 program
-  .command("promote-curation")
-  .description("Publish a saved Codex curation JSON file as active improved task content.")
+	.command("promote-curation")
+	.description("Publish a saved Codex curation JSON file as active improved task content.")
   .requiredOption("--course <id>", "Moodle course ID")
   .requiredOption("--artifact-root <path>", "Local study pipeline artifact root")
   .requiredOption("--resource <id>", "Task sheet resource ID")
@@ -320,6 +327,32 @@ program
       curationFile: options.curationFile,
       model: options.model,
       resourceId: options.resource,
+    });
+    if (options.output) {
+      await writeJSONFile(options.output, result);
+    }
+    printJSON(result, options);
+  });
+
+program
+  .command("promote-remote-curation")
+  .description("Publish a saved Codex workspace curation JSON file through the production API.")
+  .requiredOption("--course <id>", "Moodle course ID")
+  .requiredOption("--resource <id>", "Task sheet resource ID")
+  .requiredOption("--curation-path <path>", "Codex workspace path, for example last-curation-task-...-gpt-5.5.md")
+  .option("--model <id>", "Model label to store in the improved artifact")
+  .option("--output <path>", "Write the promotion result to a JSON file")
+  .action(async function (this: Command) {
+    const options = this.optsWithGlobals<PromoteRemoteCurationOptions>();
+    const result = await pipelineRequest({
+      body: removeUndefined({
+        resourceId: options.resource,
+        curationPath: options.curationPath,
+        model: options.model,
+      }),
+      method: "POST",
+      options,
+      path: `/courses/${encodeURIComponent(options.course)}/study-pipeline/promote-curation`,
     });
     if (options.output) {
       await writeJSONFile(options.output, result);

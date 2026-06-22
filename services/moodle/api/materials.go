@@ -712,6 +712,27 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			})
 		}
 		svc.WriteJSON(w, http.StatusOK, response)
+	case "promote-curation":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if strings.TrimSpace(codexUserID) == "" {
+			svc.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "Codex user identity is required before promoting curation output."})
+			return
+		}
+		var input contract.StudyPipelinePromoteCurationRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		options.UserID = codexUserID
+		response, err := studypipeline.PromoteCodexCurationOutput(courseID, materials, input, options)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, response)
 	case "chat":
 		taskID := strings.TrimSpace(r.URL.Query().Get("taskId"))
 		if taskID == "" {

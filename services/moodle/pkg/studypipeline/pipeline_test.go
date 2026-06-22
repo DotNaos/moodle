@@ -713,6 +713,57 @@ func TestLoadTaskViewMarksUnprocessedSheetsReadOnly(t *testing.T) {
 	}
 }
 
+func TestPromoteCodexCurationOutputWritesImprovedTask(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvArtifactRoot, root)
+	courseID := "22584"
+	userID := "user_test"
+	resourceID := "947711"
+	now := time.Date(2026, 6, 22, 22, 0, 0, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: resourceID, Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+	}
+	stateRoot := filepath.Join(root, "codex-users", safeSegment(userID))
+	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+		t.Fatalf("mkdir codex state: %v", err)
+	}
+	curationPath := "last-curation-task-947711-aufgabenblatt-01-gpt-5.5.md"
+	curation := CurationOutput{
+		Model:           "gpt-5.5",
+		ContentMarkdown: "# Aufgabenblatt 01\n\nBearbeiten Sie Aufgabe 1.",
+	}
+	data, err := json.Marshal(curation)
+	if err != nil {
+		t.Fatalf("marshal curation: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateRoot, curationPath), data, 0o600); err != nil {
+		t.Fatalf("write curation: %v", err)
+	}
+
+	response, err := PromoteCodexCurationOutput(courseID, resources, contract.StudyPipelinePromoteCurationRequest{
+		ResourceID:   resourceID,
+		CurationPath: curationPath,
+	}, RunOptions{
+		Root:   root,
+		Now:    now,
+		UserID: userID,
+	})
+	if err != nil {
+		t.Fatalf("PromoteCodexCurationOutput: %v", err)
+	}
+	if response.Target.Status != "codex-improved" || response.Target.Model != "gpt-5.5" {
+		t.Fatalf("unexpected target: %#v", response.Target)
+	}
+	promoted := improvedContentForMaterial(root, courseID, contract.StudyPipelineMaterial{
+		ID:   resourceID,
+		Name: "Aufgabenblatt 01",
+		Type: "task",
+	}, "task")
+	if !strings.Contains(promoted, "Bearbeiten Sie Aufgabe 1.") || !strings.Contains(promoted, "moodle-resource:"+resourceID) {
+		t.Fatalf("unexpected promoted content: %q", promoted)
+	}
+}
+
 func TestLoadTaskViewIncludesExtractedImageAssets(t *testing.T) {
 	root := t.TempDir()
 	courseID := "22584"

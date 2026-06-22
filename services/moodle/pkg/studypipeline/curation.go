@@ -168,6 +168,88 @@ func materializeCodexCuration(root string, courseID string, run *codexCurationRu
 	return nil
 }
 
+func PromoteCodexCurationOutput(courseID string, resources []moodle.Resource, input contract.StudyPipelinePromoteCurationRequest, options RunOptions) (contract.StudyPipelinePromoteCurationResponse, error) {
+	now := options.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	root := strings.TrimSpace(options.Root)
+	if root == "" {
+		root = ArtifactRootFromEnv()
+	}
+	userID := strings.TrimSpace(options.UserID)
+	if userID == "" {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("Codex user identity is required before promoting curation output")
+	}
+	resourceID := strings.TrimSpace(input.ResourceID)
+	if resourceID == "" {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("resourceId is required")
+	}
+	curationPath := strings.TrimSpace(input.CurationPath)
+	if curationPath == "" {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("curationPath is required")
+	}
+	plan := Build(courseID, resources, "promote-curation", now)
+	material, ok := findRefineMaterial(plan, "task", resourceID)
+	if !ok {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("curation target %q was not found for task", resourceID)
+	}
+	data, _, err := OpenCodexWorkspaceFile(userID, root, curationPath)
+	if err != nil {
+		return contract.StudyPipelinePromoteCurationResponse{}, err
+	}
+	var output CurationOutput
+	if err := json.Unmarshal(data, &output); err != nil {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("curation output is not valid JSON: %w", err)
+	}
+	content := strings.TrimSpace(output.ContentMarkdown)
+	if content == "" {
+		return contract.StudyPipelinePromoteCurationResponse{}, fmt.Errorf("curation output has no contentMarkdown")
+	}
+	model := firstNonEmpty(strings.TrimSpace(input.Model), strings.TrimSpace(output.Model), modelFromCurationPath(curationPath), "codex")
+	if err := writeImprovedContent(root, courseID, material, "task", ensureMoodleSource(content, resourceID), model, now); err != nil {
+		return contract.StudyPipelinePromoteCurationResponse{}, err
+	}
+	state := contentState(root, courseID, material, "task")
+	return contract.StudyPipelinePromoteCurationResponse{
+		CourseID:       courseID,
+		ResourceID:     resourceID,
+		CurationPath:   curationPath,
+		Target:         state,
+		ContentPreview: previewMarkdown(content, 1200),
+	}, nil
+}
+
+func modelFromCurationPath(value string) string {
+	name := filepath.Base(value)
+	if !strings.HasSuffix(name, ".md") {
+		return ""
+	}
+	name = strings.TrimSuffix(name, ".md")
+	index := strings.LastIndex(name, "-gpt-")
+	if index < 0 {
+		return ""
+	}
+	return name[index+1:]
+}
+
+func ensureMoodleSource(value string, resourceID string) string {
+	sourceLine := "Source: [Moodle resource](moodle-resource:" + resourceID + ")"
+	if strings.Contains(value, "moodle-resource:"+resourceID) {
+		return value
+	}
+	lines := strings.Split(value, "\n")
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# ") {
+			out := append([]string{}, lines[:index+1]...)
+			out = append(out, "", sourceLine)
+			out = append(out, lines[index+1:]...)
+			return strings.Join(out, "\n")
+		}
+	}
+	return sourceLine + "\n\n" + value
+}
+
 type DockerCodexCurator struct{}
 
 func (DockerCodexCurator) Curate(ctx context.Context, input CurationInput) (CurationOutput, error) {
