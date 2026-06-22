@@ -474,6 +474,16 @@ func TestCuratedStageRunsCodexCurationWhenModelIsSelected(t *testing.T) {
 	if !strings.Contains(string(taskOutput), "embedded-image-001") {
 		t.Fatalf("expected curated task to include codex-placed image, got %q", string(taskOutput))
 	}
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("LoadTaskView after Codex curation: %v", err)
+	}
+	if len(view.Sheets) != 1 || view.Sheets[0].Readiness != "ready" || view.Sheets[0].ReadOnly {
+		t.Fatalf("expected Codex-curated sheet to be ready, got %#v", view.Sheets)
+	}
 	for _, decision := range response.ElementDecisions {
 		if decision.DecidedBy != "codex" {
 			t.Fatalf("expected Codex-backed decision, got %#v", decision)
@@ -658,6 +668,48 @@ func TestCuratedStageBuildsScriptFromExtractedContent(t *testing.T) {
 	}
 	if view.Sheets[0].Tasks[0].ContentState.Status != "machine-extracted" {
 		t.Fatalf("expected task status to be machine-extracted, got %#v", view.Sheets[0].Tasks[0].ContentState)
+	}
+}
+
+func TestLoadTaskViewMarksUnprocessedSheetsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22586"
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: "1", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+		{ID: "2", Name: "Aufgabenblatt 02", FileType: "pdf", SectionName: "Week 2"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "1-Aufgabenblatt 01", "Rohtext 1")
+	writeExtractedFixture(t, root, courseID, "tasks", "2-Aufgabenblatt 02", "Rohtext 2")
+	if err := writeImprovedContent(root, courseID, contract.StudyPipelineMaterial{
+		ID:   "1",
+		Name: "Aufgabenblatt 01",
+		Type: "task",
+	}, "task", "Codex aufbereitete Aufgabe 1", "gpt-test", now); err != nil {
+		t.Fatalf("write improved task: %v", err)
+	}
+
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("LoadTaskView: %v", err)
+	}
+	if len(view.Sheets) != 2 {
+		t.Fatalf("expected two sheets, got %#v", view.Sheets)
+	}
+	if view.Sheets[0].Readiness != "ready" || view.Sheets[0].ReadOnly {
+		t.Fatalf("expected first sheet to be usable, got %#v", view.Sheets[0])
+	}
+	if view.Sheets[0].ContentState.Status != "codex-improved" {
+		t.Fatalf("expected first sheet to be Codex improved, got %#v", view.Sheets[0].ContentState)
+	}
+	if view.Sheets[1].Readiness != "unprocessed" || !view.Sheets[1].ReadOnly {
+		t.Fatalf("expected second sheet to be read-only and unprocessed, got %#v", view.Sheets[1])
+	}
+	if view.Sheets[1].ContentState.Status != "machine-extracted" {
+		t.Fatalf("expected second sheet to be machine extracted, got %#v", view.Sheets[1].ContentState)
 	}
 }
 

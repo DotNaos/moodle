@@ -49,6 +49,11 @@ export type TaskViewResponse = {
     resourceId: string;
     title: string;
     kind: string;
+    contentState?: StudyContentState;
+    readiness?: "ready" | "unprocessed" | "unknown" | string;
+    readinessLabel?: string;
+    readinessReason?: string;
+    readOnly?: boolean;
     solutionResourceId?: string;
     solutionTitle?: string;
     solutionMarkdown?: string;
@@ -203,6 +208,7 @@ export function TaskStudyPanel({
     () => view?.sheets.find((sheet) => sheet.tasks.some((task) => task.taskId === selectedTask?.taskId)) ?? null,
     [selectedTask, view],
   );
+  const selectedTaskReadOnly = Boolean(selectedSheet && isReadOnlyTaskSheet(selectedSheet));
   const flatTasks = useMemo(() => view?.sheets.flatMap((sheet) => sheet.tasks) ?? [], [view]);
   const selectedTaskIndex = selectedTask
     ? flatTasks.findIndex((task) => task.taskId === selectedTask.taskId)
@@ -303,6 +309,12 @@ export function TaskStudyPanel({
     setPreviewResourceId(null);
     setPreviewExpanded(false);
   }, [selectedTask?.taskId]);
+
+  useEffect(() => {
+    if (selectedTaskReadOnly && taskMode === "test") {
+      setTaskMode("view");
+    }
+  }, [selectedTaskReadOnly, taskMode]);
 
   useEffect(() => {
     if (!view) {
@@ -493,7 +505,7 @@ export function TaskStudyPanel({
   }
 
   async function checkAnswer(input: { answer: string; stepLabel?: string | null; stepPrompt?: string }) {
-    if (!selectedTask || !course || !courseId || checking) {
+    if (!selectedTask || !course || !courseId || selectedTaskReadOnly || checking) {
       return;
     }
     const trimmed = input.answer.trim();
@@ -552,7 +564,7 @@ export function TaskStudyPanel({
   }
 
   async function updateSelectedTaskStatus(status: "done" | "open") {
-    if (!selectedTask || !courseId || !view || updatingTaskStatus) {
+    if (!selectedTask || selectedTaskReadOnly || !courseId || !view || updatingTaskStatus) {
       return;
     }
     const nextView = updateTaskStatusInView(view, selectedTask.taskId, status);
@@ -685,6 +697,10 @@ export function TaskStudyPanel({
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary-foreground" />
                   Test
                 </span>
+              ) : selectedTaskReadOnly ? (
+                <span className="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                  Nicht aufbereitet
+                </span>
               ) : !isDoneTaskStatus(selectedTask.status) && selectedTask.status !== "open" ? (
                 <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                   {selectedTask.status.replace("_", " ")}
@@ -743,7 +759,7 @@ export function TaskStudyPanel({
                     isDoneTaskStatus(selectedTask.status) &&
                       "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 hover:text-emerald-600",
                   )}
-                  disabled={updatingTaskStatus}
+                  disabled={selectedTaskReadOnly || updatingTaskStatus}
                   onClick={() => void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")}
                   type="button"
                   variant="secondary"
@@ -762,7 +778,7 @@ export function TaskStudyPanel({
                     <X aria-hidden />
                     Test beenden
                   </Button>
-                ) : (
+                ) : selectedTaskReadOnly ? null : (
                   <Button
                     className="hidden md:inline-flex"
                     onClick={() => {
@@ -839,7 +855,7 @@ export function TaskStudyPanel({
                       ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30"
                       : "bg-background/90 text-foreground ring-border",
                   )}
-                  disabled={updatingTaskStatus}
+                  disabled={selectedTaskReadOnly || updatingTaskStatus}
                   onClick={() =>
                     void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")
                   }
@@ -853,7 +869,7 @@ export function TaskStudyPanel({
                     <Circle aria-hidden className="size-4" />
                   )}
                 </button>
-                <button
+                {selectedTaskReadOnly ? null : <button
                   aria-label="Test starten"
                   className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-md backdrop-blur transition-transform active:scale-95"
                   onClick={() => {
@@ -863,7 +879,7 @@ export function TaskStudyPanel({
                   type="button"
                 >
                   <Play aria-hidden className="size-4" />
-                </button>
+                </button>}
               </>
             )}
           </div>
@@ -949,6 +965,14 @@ export function TaskStudyPanel({
               />
             ) : selectedTask ? (
               <article className="mx-auto max-w-[86ch] pb-28 md:pb-0">
+                {selectedTaskReadOnly ? (
+                  <div className="mb-5 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-800">
+                    <p className="font-semibold">Dieses Aufgabenblatt ist noch nicht aufbereitet.</p>
+                    <p className="mt-1">
+                      {selectedSheet?.readinessReason ?? "Der Inhalt ist nur maschinell extrahiert und sollte noch nicht zum Üben verwendet werden."}
+                    </p>
+                  </div>
+                ) : null}
                 <div className="py-2">
                   <MarkdownBlock
                     courseId={courseId}
@@ -999,7 +1023,7 @@ export function TaskStudyPanel({
                         isDoneTaskStatus(selectedTask.status) &&
                           "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 hover:text-emerald-600",
                       )}
-                      disabled={updatingTaskStatus}
+                      disabled={selectedTaskReadOnly || updatingTaskStatus}
                       onClick={() =>
                         void updateSelectedTaskStatus(isDoneTaskStatus(selectedTask.status) ? "open" : "done")
                       }
@@ -1814,13 +1838,17 @@ export function normalizeTaskViewForDisplay(view: TaskViewResponse): TaskViewRes
     scriptSections: asArray(view.scriptSections),
     resources: asArray(view.resources),
     sheets: asArray(view.sheets)
-      .map((sheet) => ({
-        ...sheet,
-        solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
-        tasks: asArray(sheet.tasks)
-          .flatMap(splitTaskByHeadings)
-          .sort(compareTaskViewTasks),
-      }))
+      .map((sheet) => {
+        const readiness = normalizeSheetReadiness(sheet);
+        return {
+          ...sheet,
+          ...readiness,
+          solutionMarkdown: sheet.solutionMarkdown ? cleanStudyBundleMarkdown(sheet.solutionMarkdown) : sheet.solutionMarkdown,
+          tasks: asArray(sheet.tasks)
+            .flatMap(splitTaskByHeadings)
+            .sort(compareTaskViewTasks),
+        };
+      })
       .sort(compareTaskViewSheets),
   };
 }
@@ -1835,6 +1863,9 @@ function buildTaskOutline(
       const material = materialsById.get(task.sourceResourceId) ?? materialsById.get(sheet.resourceId);
       return {
         id: task.taskId,
+        readOnly: isReadOnlyTaskSheet(sheet),
+        readiness: sheet.readiness ?? "unknown",
+        readinessLabel: sheet.readinessLabel,
         sectionTitle: material?.sectionName,
         sheetTitle: sheet.title,
         status: task.status,
@@ -1899,6 +1930,59 @@ function summarizeTaskProgress(sheets: TaskViewResponse["sheets"]): TaskViewResp
 
 function isDoneTaskStatus(status: string): boolean {
   return status === "done" || status === "correct";
+}
+
+function isReadOnlyTaskSheet(sheet: TaskViewResponse["sheets"][number]): boolean {
+  return normalizeSheetReadiness(sheet).readOnly;
+}
+
+function normalizeSheetReadiness(sheet: TaskViewResponse["sheets"][number]): {
+  readiness: string;
+  readinessLabel: string;
+  readinessReason?: string;
+  readOnly: boolean;
+} {
+  if (typeof sheet.readOnly === "boolean" && sheet.readiness) {
+    return {
+      readiness: sheet.readiness,
+      readinessLabel: sheet.readinessLabel ?? readinessLabel(sheet.readiness),
+      readinessReason: sheet.readinessReason,
+      readOnly: sheet.readOnly,
+    };
+  }
+  const status = sheet.contentState?.status ?? sheet.tasks.find((task) => task.contentState)?.contentState?.status;
+  if (status === "codex-improved") {
+    return {
+      readiness: "ready",
+      readinessLabel: "Aufbereitet",
+      readinessReason: sheet.readinessReason,
+      readOnly: false,
+    };
+  }
+  if (status === "machine-extracted") {
+    return {
+      readiness: "unprocessed",
+      readinessLabel: "Nicht aufbereitet",
+      readinessReason: sheet.readinessReason ?? "Der Inhalt ist nur maschinell extrahiert und sollte noch nicht zum Üben verwendet werden.",
+      readOnly: true,
+    };
+  }
+  return {
+    readiness: sheet.readiness ?? "unknown",
+    readinessLabel: sheet.readinessLabel ?? "Status unbekannt",
+    readinessReason: sheet.readinessReason,
+    readOnly: false,
+  };
+}
+
+function readinessLabel(readiness: string): string {
+  if (readiness === "ready") {
+    return "Aufbereitet";
+  }
+  if (readiness === "unprocessed") {
+    return "Nicht aufbereitet";
+  }
+  return "Status unbekannt";
 }
 
 function compareTaskViewSheets(left: TaskViewResponse["sheets"][number], right: TaskViewResponse["sheets"][number]): number {

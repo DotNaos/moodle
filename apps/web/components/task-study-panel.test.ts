@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { ExtractedDetailsPanel } from "@/components/extracted-document-details";
 import { buildExtractedFormulaCollection, buildFormulaSourceExcerpt } from "@/components/formula-collection-panel";
-import { groupScriptSections, groupStudyTasksBySection, groupStudyTasksBySheet } from "@/components/course-study-outline";
+import { groupScriptSections, groupStudyTasksBySection, groupStudyTasksBySheet, TaskOutline } from "@/components/course-study-outline";
 import { buildBlockTypeSummary, documentDiagnosticCounts } from "@/components/extracted-document-inspector";
 import { buildInventorySections, buildStudyPipelinePreviewSections, StudyPipelinePreview } from "@/components/study-pipeline-preview";
 import { ScriptReader, buildScriptPDFMapping, extractScriptSections, normalizeTaskViewForDisplay, renderScriptMarkdownHTML, splitScriptChapters } from "@/components/task-study-panel";
@@ -716,6 +716,81 @@ describe("task view display normalization", () => {
     expect(view.sheets[0]?.tasks[0]?.promptMarkdown).toBe("Erste Frage.");
     expect(view.sheets[0]?.tasks[0]?.promptMarkdown).not.toContain("Source task");
     expect(view.sheets[0]?.solutionMarkdown).not.toContain("Original Sources");
+  });
+
+  test("marks machine-extracted worksheets read-only until Codex curation is available", () => {
+    const view = normalizeTaskViewForDisplay({
+      courseId: "22584",
+      generatedAt: "2026-06-22T00:00:00.000Z",
+      progress: { checked: 0, correct: 0, done: 0, needsReview: 0, open: 2, wrong: 0 },
+      resources: [],
+      scriptMarkdown: "",
+      sheets: [
+        {
+          contentState: {
+            id: "sheet-01",
+            kind: "task",
+            status: "codex-improved",
+            statusLabel: "Codex improved",
+            title: "Aufgabenblatt 01",
+          },
+          kind: "PDF",
+          resourceId: "sheet-01",
+          tasks: [{ parts: [], promptMarkdown: "Ready.", sourceResourceId: "sheet-01", status: "open", taskId: "01", title: "Aufgabenblatt 01" }],
+          title: "Aufgabenblatt 01",
+        },
+        {
+          contentState: {
+            id: "sheet-02",
+            kind: "task",
+            status: "machine-extracted",
+            statusLabel: "Machine extracted",
+            title: "Aufgabenblatt 02",
+          },
+          kind: "PDF",
+          resourceId: "sheet-02",
+          tasks: [{ parts: [], promptMarkdown: "Raw.", sourceResourceId: "sheet-02", status: "open", taskId: "02", title: "Aufgabenblatt 02" }],
+          title: "Aufgabenblatt 02",
+        },
+      ],
+    });
+
+    expect(view.sheets.map((sheet) => [sheet.title, sheet.readiness, sheet.readOnly])).toEqual([
+      ["Aufgabenblatt 01", "ready", false],
+      ["Aufgabenblatt 02", "unprocessed", true],
+    ]);
+  });
+
+  test("keeps unprocessed worksheets visible but out of the next-practice flow", () => {
+    const html = renderToStaticMarkup(React.createElement(TaskOutline, {
+      onSelectTask: () => undefined,
+      onTaskStatusChange: () => undefined,
+      selectedTaskId: null,
+      tasks: [
+        {
+          id: "sheet-01",
+          readOnly: true,
+          readiness: "unprocessed",
+          readinessLabel: "Nicht aufbereitet",
+          sheetTitle: "Aufgabenblatt 01",
+          status: "open",
+          title: "Aufgabenblatt 01",
+        },
+        {
+          id: "sheet-02",
+          readOnly: false,
+          readiness: "ready",
+          readinessLabel: "Aufbereitet",
+          sheetTitle: "Aufgabenblatt 02",
+          status: "open",
+          title: "Aufgabenblatt 02",
+        },
+      ],
+    }));
+
+    expect(html).toContain("Als Nächstes: Aufgabenblatt 02");
+    expect(html).toContain("1 Aufgabenblatt noch nicht aufbereitet.");
+    expect(html).toContain("Nicht aufbereitet");
   });
 });
 

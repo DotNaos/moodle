@@ -1,5 +1,8 @@
 export type StudyTaskOutline = {
   id: string;
+  readOnly?: boolean;
+  readiness?: "ready" | "unprocessed" | "unknown" | string;
+  readinessLabel?: string;
   sectionTitle?: string;
   sheetTitle: string;
   status: TaskProgressStatus;
