@@ -13,6 +13,8 @@ This document is the human review companion for:
 Goal 1 non-UI verification is ready for user review, but not complete until the
 user explicitly accepts it.
 
+Last refreshed from local artifacts on `2026-06-22T18:15:28Z`.
+
 Current machine-readable status:
 
 | Status | Count |
@@ -23,14 +25,18 @@ Current machine-readable status:
 | Unprocessed | 8 |
 | Invalid | 0 |
 
-The verifier intentionally fails while unprocessed sheets remain. This proves the
-gate is hard enough for Goal 2: the course cannot be treated as fully complete
-until every real task sheet is either `ready` or accepted `blocked`.
+The verifier intentionally exits with code `2` while unprocessed sheets remain.
+This proves the gate is hard enough for Goal 2: the course cannot be treated as
+fully complete until every real task sheet is either `ready` or accepted
+`blocked`.
 
 ## Verified Non-UI Curation
 
 `Aufgabenblatt 12` (`947753`) was promoted through the CLI from a saved Codex
 curation artifact, not through frontend clicks.
+
+The promoted sheet was rechecked through `studypipeline.LoadTaskView` against
+the local artifact root and the stored course resource list.
 
 Verified properties:
 
@@ -78,6 +84,13 @@ bun ./scripts/study-pipeline-cli.ts readiness --course 22584 --artifact-root ~/.
 The readiness command exits with code `2` for the current course state because
 8 sheets are still unprocessed.
 
+The task-view evidence was also regenerated through a local
+`studypipeline.LoadTaskView` smoke using:
+
+- artifact root: `/Users/oli/.moodle/study`
+- resource source: `/Users/oli/.moodle/study/courses/22584/raw/resources.json`
+- evidence output: `plans/task-view-22584-goal1-evidence.json`
+
 ## Acceptance
 
 Goal 1 can be accepted if the user agrees that:
@@ -87,4 +100,4 @@ Goal 1 can be accepted if the user agrees that:
 3. The `Aufgabenblatt 12` promotion proves the end-to-end API/CLI path.
 4. The remaining 8 sheets have enough machine-readable status for Goal 2.
 
-After explicit acceptance, Goal 2 can start.
+After explicit acceptance, Goal 1.5 can start.
