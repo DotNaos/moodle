@@ -36,7 +36,7 @@ export MOODLE_PASSWORD="<password>"
 docker run --rm -p 8080:8080 \
   -e MOODLE_USERNAME="$MOODLE_USERNAME" \
   -e MOODLE_PASSWORD="$MOODLE_PASSWORD" \
-  ghcr.io/dotnaos/moodle-services:latest serve --addr :8080
+  ghcr.io/dotnaos/moodle:latest serve --addr :8080
 ```
 
 3. Check that it is up.

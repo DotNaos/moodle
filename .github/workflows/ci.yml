@@ -98,7 +98,7 @@ jobs:
           set -euo pipefail
 
           hash="$(sha256sum services/moodle/docker/runtime-base/Dockerfile services/moodle/go.mod services/moodle/go.sum | sha256sum | cut -c1-16)"
-          echo "ref=ghcr.io/dotnaos/moodle-services-runtime-base:bookworm-${hash}" >> "${GITHUB_OUTPUT}"
+          echo "ref=ghcr.io/dotnaos/moodle-runtime-base:bookworm-${hash}" >> "${GITHUB_OUTPUT}"
 
       - name: Pull runtime base image
         id: pull_runtime_base
@@ -106,7 +106,7 @@ jobs:
         shell: bash
         run: |
           docker pull "${{ steps.runtime_base.outputs.ref }}"
-          docker tag "${{ steps.runtime_base.outputs.ref }}" moodle-services-runtime-base:ci
+          docker tag "${{ steps.runtime_base.outputs.ref }}" moodle-runtime-base:ci
 
       - name: Build runtime base image fallback
         if: steps.pull_runtime_base.outcome != 'success'
@@ -115,7 +115,7 @@ jobs:
           context: services/moodle
           file: services/moodle/docker/runtime-base/Dockerfile
           load: true
-          tags: moodle-services-runtime-base:ci
+          tags: moodle-runtime-base:ci
 
       - name: Build backend Docker image
         uses: docker/build-push-action@v6
@@ -123,6 +123,6 @@ jobs:
           context: services/moodle
           load: true
           push: false
-          tags: moodle-services:test
+          tags: moodle:test
           build-args: |
-            RUNTIME_BASE_IMAGE=moodle-services-runtime-base:ci
+            RUNTIME_BASE_IMAGE=moodle-runtime-base:ci

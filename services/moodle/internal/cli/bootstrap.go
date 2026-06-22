@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultDockerImage = "ghcr.io/dotnaos/moodle-services:latest"
+const defaultDockerImage = "ghcr.io/dotnaos/moodle:latest"
 const installDockerURL = "https://raw.githubusercontent.com/DotNaos/moodle-services/main/scripts/install-docker.sh"
 
 var (

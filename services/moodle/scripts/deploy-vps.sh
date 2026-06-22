@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${MOODLE_DOCKER_IMAGE:-ghcr.io/dotnaos/moodle-services:latest}"
+IMAGE="${MOODLE_DOCKER_IMAGE:-ghcr.io/dotnaos/moodle:latest}"
 DEPLOY_DIR="${MOODLE_DEPLOY_DIR:-${HOME}/moodle-services}"
 COMPOSE_FILE="${MOODLE_COMPOSE_FILE:-docker-compose.yml}"
 HEALTH_URL="${MOODLE_HEALTH_URL:-http://127.0.0.1:8080/healthz}"

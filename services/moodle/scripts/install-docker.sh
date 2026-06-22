@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${MOODLE_DOCKER_IMAGE:-ghcr.io/dotnaos/moodle-services:latest}"
+IMAGE="${MOODLE_DOCKER_IMAGE:-ghcr.io/dotnaos/moodle:latest}"
 PAYLOAD=""
 BIN_DIR="${HOME}/.local/bin"
 DATA_DIR="${HOME}/.moodle"

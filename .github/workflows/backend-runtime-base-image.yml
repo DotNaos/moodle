@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
 
           hash="$(sha256sum services/moodle/docker/runtime-base/Dockerfile services/moodle/go.mod services/moodle/go.sum | sha256sum | cut -c1-16)"
-          echo "name=ghcr.io/dotnaos/moodle-services-runtime-base" >> "${GITHUB_OUTPUT}"
+          echo "name=ghcr.io/dotnaos/moodle-runtime-base" >> "${GITHUB_OUTPUT}"
           echo "tag=bookworm-${hash}" >> "${GITHUB_OUTPUT}"
 
       - name: Prepare image metadata
