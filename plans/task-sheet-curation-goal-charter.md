@@ -211,8 +211,7 @@ Goal 1 is complete only when:
 5. The remaining sheets have a clear machine-readable status.
 6. The user has reviewed and accepted the non-UI result.
 
-Goal 1 was accepted by the user on 2026-06-22. Do not proceed to Goal 2 before
-Goal 1.5 is complete.
+Do not proceed to Goal 1.5 or Goal 2 before the user explicitly accepts Goal 1.
 
 ### Goal 1.5: Codex Transport Split
 
