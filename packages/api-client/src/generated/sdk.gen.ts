@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, ExchangeQrCodeData, ExchangeQrCodeErrors, ExchangeQrCodeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiSpecData, GetOpenApiSpecErrors, GetOpenApiSpecResponses, ListApiKeysData, ListApiKeysErrors, ListApiKeysResponses, ListCourseMaterialsData, ListCourseMaterialsErrors, ListCourseMaterialsResponses, ListCoursesData, ListCoursesErrors, ListCoursesResponses, ReadMaterialPdfData, ReadMaterialPdfErrors, ReadMaterialPdfResponses, ReadMaterialTextData, ReadMaterialTextErrors, ReadMaterialTextResponses, SearchMoodleData, SearchMoodleErrors, SearchMoodleResponses } from './types.gen';
+import type { CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, ExchangeQrCodeData, ExchangeQrCodeErrors, ExchangeQrCodeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiSpecData, GetOpenApiSpecErrors, GetOpenApiSpecResponses, ListApiKeysData, ListApiKeysErrors, ListApiKeysResponses, ListCategoriesData, ListCategoriesErrors, ListCategoriesResponses, ListCourseMaterialsData, ListCourseMaterialsErrors, ListCourseMaterialsResponses, ListCoursesData, ListCoursesErrors, ListCoursesResponses, ReadMaterialPdfData, ReadMaterialPdfErrors, ReadMaterialPdfResponses, ReadMaterialTextData, ReadMaterialTextErrors, ReadMaterialTextResponses, RevokeApiKeyData, RevokeApiKeyErrors, RevokeApiKeyResponses, SearchMoodleData, SearchMoodleErrors, SearchMoodleResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -28,6 +28,15 @@ export const exchangeQrCode = <ThrowOnError extends boolean = false>(options: Op
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * List Moodle categories
+ */
+export const listCategories = <ThrowOnError extends boolean = false>(options?: Options<ListCategoriesData, ThrowOnError>) => (options?.client ?? client).get<ListCategoriesResponses, ListCategoriesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, { name: 'X-Moodle-App-Key', type: 'apiKey' }],
+    url: '/api/categories',
+    ...options
 });
 
 /**
@@ -63,6 +72,15 @@ export const readMaterialPdf = <ThrowOnError extends boolean = false>(options: O
 export const readMaterialText = <ThrowOnError extends boolean = false>(options: Options<ReadMaterialTextData, ThrowOnError>) => (options.client ?? client).get<ReadMaterialTextResponses, ReadMaterialTextErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, { name: 'X-Moodle-App-Key', type: 'apiKey' }],
     url: '/api/courses/{courseId}/materials/{resourceId}/text',
+    ...options
+});
+
+/**
+ * Revoke API key
+ */
+export const revokeApiKey = <ThrowOnError extends boolean = false>(options: Options<RevokeApiKeyData, ThrowOnError>) => (options.client ?? client).delete<RevokeApiKeyResponses, RevokeApiKeyErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, { name: 'X-Moodle-App-Key', type: 'apiKey' }],
+    url: '/api/keys',
     ...options
 });
 
