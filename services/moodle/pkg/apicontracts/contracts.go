@@ -460,6 +460,20 @@ type StudyPipelineRefineResponse struct {
 	ContentPreview string                  `json:"contentPreview,omitempty"`
 }
 
+type StudyPipelinePromoteCurationRequest struct {
+	ResourceID   string `json:"resourceId"`
+	CurationPath string `json:"curationPath"`
+	Model        string `json:"model,omitempty"`
+}
+
+type StudyPipelinePromoteCurationResponse struct {
+	CourseID       string                  `json:"courseId"`
+	ResourceID     string                  `json:"resourceId"`
+	CurationPath   string                  `json:"curationPath"`
+	Target         StudyPipelineContentRef `json:"target"`
+	ContentPreview string                  `json:"contentPreview,omitempty"`
+}
+
 type StudyPipelineRefineEvent struct {
 	Type            string                   `json:"type"`
 	Message         string                   `json:"message,omitempty"`

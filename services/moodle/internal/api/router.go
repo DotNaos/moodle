@@ -78,6 +78,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineStatusRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineStageRoute(opts, "curated"))
 	router.Post("/api/courses/{courseID}/study-pipeline/plan", studyPipelinePlanRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/promote-curation", studyPipelinePromoteCurationRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/{stage}", studyPipelineStageRoute(opts, ""))
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/inventory", studyPipelineInventoryRoute(opts))
@@ -366,6 +367,26 @@ func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
 		"route":  "study-pipeline",
 		"action": "refine",
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelinePromoteCurationRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelinePromoteCurationHandler(opts)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "promote-curation",
 	}, map[string]string{
 		"courseID": "courseId",
 	})
@@ -903,6 +924,30 @@ func studyPipelineRefineHandler(opts ServerOptions) http.HandlerFunc {
 			return
 		}
 		response, err := studypipeline.RefineContent(r.Context(), courseID, resources, input, studypipeline.RunOptions{
+			Downloader: downloader,
+			Now:        time.Now(),
+			UserID:     strings.TrimSpace(r.Header.Get("X-Clerk-User-Id")),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func studyPipelinePromoteCurationHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, resources, downloader, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		var input contract.StudyPipelinePromoteCurationRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		response, err := studypipeline.PromoteCodexCurationOutput(courseID, resources, input, studypipeline.RunOptions{
 			Downloader: downloader,
 			Now:        time.Now(),
 			UserID:     strings.TrimSpace(r.Header.Get("X-Clerk-User-Id")),
