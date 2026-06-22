@@ -1,4 +1,4 @@
-ARG RUNTIME_BASE_IMAGE=ghcr.io/dotnaos/moodle-services-runtime-base:bookworm
+ARG RUNTIME_BASE_IMAGE=ghcr.io/dotnaos/moodle-runtime-base:bookworm
 
 FROM golang:1.24-bookworm AS builder
 

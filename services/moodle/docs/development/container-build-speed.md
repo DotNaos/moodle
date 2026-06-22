@@ -2,13 +2,13 @@
 
 The service image is intentionally split into two layers:
 
-1. `ghcr.io/dotnaos/moodle-services-runtime-base`
+1. `ghcr.io/dotnaos/moodle-runtime-base`
    - Debian runtime packages
    - Playwright browser cache
    - Poppler and Tesseract
    - Docker CLI for pipeline helper containers
 
-2. `ghcr.io/dotnaos/moodle-services`
+2. `ghcr.io/dotnaos/moodle`
    - The compiled `moodle` Go binary
 
 The runtime base image is content-tagged from:
@@ -24,8 +24,8 @@ base image tag is missing in GHCR.
 The release workflow keeps the VPS deploy path fast by publishing the service
 image for `linux/amd64` first:
 
-- `ghcr.io/dotnaos/moodle-services:<tag>-amd64`
-- `ghcr.io/dotnaos/moodle-services:latest-amd64`
+- `ghcr.io/dotnaos/moodle:<tag>-amd64`
+- `ghcr.io/dotnaos/moodle:latest-amd64`
 
 The VPS deploy workflow uses `latest-amd64` by default. Multi-arch images are
 kept outside the critical deploy path and can be published manually with the
@@ -36,9 +36,9 @@ For local verification:
 ```bash
 docker buildx build --load \
   --file docker/runtime-base/Dockerfile \
-  --tag moodle-services-runtime-base:test .
+  --tag moodle-runtime-base:test .
 
 docker buildx build --load \
-  --build-arg RUNTIME_BASE_IMAGE=moodle-services-runtime-base:test \
-  --tag moodle-services:test .
+  --build-arg RUNTIME_BASE_IMAGE=moodle-runtime-base:test \
+  --tag moodle:test .
 ```
