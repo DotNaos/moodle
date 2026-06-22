@@ -1,0 +1,43 @@
+{
+  "artifactRoot": "/Users/oli/.moodle/study",
+  "courseId": "22584",
+  "generatedAt": "2026-06-22T18:21:40Z",
+  "promotedSheet": {
+    "readinessReport": {
+      "resourceId": "947753",
+      "verdict": "ready",
+      "readiness": "ready",
+      "readOnly": false,
+      "contentStatus": "codex-improved",
+      "renderedPageCount": 1,
+      "pagePreviewAssetCount": 1,
+      "extractedImageAssetCount": 3,
+      "sourcePath": "/data/study/courses/22584/raw/materials/ausblick-anwendungen/947753-aufgabenblatt-12.pdf",
+      "problems": []
+    },
+    "resourceId": "947753",
+    "taskView": {
+      "contentSourcePath": "/Users/oli/.moodle/study/courses/22584/improved/tasks/947753-aufgabenblatt-12.mdx",
+      "contentStatus": "codex-improved",
+      "promptHasExtractedAssetImage": true,
+      "promptHasMoodleSource": true,
+      "promptHasPlaceholder": false,
+      "readOnly": false,
+      "readiness": "ready",
+      "solutionResourceId": "947754",
+      "taskCount": 1
+    },
+    "title": "Aufgabenblatt 12"
+  },
+  "readinessReport": "plans/task-sheet-readiness-22584-goal1.json",
+  "resourceSource": "/Users/oli/.moodle/study/courses/22584/raw/resources.json",
+  "source": "studypipeline.LoadTaskView local smoke",
+  "summary": {
+    "readinessReportReady": 4,
+    "readinessReportSheets": 12,
+    "readinessReportUnprocessed": 8,
+    "taskViewReady": 4,
+    "taskViewSheets": 12,
+    "taskViewUnprocessed": 8
+  }
+}

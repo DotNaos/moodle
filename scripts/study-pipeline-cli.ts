@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Command, Option } from "commander";
 import {
   CACHE_PATH,
@@ -28,6 +30,12 @@ import {
   serviceJSON,
   type CommonOptions,
 } from "./study-pipeline-cli-core";
+import {
+  buildTaskSheetReadinessReportFromArtifactRoot,
+  buildTaskSheetReadinessReport,
+  runReadinessSelfTest,
+} from "./study-pipeline-readiness";
+import { promoteCurationToImprovedArtifact, runPromotionSelfTest } from "./study-pipeline-curation-promote";
 
 type CourseOptions = CommonOptions & {
   course: string;
@@ -59,12 +67,28 @@ type VerifyOptions = CourseOptions & {
   limit?: string;
 };
 
+type ReadinessOptions = CourseOptions & {
+  allowBlockers?: string;
+  artifactRoot?: string;
+  fail?: boolean;
+  output?: string;
+};
+
+type PromoteCurationOptions = CourseOptions & {
+  artifactRoot: string;
+  curationFile: string;
+  model?: string;
+  output?: string;
+  resource: string;
+};
+
 const program = new Command()
   .name("study-pipeline")
   .description("CLI for Moodle study pipeline auth, runs, and verification.")
   .showHelpAfterError()
   .option("--web <url>", "Moodle web base URL", DEFAULT_WEB_URL)
   .option("--services <url>", "Moodle services base URL", DEFAULT_SERVICES_URL)
+  .option("--direct-services", "Call Moodle services directly instead of the web proxy", false)
   .option("--timeout-ms <ms>", "HTTP request timeout in milliseconds", "60000")
   .option("--raw", "Print raw JSON without secret redaction", false);
 
@@ -81,7 +105,9 @@ auth
       clerkUserId: credentials?.clerkUserId ? redact(credentials.clerkUserId, 6) : null,
       hasApiKey: Boolean(credentials?.apiKey),
       source: credentials?.source ?? "missing",
+      directServices: Boolean(options.directServices),
       webUrl: resolveWebUrl(options),
+      servicesUrl: resolveServicesUrl(options),
     }, options);
   });
 
@@ -249,10 +275,65 @@ program
   });
 
 program
+  .command("readiness")
+  .description("Verify task sheets are ready or have accepted blocker reasons.")
+  .requiredOption("--course <id>", "Moodle course ID")
+  .option("--allow-blockers <ids>", "Accepted numbered blocker reasons", "1,2,3,4,5")
+  .option("--artifact-root <path>", "Read local study pipeline artifacts instead of the API")
+  .option("--output <path>", "Write the machine-readable report to a JSON file")
+  .option("--no-fail", "Print the report without returning a failing exit code")
+  .action(async function (this: Command) {
+    const options = this.optsWithGlobals<ReadinessOptions>();
+    const acceptedBlockerReasonIds = listFlags([options.allowBlockers ?? "1,2,3,4,5"])
+      .map((item) => Number.parseInt(item, 10))
+      .filter((item) => Number.isInteger(item));
+    const report = options.artifactRoot
+      ? buildTaskSheetReadinessReportFromArtifactRoot({
+          acceptedBlockerReasonIds,
+          artifactRoot: options.artifactRoot,
+          courseId: options.course,
+        })
+      : await buildTaskSheetReadinessReportFromApi(options, acceptedBlockerReasonIds);
+    if (options.output) {
+      await writeJSONFile(options.output, report);
+    }
+    printJSON(report, options);
+    if (!report.ok && options.fail !== false) {
+      process.exitCode = 2;
+    }
+  });
+
+program
+  .command("promote-curation")
+  .description("Publish a saved Codex curation JSON file as active improved task content.")
+  .requiredOption("--course <id>", "Moodle course ID")
+  .requiredOption("--artifact-root <path>", "Local study pipeline artifact root")
+  .requiredOption("--resource <id>", "Task sheet resource ID")
+  .requiredOption("--curation-file <path>", "Saved Codex curation JSON file")
+  .option("--model <id>", "Model label to store in the improved artifact")
+  .option("--output <path>", "Write the promotion result to a JSON file")
+  .action(async function (this: Command) {
+    const options = this.optsWithGlobals<PromoteCurationOptions>();
+    const result = await promoteCurationToImprovedArtifact({
+      artifactRoot: options.artifactRoot,
+      courseId: options.course,
+      curationFile: options.curationFile,
+      model: options.model,
+      resourceId: options.resource,
+    });
+    if (options.output) {
+      await writeJSONFile(options.output, result);
+    }
+    printJSON(result, options);
+  });
+
+program
   .command("self-test")
   .description("Run local parser/redaction checks without network access.")
-  .action(() => {
+  .action(async () => {
     runSelfTest();
+    await runReadinessSelfTest();
+    await runPromotionSelfTest();
   });
 
 try {
@@ -276,4 +357,30 @@ function addCourseGetCommand(name: string, endpoint: string, description: string
       });
       printJSON(payload, options);
     });
+}
+
+async function buildTaskSheetReadinessReportFromApi(options: ReadinessOptions, acceptedBlockerReasonIds: number[]) {
+  const [taskView, extractedDocuments] = await Promise.all([
+    pipelineRequest({
+      method: "GET",
+      options,
+      path: `/courses/${encodeURIComponent(options.course)}/study-pipeline/task-view`,
+    }),
+    pipelineRequest({
+      method: "GET",
+      options,
+      path: `/courses/${encodeURIComponent(options.course)}/study-pipeline/extracted-documents`,
+    }),
+  ]);
+  return buildTaskSheetReadinessReport({
+    acceptedBlockerReasonIds,
+    courseId: options.course,
+    extractedDocuments,
+    taskView,
+  });
+}
+
+async function writeJSONFile(filePath: string, payload: unknown) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`);
 }
