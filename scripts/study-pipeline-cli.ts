@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Command, Option } from "commander";
@@ -367,6 +368,7 @@ program
     runSelfTest();
     await runReadinessSelfTest();
     await runPromotionSelfTest();
+    runCodexSDKRunnerSelfTest();
   });
 
 try {
@@ -416,4 +418,18 @@ async function buildTaskSheetReadinessReportFromApi(options: ReadinessOptions, a
 async function writeJSONFile(filePath: string, payload: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function runCodexSDKRunnerSelfTest() {
+  const result = spawnSync("bun", [path.join(import.meta.dirname, "study-pipeline-codex-sdk-runner.ts"), "--self-test"], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      MOODLE_CODEX_SDK_MOCK_RESPONSE: "{\"ok\":true}",
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(`Codex SDK runner self-test failed: ${String(result.stderr || result.stdout).trim()}`);
+  }
+  process.stdout.write(result.stdout);
 }
