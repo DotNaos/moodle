@@ -1,6 +1,36 @@
 name: Backend Deploy VPS
 
 on:
+  workflow_call:
+    inputs:
+      image:
+        description: "Container image to deploy"
+        required: false
+        default: ghcr.io/dotnaos/moodle:latest-amd64
+        type: string
+      ref:
+        description: "Git ref to checkout for migrations and deploy scripts"
+        required: false
+        type: string
+    secrets:
+      VPS_HOST:
+        required: true
+      VPS_USER:
+        required: true
+      VPS_SSH_KEY:
+        required: true
+      VPS_SSH_KNOWN_HOSTS:
+        required: false
+      VPS_DEPLOY_DIR:
+        required: false
+      VPS_COMPOSE_FILE:
+        required: false
+      VPS_COMPOSE_PROJECT:
+        required: false
+      VPS_DOCKER_SERVICE:
+        required: false
+      VPS_HEALTH_URL:
+        required: false
   workflow_dispatch:
     inputs:
       image:
@@ -19,6 +49,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Deploy Moodle backend on VPS
         env:
