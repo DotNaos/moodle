@@ -36,10 +36,6 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
     return proxyStudyPipelineWithApiKey(request, upstreamPath, apiAuth, requestId, startedAt);
   }
 
-  const { userId } = await auth();
-  if (!userId) {
-    return withRequestId(pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401), requestId);
-  }
   if (!isStudyPipelinePath(upstreamPath)) {
     return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
   }
@@ -49,6 +45,11 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
       apiKey: serviceApiKey,
       clerkUserId: "",
     }, requestId, startedAt);
+  }
+
+  const { userId } = await auth();
+  if (!userId) {
+    return withRequestId(pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401), requestId);
   }
   const backendGate = await checkBackendPreflight(userId);
   if (backendGate.state === "blocked") {
