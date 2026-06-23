@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -488,6 +489,96 @@ func TestCuratedStageRunsCodexCurationWhenModelIsSelected(t *testing.T) {
 		if decision.DecidedBy != "codex" {
 			t.Fatalf("expected Codex-backed decision, got %#v", decision)
 		}
+	}
+}
+
+func TestCuratedStageCanUseCodexSDKRunner(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	now := time.Date(2026, 6, 23, 8, 0, 0, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: "947711", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "947711-Aufgabenblatt 01", "Aufgabe 1\n\nBestimmen Sie den Speedup.")
+	pagePath := filepath.Join(root, "courses", courseID, "extracted", "runs", "sdk-test", "assets", "947711", "pages", "page-1.png")
+	if err := os.MkdirAll(filepath.Dir(pagePath), 0o755); err != nil {
+		t.Fatalf("mkdir page fixture: %v", err)
+	}
+	if err := os.WriteFile(pagePath, []byte("fake page"), 0o644); err != nil {
+		t.Fatalf("write page fixture: %v", err)
+	}
+	writeLatestExtractedDocumentFixture(t, root, courseID, contract.ExtractedDocumentsResponse{
+		CourseID: courseID,
+		RunID:    "sdk-test",
+		Engine:   extractedDocumentEngine,
+		Documents: []contract.PDFDocument{{
+			ID: "947711",
+			Resource: contract.StudyPipelineMaterial{
+				ID:       "947711",
+				Name:     "Aufgabenblatt 01",
+				Type:     "task",
+				FileType: "pdf",
+			},
+			RunID:  "sdk-test",
+			Engine: extractedDocumentEngine,
+			Status: "machine-extracted",
+			Pages: []contract.PDFPage{{
+				ID:             "947711-page-001",
+				PageNumber:     1,
+				Markdown:       "Aufgabe 1\n\nBestimmen Sie den Speedup.",
+				PreviewAssetID: "page-001-preview",
+				Blocks: []contract.DocumentBlock{{
+					ID:         "947711-p001-b001",
+					PageNumber: 1,
+					Type:       "paragraph",
+					Label:      "task_paragraph",
+					Text:       "Bestimmen Sie den Speedup.",
+					Markdown:   "Bestimmen Sie den Speedup.",
+					Source:     "extracted_text",
+					Confidence: "high",
+				}},
+			}},
+			Assets: []contract.DocumentAsset{{ID: "page-001-preview", Kind: "page_preview", Path: pagePath, PageNumber: 1, MimeType: "image/png", Role: "page_preview"}},
+		}},
+	})
+	curationJSON := `{"contentMarkdown":"# Aufgabenblatt 01\n\nSource: [Moodle resource](moodle-resource:947711)\n\nBestimmen Sie den Speedup.","elementDecisions":[{"sourceElementId":"947711-p001-b001","outcome":"used","reason":"The task statement is preserved.","outputReference":"Aufgabenblatt 01","confidence":"high"}],"checklist":{"pageImagesReviewed":true,"extractedElementsReviewed":true,"layoutReconstructed":true,"renderedPreviewChecked":true,"sourceMappingComplete":true,"finalElementOutcomes":true}}`
+	requestPath := filepath.Join(root, "sdk-request.json")
+	responsePath := filepath.Join(root, "sdk-response.json")
+	if err := os.WriteFile(responsePath, []byte(`{"finalResponse":`+strconv.Quote(curationJSON)+`,"threadId":"test-sdk-thread","usage":null}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write SDK response: %v", err)
+	}
+	runnerPath := filepath.Join(root, "fake-sdk-runner.sh")
+	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\nset -eu\ncat > "+shellQuoteForTest(requestPath)+"\ncat "+shellQuoteForTest(responsePath)+"\n"), 0o755); err != nil {
+		t.Fatalf("write SDK runner: %v", err)
+	}
+
+	response, err := RunStage(courseID, resources, "codex", RunOptions{
+		Root:  root,
+		Now:   now,
+		Model: "gpt-test",
+		Curator: SDKCommandCodexCurator{
+			Command: shellQuoteForTest(runnerPath),
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunStage codex with SDK runner: %v", err)
+	}
+	if response.CurationChecklist == nil || response.CurationChecklist.Status != "complete" {
+		t.Fatalf("expected complete SDK curation checklist, got %#v", response.CurationChecklist)
+	}
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{Root: root, Now: now})
+	if err != nil {
+		t.Fatalf("LoadTaskView after SDK curation: %v", err)
+	}
+	if len(view.Sheets) != 1 || view.Sheets[0].Readiness != "ready" || view.Sheets[0].ReadOnly {
+		t.Fatalf("expected SDK-curated sheet to be ready, got %#v", view.Sheets)
+	}
+	requestData, err := os.ReadFile(requestPath)
+	if err != nil {
+		t.Fatalf("read SDK runner request: %v", err)
+	}
+	if !strings.Contains(string(requestData), `"outputSchema"`) || !strings.Contains(string(requestData), pagePath) {
+		t.Fatalf("SDK runner request did not include schema and image evidence: %s", string(requestData))
 	}
 }
 

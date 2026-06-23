@@ -86,7 +86,7 @@ func runCodexCuration(root string, courseID string, resources []moodle.Resource,
 	}
 	curator := options.Curator
 	if curator == nil {
-		curator = DockerCodexCurator{}
+		curator = defaultCodexCurator()
 	}
 	run := &codexCurationRun{
 		CourseID:    courseID,

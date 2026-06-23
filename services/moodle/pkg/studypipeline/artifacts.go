@@ -1580,7 +1580,10 @@ func runDockerCodexWithOptions(ctx context.Context, options dockerCodexOptions) 
 }
 
 func codexStateBaseRoot(fallbackRoot string) string {
-	return firstNonEmpty(ArtifactRootFromEnv(), fallbackRoot)
+	if value := strings.TrimSpace(os.Getenv(EnvArtifactRoot)); value != "" {
+		return value
+	}
+	return firstNonEmpty(fallbackRoot, ArtifactRootFromEnv())
 }
 
 func appendCodexResourceCacheMount(args []string) []string {
