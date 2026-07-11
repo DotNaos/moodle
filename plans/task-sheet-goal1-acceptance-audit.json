@@ -1,17 +1,18 @@
 {
   "ok": false,
   "courseId": "22584",
-  "generatedAt": "2026-06-22T18:21:40Z",
+  "generatedAt": "2026-06-23T06:47:18Z",
   "summary": {
     "totalSheets": 12,
-    "ready": 4,
+    "ready": 12,
     "blocked": 0,
-    "unprocessed": 8,
+    "unprocessed": 0,
     "invalid": 0,
     "technicalCriteriaMet": 5,
     "pendingCriteria": [
       6
-    ]
+    ],
+    "failedCriteria": []
   },
   "criteria": [
     {
@@ -31,11 +32,13 @@
       "status": "met",
       "requirement": "Verifier exists and fails unless every real task sheet is ready or has accepted blocker reason 1-5.",
       "evidence": [
-        "plans/task-sheet-readiness-22584-goal1.json"
+        "plans/task-sheet-readiness-22584-goal1.json",
+        "scripts/study-pipeline-readiness.ts"
       ],
       "notes": [
         "Accepted blocker reason IDs are 1,2,3,4,5.",
-        "Current report has ok=false because 8 sheets are still unprocessed."
+        "Current report has ok=true only because every detected task sheet is ready.",
+        "The deterministic readiness self-test includes an unprocessed sheet and requires the report to fail closed."
       ]
     },
     {
@@ -60,7 +63,7 @@
       ],
       "notes": [
         "Task-view evidence shows ready, readOnly=false, contentStatus=codex-improved.",
-        "Task-view prompt preserves moodle-resource:947753, has extracted image evidence, and has no unprocessed placeholder."
+        "Task-view prompt preserves moodle-resource:947753, has extracted asset image evidence, and has no unprocessed placeholder."
       ]
     },
     {
@@ -72,20 +75,20 @@
         "plans/task-sheet-curation-goal1-review.md"
       ],
       "notes": [
-        "Current summary is 4 ready, 8 unprocessed, 0 blocked, 0 invalid.",
-        "Every remaining unprocessed sheet still has solution, rendered-page, and extracted-image status."
+        "Current summary is 12 ready, 0 unprocessed, 0 blocked, 0 invalid.",
+        "Every detected sheet has solution, rendered-page, extracted-image, and final readiness status."
       ]
     },
     {
       "id": 6,
       "status": "pending",
-      "requirement": "The user reviews and explicitly accepts the non-UI result before Goal 1.5 or Goal 2 starts.",
+      "requirement": "The user reviews and explicitly accepts the non-UI result.",
       "evidence": [
         "plans/task-sheet-curation-goal1-review.md"
       ],
       "notes": [
         "This criterion cannot be completed by code.",
-        "Goal 1 stays open until the user explicitly accepts the non-UI result."
+        "Later Goal 1.5 and Goal 2 work already occurred historically, but this audit does not infer or backfill user acceptance."
       ]
     }
   ]

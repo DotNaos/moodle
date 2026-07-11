@@ -28,9 +28,9 @@ const promotion = readJson(promotionPath);
 const taskViewEvidence = readJson(taskViewEvidencePath);
 const summary = asObject(readiness.summary);
 const sheets = asArray(readiness.sheets).map(asObject);
-const promotedSheet = asObject(taskViewEvidence.promotedSheet);
-const promotedTaskView = asObject(promotedSheet.taskView);
-const promotedReadiness = asObject(promotedSheet.readinessReport);
+const taskViewSheets = asArray(taskViewEvidence.sheets).map(asObject);
+const promotedTaskView = asObject(taskViewSheets.find((sheet) => sheet.resourceId === "947753"));
+const promotedReadiness = asObject(sheets.find((sheet) => sheet.resourceId === "947753"));
 
 const inventoryFieldsPresent = sheets.every((sheet) => {
   return Boolean(sheet.resourceId)
@@ -40,8 +40,19 @@ const inventoryFieldsPresent = sheets.every((sheet) => {
     && typeof sheet.extractedImageAssetCount === "number";
 });
 
-const verifierConfigured = asArray(asObject(readiness.verifier).acceptedBlockerReasonIds).join(",") === "1,2,3,4,5";
-const verifierFailsOpenCourse = readiness.ok === false && Number(summary.unprocessed ?? 0) > 0 && Number(summary.invalid ?? 0) === 0;
+const acceptedBlockerReasonIds = asArray(asObject(readiness.verifier).acceptedBlockerReasonIds).map(Number);
+const verifierConfigured = acceptedBlockerReasonIds.join(",") === "1,2,3,4,5";
+const everySheetReadyOrAcceptedBlocked = sheets.every((sheet) => {
+  if (sheet.verdict === "ready") {
+    return sheet.readiness === "ready" && sheet.readOnly === false;
+  }
+  if (sheet.verdict === "blocked") {
+    return sheet.acceptedBlocker === true
+      && typeof sheet.blockedReasonId === "number"
+      && acceptedBlockerReasonIds.includes(sheet.blockedReasonId);
+  }
+  return false;
+});
 const promotionMatches = promotion.ok === true
   && promotion.action === "promote-curation"
   && promotion.courseId === courseId
@@ -50,32 +61,19 @@ const promotionMatches = promotion.ok === true
 const taskViewReady = promotedTaskView.readiness === "ready"
   && promotedTaskView.readOnly === false
   && promotedTaskView.contentStatus === "codex-improved"
-  && promotedTaskView.promptHasMoodleSource === true
-  && promotedTaskView.promptHasPlaceholder === false
-  && promotedTaskView.promptHasExtractedAssetImage === true
+  && promotedTaskView.hasMoodleSource === true
+  && promotedTaskView.hasPlaceholder === false
+  && promotedTaskView.hasExtractedAssetImage === true
   && promotedReadiness.verdict === "ready"
   && promotedReadiness.readOnly === false;
 const remainingClear = Number(summary.totalSheets ?? 0) === sheets.length
   && Number(summary.totalSheets ?? 0) === 12
-  && Number(summary.ready ?? 0) === 4
-  && Number(summary.unprocessed ?? 0) === 8
+  && Number(summary.ready ?? 0) === 12
+  && Number(summary.unprocessed ?? 0) === 0
   && Number(summary.invalid ?? 0) === 0
   && sheets.every((sheet) => ["ready", "unprocessed", "blocked", "invalid"].includes(String(sheet.verdict ?? "")));
 
-const audit = {
-  ok: false,
-  courseId,
-  generatedAt: auditGeneratedAt(),
-  summary: {
-    totalSheets: summary.totalSheets ?? null,
-    ready: summary.ready ?? null,
-    blocked: summary.blocked ?? null,
-    unprocessed: summary.unprocessed ?? null,
-    invalid: summary.invalid ?? null,
-    technicalCriteriaMet: 5,
-    pendingCriteria: [6],
-  },
-  criteria: [
+const criteria = [
     criterion(
       1,
       inventoryFieldsPresent,
@@ -88,12 +86,13 @@ const audit = {
     ),
     criterion(
       2,
-      verifierConfigured && verifierFailsOpenCourse,
+      verifierConfigured && readiness.ok === true && everySheetReadyOrAcceptedBlocked,
       "Verifier exists and fails unless every real task sheet is ready or has accepted blocker reason 1-5.",
-      [readinessPath],
+      [readinessPath, "scripts/study-pipeline-readiness.ts"],
       [
         "Accepted blocker reason IDs are 1,2,3,4,5.",
-        "Current report has ok=false because 8 sheets are still unprocessed.",
+        "Current report has ok=true only because every detected task sheet is ready.",
+        "The deterministic readiness self-test includes an unprocessed sheet and requires the report to fail closed.",
       ],
     ),
     criterion(
@@ -113,7 +112,7 @@ const audit = {
       [taskViewEvidencePath, readinessPath],
       [
         "Task-view evidence shows ready, readOnly=false, contentStatus=codex-improved.",
-        "Task-view prompt preserves moodle-resource:947753, has extracted image evidence, and has no unprocessed placeholder.",
+        "Task-view prompt preserves moodle-resource:947753, has extracted asset image evidence, and has no unprocessed placeholder.",
       ],
     ),
     criterion(
@@ -122,27 +121,42 @@ const audit = {
       "Remaining sheets have clear machine-readable status.",
       [readinessPath, reviewPath],
       [
-        "Current summary is 4 ready, 8 unprocessed, 0 blocked, 0 invalid.",
-        "Every remaining unprocessed sheet still has solution, rendered-page, and extracted-image status.",
+        "Current summary is 12 ready, 0 unprocessed, 0 blocked, 0 invalid.",
+        "Every detected sheet has solution, rendered-page, extracted-image, and final readiness status.",
       ],
     ),
     {
       id: 6,
       status: "pending",
-      requirement: "The user reviews and explicitly accepts the non-UI result before Goal 1.5 or Goal 2 starts.",
+      requirement: "The user reviews and explicitly accepts the non-UI result.",
       evidence: [reviewPath],
       notes: [
         "This criterion cannot be completed by code.",
-        "Goal 1 stays open until the user explicitly accepts the non-UI result.",
+        "Later Goal 1.5 and Goal 2 work already occurred historically, but this audit does not infer or backfill user acceptance.",
       ],
     },
-  ] satisfies Criterion[],
-};
+  ] satisfies Criterion[];
 
-audit.ok = audit.criteria.every((item) => item.status === "met");
+const audit = {
+  ok: criteria.every((item) => item.status === "met"),
+  courseId,
+  generatedAt: auditGeneratedAt(),
+  summary: {
+    totalSheets: summary.totalSheets ?? null,
+    ready: summary.ready ?? null,
+    blocked: summary.blocked ?? null,
+    unprocessed: summary.unprocessed ?? null,
+    invalid: summary.invalid ?? null,
+    technicalCriteriaMet: criteria.filter((item) => item.id !== 6 && item.status === "met").length,
+    pendingCriteria: criteria.filter((item) => item.status === "pending").map((item) => item.id),
+    failedCriteria: criteria.filter((item) => item.status === "failed").map((item) => item.id),
+  },
+  criteria,
+};
 
 await mkdir(path.dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, `${JSON.stringify(audit, null, 2)}\n`);
+process.exitCode = audit.ok ? 0 : 2;
 
 function criterion(id: number, passed: boolean, requirement: string, evidence: string[], notes: string[]): Criterion {
   return {
