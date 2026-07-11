@@ -273,7 +273,7 @@ main() {
     exit 1
   fi
 
-  tar -xzf "${tmp_dir}/${asset}" -C "$tmp_dir"
+  tar --no-same-owner -xzf "${tmp_dir}/${asset}" -C "$tmp_dir"
   cp "${tmp_dir}/moodle" "${INSTALL_DIR}/moodle"
   chmod 755 "${INSTALL_DIR}/moodle"
 
