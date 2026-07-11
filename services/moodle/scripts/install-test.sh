@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER="${SCRIPT_DIR}/install.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+REAL_TAR="$(command -v tar)"
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$(uname -m)" in
@@ -27,7 +28,28 @@ fi
 echo "fake moodle"
 FAKE_MOODLE
 chmod 755 "${TMP_DIR}/archive/moodle"
-tar -czf "${RELEASE_DIR}/${ASSET}" -C "${TMP_DIR}/archive" moodle
+if "$REAL_TAR" --version 2>/dev/null | grep -qi bsdtar; then
+  "$REAL_TAR" --uid 1001 --gid 1001 -czf "${RELEASE_DIR}/${ASSET}" -C "${TMP_DIR}/archive" moodle
+else
+  "$REAL_TAR" --owner=1001 --group=1001 -czf "${RELEASE_DIR}/${ASSET}" -C "${TMP_DIR}/archive" moodle
+fi
+
+mkdir -p "${TMP_DIR}/bin"
+cat > "${TMP_DIR}/bin/tar" <<'TAR_WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${MOODLE_TEST_REAL_TAR:?}"
+for argument in "$@"; do
+  if [[ "$argument" == "--no-same-owner" ]]; then
+    exec "$MOODLE_TEST_REAL_TAR" "$@"
+  fi
+done
+
+echo "installer extracted without --no-same-owner" >&2
+exit 97
+TAR_WRAPPER
+chmod 755 "${TMP_DIR}/bin/tar"
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$RELEASE_DIR" && sha256sum "$ASSET" > checksums.txt)
@@ -96,6 +118,8 @@ run_installer() {
   local output
   if ! output="$(
     INSTALL_DIR="$install_dir" \
+      PATH="${TMP_DIR}/bin:${PATH}" \
+      MOODLE_TEST_REAL_TAR="$REAL_TAR" \
       MOODLE_RELEASES_API_URL="file://${TMP_DIR}/releases-page-{page}.json" \
       MOODLE_RELEASE_TAG_API_URL="file://${RELEASE_METADATA_DIR}" \
       MOODLE_RELEASE_DOWNLOAD_BASE_URL="file://${TMP_DIR}/releases" \
@@ -107,6 +131,11 @@ run_installer() {
   printf '%s\n' "$output"
   grep -Fq "Installed Moodle CLI ${TAG} " <<< "$output"
   "$install_dir/moodle" --version | grep -Fq "1.2.3"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    [[ "$(stat -f '%Lp' "$install_dir/moodle")" == "755" ]]
+  else
+    [[ "$(stat -c '%a' "$install_dir/moodle")" == "755" ]]
+  fi
 }
 
 run_installer "${TMP_DIR}/latest-install" env
