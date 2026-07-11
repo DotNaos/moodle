@@ -2,10 +2,39 @@
 set -euo pipefail
 
 OWNER="DotNaos"
-REPO="moodle-services"
+REPO="moodle"
+RELEASE_TAG_PREFIX="moodle-v"
 VERSION="${VERSION:-latest}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+if [[ -n "${INSTALL_DIR:-}" ]]; then
+  INSTALL_DIR="$INSTALL_DIR"
+elif [[ -d /usr/local/bin && -w /usr/local/bin ]]; then
+  INSTALL_DIR="/usr/local/bin"
+else
+  INSTALL_DIR=""
+  case ":${PATH:-}:" in
+    *":${HOME}/.local/bin:"*) INSTALL_DIR="$HOME/.local/bin" ;;
+  esac
+  if [[ -z "$INSTALL_DIR" ]]; then
+    IFS=: read -r -a path_dirs <<< "${PATH:-}"
+    for path_dir in "${path_dirs[@]}"; do
+      case "$path_dir" in
+        "$HOME"/*)
+          if [[ -d "$path_dir" && -w "$path_dir" ]]; then
+            INSTALL_DIR="$path_dir"
+            break
+          fi
+          ;;
+      esac
+    done
+  fi
+  INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+fi
 CHECKSUM_FILE="checksums.txt"
+RELEASES_API_URL_OVERRIDE="${MOODLE_RELEASES_API_URL:-}"
+RELEASES_API_URL="${MOODLE_RELEASES_API_URL:-https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=100}"
+RELEASE_TAG_API_URL="${MOODLE_RELEASE_TAG_API_URL:-https://api.github.com/repos/${OWNER}/${REPO}/releases/tags}"
+RELEASE_DOWNLOAD_BASE_URL="${MOODLE_RELEASE_DOWNLOAD_BASE_URL:-https://github.com/${OWNER}/${REPO}/releases/download}"
+INSTALL_TMP_DIR=""
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -24,6 +53,23 @@ download() {
   fi
   if command -v wget >/dev/null 2>&1; then
     wget -qO "$output" "$url"
+    return
+  fi
+
+  echo "Either curl or wget is required." >&2
+  exit 1
+}
+
+try_download() {
+  local url="$1"
+  local output="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$output" 2>/dev/null
+    return
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO "$output" "$url" 2>/dev/null
     return
   fi
 
@@ -69,10 +115,126 @@ normalize_arch() {
   esac
 }
 
+normalize_version() {
+  local version="$1"
+  case "$version" in
+    ${RELEASE_TAG_PREFIX}*) ;;
+    v*) version="moodle-${version}" ;;
+    [0-9]*) version="${RELEASE_TAG_PREFIX}${version}" ;;
+    *)
+      echo "Invalid Moodle CLI release version: ${version}" >&2
+      exit 1
+      ;;
+  esac
+  if [[ ! "$version" =~ ^moodle-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+    echo "Invalid Moodle CLI release tag: ${version}" >&2
+    exit 1
+  fi
+  printf '%s\n' "$version"
+}
+
+version_sort_key() {
+  local version="${1#${RELEASE_TAG_PREFIX}}"
+  local major minor patch
+  IFS=. read -r major minor patch <<< "$version"
+  printf '%010d.%010d.%010d\n' "$major" "$minor" "$patch"
+}
+
+release_page_url() {
+  local page="$1"
+  if [[ -n "$RELEASES_API_URL_OVERRIDE" ]]; then
+    if [[ "$RELEASES_API_URL" == *"{page}"* ]]; then
+      printf '%s\n' "${RELEASES_API_URL//\{page\}/$page}"
+      return
+    fi
+    if (( page > 1 )); then
+      return 1
+    fi
+    printf '%s\n' "$RELEASES_API_URL"
+    return
+  fi
+  printf '%s&page=%d\n' "$RELEASES_API_URL" "$page"
+}
+
+resolve_latest_version() {
+  local release_file="$1"
+  local asset="$2"
+  local tmp_dir="$3"
+  local candidates_file="${tmp_dir}/release-candidates.txt"
+  local page=1
+  : > "$candidates_file"
+
+  while (( page <= 10 )); do
+    local page_url
+    if ! page_url="$(release_page_url "$page")"; then
+      break
+    fi
+    if ! try_download "$page_url" "$release_file"; then
+      if (( page == 1 )); then
+        echo "Could not load Moodle releases." >&2
+        exit 1
+      fi
+      break
+    fi
+
+    local versions
+    versions="$(grep -Eo '"tag_name"[[:space:]]*:[[:space:]]*"moodle-v[0-9]+\.[0-9]+\.[0-9]+"' "$release_file" \
+      | sed -E 's/.*"(moodle-v[0-9]+\.[0-9]+\.[0-9]+)"/\1/' \
+      || true)"
+    while IFS= read -r version; do
+      [[ -n "$version" ]] || continue
+      local key
+      key="$(version_sort_key "$version")"
+      printf '%s %s\n' "$key" "$version" >> "$candidates_file"
+    done <<< "$versions"
+
+    if [[ -n "$RELEASES_API_URL_OVERRIDE" && "$RELEASES_API_URL" != *"{page}"* ]]; then
+      break
+    fi
+    local release_count
+    release_count="$( (grep -Eo '"tag_name"[[:space:]]*:' "$release_file" || true) | wc -l | tr -d '[:space:]')"
+    if (( release_count < 100 )); then
+      break
+    fi
+    page=$((page + 1))
+  done
+
+  local key version
+  while read -r key version; do
+    [[ -n "$version" ]] || continue
+    local release_metadata="${tmp_dir}/release-${version}.json"
+    if ! try_download "${RELEASE_TAG_API_URL}/${version}" "$release_metadata"; then
+      continue
+    fi
+    if ! grep -Eq '^[[:space:]]*"draft"[[:space:]]*:[[:space:]]*false,?[[:space:]]*$' "$release_metadata" \
+      || ! grep -Eq '^[[:space:]]*"prerelease"[[:space:]]*:[[:space:]]*false,?[[:space:]]*$' "$release_metadata" \
+      || ! grep -Fq "\"tag_name\": \"${version}\"" "$release_metadata" \
+      || ! grep -Fq "\"browser_download_url\": \"${RELEASE_DOWNLOAD_BASE_URL}/${version}/${asset}\"" "$release_metadata" \
+      || ! grep -Fq "\"browser_download_url\": \"${RELEASE_DOWNLOAD_BASE_URL}/${version}/${CHECKSUM_FILE}\"" "$release_metadata"; then
+      continue
+    fi
+
+    local candidate_checksums="${tmp_dir}/checksums-${version}.txt"
+    if ! try_download "${RELEASE_DOWNLOAD_BASE_URL}/${version}/${CHECKSUM_FILE}" "$candidate_checksums"; then
+      continue
+    fi
+    if ! awk -v asset="$asset" 'NF == 2 { name = $2; sub(/^\*/, "", name); if (name == asset) found = 1 } END { exit !found }' "$candidate_checksums"; then
+      continue
+    fi
+    printf '%s\n' "$version"
+    return
+  done < <(LC_ALL=C sort -r "$candidates_file" | awk '!seen[$2]++')
+
+  echo "No stable Moodle CLI release was found." >&2
+  exit 1
+}
+
 main() {
   require_cmd tar
   require_cmd awk
   require_cmd grep
+  require_cmd sed
+  require_cmd sort
 
   local os
   os="$(normalize_os)"
@@ -80,16 +242,17 @@ main() {
   arch="$(normalize_arch)"
   local asset="moodle_${os}_${arch}.tar.gz"
 
-  local base_url
-  if [[ "$VERSION" == "latest" ]]; then
-    base_url="https://github.com/${OWNER}/${REPO}/releases/latest/download"
-  else
-    base_url="https://github.com/${OWNER}/${REPO}/releases/download/${VERSION}"
-  fi
+  INSTALL_TMP_DIR="$(mktemp -d)"
+  local tmp_dir="$INSTALL_TMP_DIR"
+  trap '[[ -z "${INSTALL_TMP_DIR:-}" ]] || rm -rf "$INSTALL_TMP_DIR"' EXIT
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  local resolved_version
+  if [[ "$VERSION" == "latest" ]]; then
+    resolved_version="$(resolve_latest_version "${tmp_dir}/releases.json" "$asset" "$tmp_dir")"
+  else
+    resolved_version="$(normalize_version "$VERSION")"
+  fi
+  local base_url="${RELEASE_DOWNLOAD_BASE_URL}/${resolved_version}"
 
   mkdir -p "$INSTALL_DIR"
 
@@ -97,7 +260,7 @@ main() {
   download "${base_url}/${CHECKSUM_FILE}" "${tmp_dir}/${CHECKSUM_FILE}"
 
   local expected
-  expected="$(grep "  ${asset}$" "${tmp_dir}/${CHECKSUM_FILE}" | awk '{print $1}')"
+  expected="$(awk -v asset="$asset" 'NF == 2 { name = $2; sub(/^\*/, "", name); if (name == asset) { print $1; exit } }' "${tmp_dir}/${CHECKSUM_FILE}")"
   if [[ -z "$expected" ]]; then
     echo "Could not find checksum for ${asset}." >&2
     exit 1
@@ -114,7 +277,7 @@ main() {
   cp "${tmp_dir}/moodle" "${INSTALL_DIR}/moodle"
   chmod 755 "${INSTALL_DIR}/moodle"
 
-  echo "Installed moodle to ${INSTALL_DIR}/moodle"
+  echo "Installed Moodle CLI ${resolved_version} to ${INSTALL_DIR}/moodle"
   case ":$PATH:" in
     *":${INSTALL_DIR}:"*) ;;
     *)

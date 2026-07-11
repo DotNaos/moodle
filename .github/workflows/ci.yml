@@ -63,6 +63,20 @@ jobs:
       - name: Run backend tests
         run: go test ./...
 
+      - name: Test CLI installer
+        run: bash scripts/install-test.sh
+
+      - name: Parse PowerShell installer
+        shell: pwsh
+        run: '[scriptblock]::Create((Get-Content scripts/install.ps1 -Raw)) | Out-Null'
+
+      - name: Check GoReleaser configuration
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          workdir: services/moodle
+          args: check
+
   backend-docker-build:
     runs-on: ubuntu-latest
     permissions:

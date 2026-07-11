@@ -51,7 +51,7 @@ Run this as the server user who should own the install:
 whoami
 docker --version
 docker info >/dev/null && echo "docker ok"
-curl -fsSL https://raw.githubusercontent.com/DotNaos/moodle-services/main/scripts/install-docker.sh >/dev/null && echo "github ok"
+curl -fsSL https://raw.githubusercontent.com/DotNaos/moodle/main/services/moodle/scripts/install-docker.sh >/dev/null && echo "github ok"
 ```
 
 OK:
@@ -69,7 +69,7 @@ Paste the real command from your Mac into the server terminal.
 It looks like this, but with a long secret payload:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/DotNaos/moodle-services/main/scripts/install-docker.sh | bash -s -- --payload '<secret-bootstrap-payload>'
+curl -fsSL https://raw.githubusercontent.com/DotNaos/moodle/main/services/moodle/scripts/install-docker.sh | bash -s -- --payload '<secret-bootstrap-payload>'
 ```
 
 OK: the installer finishes with:

@@ -7,7 +7,8 @@ developer or agent to continue the work.
 ## Decision Summary
 
 - The old `moodle-cli` project is now **Moodle Services**.
-- The GitHub repository is `moodle-services`.
+- Moodle Services now lives in `services/moodle` inside the `DotNaos/moodle`
+  monorepo.
 - Keep the installed command name as `moodle` for now, because it is ergonomic and
   avoids breaking local workflows.
 - Make Moodle Services the single backend authority for Moodle access, server APIs,
@@ -21,12 +22,12 @@ developer or agent to continue the work.
 
 ## Repository Ownership
 
-### `moodle-services`
+### Moodle Services (`services/moodle`)
 
 Current path:
 
 ```text
-/Users/oli/projects.school/tools/moodle/moodle-services
+/Users/oli/projects.school/tools/moodle/moodle/services/moodle
 ```
 
 Target responsibility:
@@ -437,7 +438,7 @@ audit_events
 
 - Confirm `Moodle Services` as the project name.
 - Rename docs and user-facing wording.
-- Keep local project naming aligned with the `moodle-services` repository.
+- Keep the service in `services/moodle` inside the `moodle` monorepo.
 - Keep binary command `moodle`.
 
 ### Phase 2: Internal service boundaries

@@ -15,7 +15,10 @@ import (
 
 const (
 	DefaultOwner         = "DotNaos"
-	DefaultRepo          = "moodle-services"
+	DefaultRepo          = "moodle"
+	ReleaseTagPrefix     = "moodle-v"
+	ReleasePageSize      = 100
+	ReleaseMaxPages      = 10
 	DefaultCheckInterval = 24 * time.Hour
 )
 
@@ -29,9 +32,10 @@ type Client struct {
 }
 
 type Release struct {
-	TagName string         `json:"tag_name"`
-	Draft   bool           `json:"draft"`
-	Assets  []ReleaseAsset `json:"assets"`
+	TagName    string         `json:"tag_name"`
+	Draft      bool           `json:"draft"`
+	Prerelease bool           `json:"prerelease"`
+	Assets     []ReleaseAsset `json:"assets"`
 }
 
 type ReleaseAsset struct {
@@ -57,34 +61,50 @@ func NewClient() *Client {
 }
 
 func (c *Client) LatestRelease(ctx context.Context) (Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.latestReleaseURL(), nil)
+	archiveName, err := CurrentArchiveAssetName()
 	if err != nil {
 		return Release{}, err
 	}
+	allReleases := make([]Release, 0, ReleasePageSize)
+	for page := 1; page <= ReleaseMaxPages; page++ {
+		releases, err := c.releasePage(ctx, page)
+		if err != nil {
+			return Release{}, err
+		}
+		allReleases = append(allReleases, releases...)
+		if len(releases) < ReleasePageSize {
+			break
+		}
+	}
+	return selectLatestBackendRelease(allReleases, archiveName)
+}
+
+func (c *Client) releasePage(ctx context.Context, page int) ([]Release, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.releasesURL(page), nil)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "moodle-services update-check")
+	req.Header.Set("User-Agent", "moodle update-check")
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return Release{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusNotFound {
-			return Release{}, ErrNoStableRelease
+			return nil, ErrNoStableRelease
 		}
-		return Release{}, fmt.Errorf("latest release check failed: %s", resp.Status)
+		return nil, fmt.Errorf("release check failed: %s", resp.Status)
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return Release{}, err
+	var releases []Release
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
 	}
-	if release.Draft || release.TagName == "" {
-		return Release{}, fmt.Errorf("latest release response missing stable tag")
-	}
-	return release, nil
+	return releases, nil
 }
 
 func (c *Client) Check(ctx context.Context, currentVersion string) (Availability, Release, error) {
@@ -102,23 +122,28 @@ func (c *Client) Check(ctx context.Context, currentVersion string) (Availability
 }
 
 func needsUpdate(currentVersion string, latestTag string) bool {
-	current := strings.TrimSpace(currentVersion)
-	latest := strings.TrimSpace(latestTag)
+	latest := comparableVersion(latestTag)
 	if latest == "" {
 		return false
 	}
-	if strings.EqualFold(current, ver.DefaultVersion) || current == "" {
+	rawCurrent := strings.TrimSpace(currentVersion)
+	if strings.EqualFold(rawCurrent, ver.DefaultVersion) || rawCurrent == "" {
 		return true
 	}
+	current := comparableVersion(rawCurrent)
 	cmp, err := ver.Compare(current, latest)
 	if err != nil {
-		return !strings.EqualFold(normalizeTag(current), normalizeTag(latest))
+		return !strings.EqualFold(current, latest)
 	}
 	return cmp < 0
 }
 
-func normalizeTag(tag string) string {
+func comparableVersion(tag string) string {
 	trimmed := strings.TrimSpace(tag)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimPrefix(trimmed, "moodle-")
 	if !strings.HasPrefix(trimmed, "v") {
 		return "v" + trimmed
 	}
@@ -153,12 +178,57 @@ func ChecksumAsset(release Release) (ReleaseAsset, error) {
 	return FindAsset(release, "checksums.txt")
 }
 
-func (c *Client) latestReleaseURL() string {
+func selectLatestBackendRelease(releases []Release, archiveName string) (Release, error) {
+	var latest Release
+	latestVersion := ""
+	for _, release := range releases {
+		version, ok := backendReleaseVersion(release)
+		if !ok {
+			continue
+		}
+		archive, err := FindAsset(release, archiveName)
+		if err != nil || strings.TrimSpace(archive.BrowserDownloadURL) == "" {
+			continue
+		}
+		checksums, err := ChecksumAsset(release)
+		if err != nil || strings.TrimSpace(checksums.BrowserDownloadURL) == "" {
+			continue
+		}
+		if latestVersion == "" {
+			latest = release
+			latestVersion = version
+			continue
+		}
+		comparison, err := ver.Compare(latestVersion, version)
+		if err == nil && comparison < 0 {
+			latest = release
+			latestVersion = version
+		}
+	}
+	if latestVersion == "" {
+		return Release{}, ErrNoStableRelease
+	}
+	return latest, nil
+}
+
+func backendReleaseVersion(release Release) (string, bool) {
+	if release.Draft || release.Prerelease || !strings.HasPrefix(release.TagName, ReleaseTagPrefix) {
+		return "", false
+	}
+	version := strings.TrimPrefix(release.TagName, "moodle-")
+	parsed, err := ver.ParseSemver(version)
+	if err != nil || parsed.Prerelease != "" {
+		return "", false
+	}
+	return version, true
+}
+
+func (c *Client) releasesURL(page int) string {
 	base := strings.TrimRight(c.BaseURL, "/")
 	if base == "" {
 		base = "https://api.github.com"
 	}
-	return fmt.Sprintf("%s/repos/%s/%s/releases/latest", base, c.Owner, c.Repo)
+	return fmt.Sprintf("%s/repos/%s/%s/releases?per_page=%d&page=%d", base, c.Owner, c.Repo, ReleasePageSize, page)
 }
 
 func (c *Client) httpClient() *http.Client {

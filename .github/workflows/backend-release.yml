@@ -1,6 +1,9 @@
 name: Backend Release
 
 on:
+  push:
+    tags:
+      - "moodle-v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -18,14 +21,16 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      semver_tag: ${{ steps.resolve.outputs.semver_tag }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       - name: Resolve release input
@@ -35,18 +40,47 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
           INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
-          release_name="${INPUT_RELEASE_NAME:-${INPUT_TAG}}"
-          echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
-          echo "prerelease=${INPUT_PRERELEASE:-false}" >> "${GITHUB_OUTPUT}"
+          tag="${INPUT_TAG:-}"
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            tag="${REF_NAME}"
+          fi
+          if [[ ! "${tag}" =~ ^moodle-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
+            echo "::error::Backend release tags must match moodle-vX.Y.Z or moodle-vX.Y.Z-prerelease."
+            exit 1
+          fi
+
+          semver_tag="${tag#moodle-}"
+          prerelease="${INPUT_PRERELEASE:-false}"
+          prerelease_identifiers="${BASH_REMATCH[5]:-}"
+          if [[ -n "${prerelease_identifiers}" ]]; then
+            IFS=. read -r -a identifiers <<< "${prerelease_identifiers}"
+            for identifier in "${identifiers[@]}"; do
+              if [[ "${identifier}" =~ ^[0-9]+$ && "${identifier}" == 0[0-9]* ]]; then
+                echo "::error::Numeric prerelease identifiers must not contain leading zeroes."
+                exit 1
+              fi
+            done
+            prerelease=true
+          elif [[ "${prerelease}" == "true" ]]; then
+            echo "::error::Prereleases must use a suffixed tag such as moodle-v1.2.3-rc.1."
+            exit 1
+          fi
+          release_name="${INPUT_RELEASE_NAME:-Moodle CLI ${semver_tag}}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "semver_tag=${semver_tag}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
           echo "release_name=${release_name}" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: ${{ steps.resolve.outputs.tag }}
 
       - name: Setup Go
@@ -60,40 +94,86 @@ jobs:
         working-directory: services/moodle
         run: go test ./...
 
-      - name: Check if release already exists
-        id: release_state
+      - name: Prepare semantic version tag for GoReleaser
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMVER_TAG: ${{ steps.resolve.outputs.semver_tag }}
         run: |
-          if gh release view "${{ steps.resolve.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "exists=false" >> "${GITHUB_OUTPUT}"
-          fi
+          set -euo pipefail
+          git tag --force "${SEMVER_TAG}" "$(git rev-parse HEAD)"
 
       - name: Run GoReleaser
-        if: steps.release_state.outputs.exists != 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          version: "~> v2"
           workdir: services/moodle
-          args: release --clean
+          args: release --clean --skip=publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.resolve.outputs.semver_tag }}
 
-      - name: Update release metadata
-        if: steps.resolve.outputs.prerelease == 'true' || steps.resolve.outputs.release_name != steps.resolve.outputs.tag
+      - name: Create or repair GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.resolve.outputs.tag }}
+          target_commitish: ${{ steps.resolve.outputs.tag }}
+          name: ${{ steps.resolve.outputs.release_name }}
+          prerelease: ${{ steps.resolve.outputs.prerelease }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            services/moodle/dist/moodle_*.tar.gz
+            services/moodle/dist/moodle_*.zip
+            services/moodle/dist/checksums.txt
+
+  verify-cli-install:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout released source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Install in clean Linux amd64 container
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+          PRERELEASE: ${{ needs.release.outputs.prerelease }}
+          ASSERT_LATEST: ${{ github.event_name == 'push' && needs.release.outputs.prerelease != 'true' }}
         run: |
-          args=(--title "${{ steps.resolve.outputs.release_name }}")
-          if [[ "${{ steps.resolve.outputs.prerelease }}" == "true" ]]; then
-            args+=(--prerelease)
-          fi
-          gh release edit "${{ steps.resolve.outputs.tag }}" "${args[@]}"
+          set -euo pipefail
+          docker run --rm --platform linux/amd64 \
+            --volume "${PWD}:/workspace:ro" \
+            --env "RELEASE_TAG=${RELEASE_TAG}" \
+            --env "PRERELEASE=${PRERELEASE}" \
+            --env "ASSERT_LATEST=${ASSERT_LATEST}" \
+            debian:bookworm-slim \
+            bash -ceu '
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends ca-certificates curl tar >/dev/null
+
+              VERSION="${RELEASE_TAG}" INSTALL_DIR=/usr/local/bin \
+                bash /workspace/services/moodle/scripts/install.sh
+              test "$(moodle --version)" = "${RELEASE_TAG#moodle-v}"
+              moodle update --check
+
+              if [[ "${PRERELEASE}" != "true" ]]; then
+                rm /usr/local/bin/moodle
+                INSTALL_DIR=/usr/local/bin bash /workspace/services/moodle/scripts/install.sh
+                latest_version="$(moodle --version)"
+                if [[ "${ASSERT_LATEST}" == "true" ]]; then
+                  test "${latest_version}" = "${RELEASE_TAG#moodle-v}"
+                fi
+                moodle update --check
+              fi
+            '
 
   runtime-base-image:
-    needs: release
+    needs:
+      - release
+      - verify-cli-install
     runs-on: ubuntu-latest
     outputs:
       image-ref: ${{ steps.image.outputs.ref }}
@@ -104,6 +184,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.tag }}
 
       - name: Setup QEMU
@@ -173,6 +254,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.tag }}
 
       - name: Setup Docker Buildx

@@ -10,7 +10,9 @@ Use this page when you want the exact command for a common task.
 - `moodle bootstrap server --copy` creates a one-command Docker server install command and copies it to the clipboard.
 - `moodle config migrate-home` copies old `~/.moodle-cli` data into `~/.moodle` without deleting the old folder.
 - `moodle serve --addr :8080` starts the local JSON API and serves the built-in Scalar reference at `/docs`.
-- `moodle update` installs the latest stable release.
+- `moodle --version` prints the installed CLI version.
+- `moodle update --check` checks the latest stable `moodle-v*` backend release.
+- `moodle update` verifies and installs that release.
 - `moodle skill` prints the bundled agent skill (use `--install` to install it to codex/opencode/claude-code/gemini-cli).
 - `moodle logs` tails the CLI logs (`--error` for error log, `--lines` to change the tail size, `--follow=false` to exit after printing).
 
