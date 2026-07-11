@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,8 +58,11 @@ func TestNeedsUpdate(t *testing.T) {
 		want    bool
 	}{
 		{name: "dev build", current: "dev", latest: "v1.2.3", want: true},
+		{name: "no release", current: "dev", latest: "", want: false},
 		{name: "older stable", current: "v1.2.2", latest: "v1.2.3", want: true},
+		{name: "backend prefix", current: "v1.2.2", latest: "moodle-v1.2.3", want: true},
 		{name: "same stable", current: "v1.2.3", latest: "v1.2.3", want: false},
+		{name: "same backend release", current: "1.2.3", latest: "moodle-v1.2.3", want: false},
 		{name: "newer current", current: "v1.3.0", latest: "v1.2.3", want: false},
 	}
 
@@ -69,19 +73,29 @@ func TestNeedsUpdate(t *testing.T) {
 	}
 }
 
-func TestLatestRelease(t *testing.T) {
+func TestLatestReleaseSelectsNewestBackendReleaseWithRequiredAssets(t *testing.T) {
+	archiveName, err := CurrentArchiveAssetName()
+	if err != nil {
+		t.Fatalf("current archive name: %v", err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/DotNaos/moodle-services/releases/latest" {
+		if r.URL.Path != "/repos/DotNaos/moodle/releases" || r.URL.Query().Get("per_page") != "100" || r.URL.Query().Get("page") != "1" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v1.2.3","assets":[{"name":"checksums.txt","browser_download_url":"https://example.com/checksums.txt"}]}`))
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "ios-99", Assets: []ReleaseAsset{{Name: "moodle-client.ipa"}}},
+			{TagName: "moodle-v1.4.0", Assets: []ReleaseAsset{{Name: "checksums.txt"}}},
+			{TagName: "moodle-v1.3.0", Prerelease: true, Assets: requiredReleaseAssets(archiveName)},
+			{TagName: "moodle-v1.2.3", Assets: requiredReleaseAssets(archiveName)},
+			{TagName: "moodle-v1.2.2", Assets: requiredReleaseAssets(archiveName)},
+		})
 	}))
 	defer server.Close()
 
 	client := &Client{
 		Owner:      "DotNaos",
-		Repo:       "moodle-services",
+		Repo:       "moodle",
 		BaseURL:    server.URL,
 		HTTPClient: server.Client(),
 	}
@@ -90,7 +104,59 @@ func TestLatestRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if release.TagName != "v1.2.3" {
-		t.Fatalf("expected tag v1.2.3, got %q", release.TagName)
+	if release.TagName != "moodle-v1.2.3" {
+		t.Fatalf("expected tag moodle-v1.2.3, got %q", release.TagName)
+	}
+}
+
+func TestLatestReleasePaginatesPastUnrelatedReleases(t *testing.T) {
+	archiveName, err := CurrentArchiveAssetName()
+	if err != nil {
+		t.Fatalf("current archive name: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "1" {
+			releases := make([]Release, ReleasePageSize)
+			for index := range releases {
+				releases[index] = Release{TagName: "ios-placeholder"}
+			}
+			json.NewEncoder(w).Encode(releases)
+			return
+		}
+		json.NewEncoder(w).Encode([]Release{{TagName: "moodle-v2.0.0", Assets: requiredReleaseAssets(archiveName)}})
+	}))
+	defer server.Close()
+
+	client := &Client{Owner: "DotNaos", Repo: "moodle", BaseURL: server.URL, HTTPClient: server.Client()}
+	release, err := client.LatestRelease(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if release.TagName != "moodle-v2.0.0" {
+		t.Fatalf("expected paginated backend release, got %q", release.TagName)
+	}
+}
+
+func TestLatestReleaseReturnsNoStableReleaseForUnrelatedReleases(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "ios-99", Assets: []ReleaseAsset{{Name: "moodle-client.ipa"}}},
+			{TagName: "moodle-v1.2.3", Draft: true},
+		})
+	}))
+	defer server.Close()
+
+	client := &Client{Owner: "DotNaos", Repo: "moodle", BaseURL: server.URL, HTTPClient: server.Client()}
+	if _, err := client.LatestRelease(context.Background()); err != ErrNoStableRelease {
+		t.Fatalf("expected ErrNoStableRelease, got %v", err)
+	}
+}
+
+func requiredReleaseAssets(archiveName string) []ReleaseAsset {
+	return []ReleaseAsset{
+		{Name: archiveName, BrowserDownloadURL: "https://example.com/" + archiveName},
+		{Name: "checksums.txt", BrowserDownloadURL: "https://example.com/checksums.txt"},
 	}
 }

@@ -15,7 +15,7 @@ func TestLatestReleaseReturnsNoStableReleaseFor404(t *testing.T) {
 
 	client := &Client{
 		Owner:      "DotNaos",
-		Repo:       "moodle-services",
+		Repo:       "moodle",
 		BaseURL:    server.URL,
 		HTTPClient: server.Client(),
 	}

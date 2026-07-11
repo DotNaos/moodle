@@ -12,7 +12,7 @@ import (
 )
 
 const defaultDockerImage = "ghcr.io/dotnaos/moodle:latest"
-const installDockerURL = "https://raw.githubusercontent.com/DotNaos/moodle-services/main/scripts/install-docker.sh"
+const installDockerURL = "https://raw.githubusercontent.com/DotNaos/moodle/main/services/moodle/scripts/install-docker.sh"
 
 var (
 	bootstrapCopy       bool

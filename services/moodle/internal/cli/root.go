@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DotNaos/moodle-services/internal/config"
+	ver "github.com/DotNaos/moodle-services/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -22,9 +23,10 @@ type Options struct {
 var opts Options
 
 var rootCmd = &cobra.Command{
-	Use:   "moodle",
-	Short: "CLI for FHGR Moodle",
-	Long:  "Command-line access to Moodle for listing courses and files, downloading resources, exporting courses, and viewing your timetable.",
+	Use:     "moodle",
+	Short:   "CLI for FHGR Moodle",
+	Long:    "Command-line access to Moodle for listing courses and files, downloading resources, exporting courses, and viewing your timetable.",
+	Version: ver.Version(),
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if err := validateOutputFlags(); err != nil {
 			return err
@@ -42,6 +44,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 
 	rootCmd.PersistentFlags().StringVar(&opts.ConfigPath, "config", config.ConfigPath(), "Config file path")
 	rootCmd.PersistentFlags().StringVar(&opts.SessionPath, "session", config.SessionPath(), "Session cookie file path")

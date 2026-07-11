@@ -1,6 +1,9 @@
 # Update
 
-Use this page when you already have `moodle` and want the latest stable release.
+Use this page when you already have `moodle` and want the latest stable backend
+CLI release. The updater selects stable `moodle-v*` releases that contain the
+archive for the current platform plus `checksums.txt`; unrelated iOS releases
+are ignored.
 
 ## Steps
 
@@ -20,4 +23,5 @@ moodle update
 
 ```sh
 moodle version
+moodle --version
 ```
