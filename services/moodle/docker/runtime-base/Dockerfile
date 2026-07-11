@@ -3,7 +3,7 @@ FROM golang:1.24-bookworm AS playwright
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
-RUN go run github.com/playwright-community/playwright-go/cmd/playwright install chromium
+RUN go run github.com/mxschmitt/playwright-go/cmd/playwright install chromium
 
 FROM debian:bookworm-slim
 ARG DOCKER_CLI_VERSION=28.0.4

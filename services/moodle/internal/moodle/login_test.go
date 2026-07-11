@@ -18,12 +18,12 @@ func TestIsMissingPlaywrightDriverError(t *testing.T) {
 		},
 		{
 			name: "missing driver message",
-			err:  errors.New("please install the driver (v1.52.0) first"),
+			err:  errors.New("please install the driver first"),
 			want: true,
 		},
 		{
 			name: "mixed case message",
-			err:  errors.New("Please Install The Driver (v1.52.0) first"),
+			err:  errors.New("Please Install The Driver first"),
 			want: true,
 		},
 		{
