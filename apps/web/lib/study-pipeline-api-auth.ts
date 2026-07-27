@@ -3,6 +3,18 @@ export type StudyPipelineApiAuth = {
   clerkUserId: string;
 };
 
+export function shouldUseServiceApiKeyForRead(input: {
+  apiKey: string;
+  isReadOnlyPath: boolean;
+  method: string;
+  userId: string | null;
+}): boolean {
+  return input.method === "GET"
+    && !input.userId
+    && Boolean(input.apiKey)
+    && input.isReadOnlyPath;
+}
+
 export function readStudyPipelineApiAuth(headers: Headers): StudyPipelineApiAuth | null {
   const apiKey = readMoodleAppKey(headers);
   if (!apiKey) return null;
