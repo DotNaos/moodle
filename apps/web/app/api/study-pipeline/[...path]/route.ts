@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import { checkBackendPreflight } from "@/lib/backend-preflight";
 import { decodeMoodleSession, encodeMoodleSession, MOODLE_SESSION_COOKIE } from "@/lib/moodle-session";
 import { getMoodleInternalSecret, MOODLE_SERVICES_URL, proxyServiceResponse, readServiceJSON } from "@/lib/moodle-services";
-import { readStudyPipelineApiAuth, studyPipelineApiAuthHeaders } from "@/lib/study-pipeline-api-auth";
+import {
+  readStudyPipelineApiAuth,
+  shouldUseServiceApiKeyForRead,
+  studyPipelineApiAuthHeaders,
+} from "@/lib/study-pipeline-api-auth";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };
@@ -39,15 +43,20 @@ async function proxyStudyPipeline(request: Request, context: RouteContext) {
   if (!isStudyPipelinePath(upstreamPath)) {
     return withRequestId(Response.json({ error: "Study pipeline route not found." }, { status: 404 }), requestId);
   }
+  const { userId } = await auth();
   const serviceApiKey = readMoodleServicesApiKey();
-  if (request.method === "GET" && serviceApiKey && isReadOnlyStudyPipelinePath(upstreamPath)) {
+  if (shouldUseServiceApiKeyForRead({
+    apiKey: serviceApiKey,
+    isReadOnlyPath: isReadOnlyStudyPipelinePath(upstreamPath),
+    method: request.method,
+    userId,
+  })) {
     return proxyStudyPipelineWithApiKey(request, upstreamPath, {
       apiKey: serviceApiKey,
       clerkUserId: "",
     }, requestId, startedAt);
   }
 
-  const { userId } = await auth();
   if (!userId) {
     return withRequestId(pipelineBlockedResponse("unauthenticated", "Sign in before opening the pipeline.", 401), requestId);
   }

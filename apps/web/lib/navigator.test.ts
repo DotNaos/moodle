@@ -26,6 +26,7 @@ import {
   replaceNavigatorState,
 } from "@/lib/navigator-history";
 import { parseDashboardRoute } from "@/lib/dashboard-route";
+import { reconcileNavigatorHistory } from "@/hooks/use-navigator";
 
 function roundTrip(state: NavigatorState): NavigatorState {
   const url = buildNavigatorURL(state);
@@ -238,6 +239,18 @@ describe("navigator breadcrumbs", () => {
 });
 
 describe("navigator history", () => {
+  test("client hydration preserves a direct course pipeline route", () => {
+    const serverHistory = createNavigatorHistory(homeState());
+    const browserState = parseNavigatorLocation("/courses/22584/pipeline");
+    const hydratedHistory = reconcileNavigatorHistory(serverHistory, browserState);
+
+    expect(currentNavigatorState(hydratedHistory)).toEqual({
+      path: { kind: "course-mode", courseId: "22584", mode: "pipeline" },
+      document: null,
+    });
+    expect(buildNavigatorURL(currentNavigatorState(hydratedHistory))).toBe("/courses/22584/pipeline");
+  });
+
   test("push, back and forward walk the course tree history", () => {
     let history = createNavigatorHistory(homeState());
     history = pushNavigatorState(history, { path: { kind: "course", courseId: "42" }, document: null });

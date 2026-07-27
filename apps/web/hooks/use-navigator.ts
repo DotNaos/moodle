@@ -47,6 +47,15 @@ function syncBrowserURL(state: NavigatorState, mode: "push" | "replace") {
   }
 }
 
+export function reconcileNavigatorHistory(
+  history: NavigatorHistory,
+  browserState: NavigatorState,
+): NavigatorHistory {
+  return navigatorStatesEqual(currentNavigatorState(history), browserState)
+    ? history
+    : replaceNavigatorState(history, browserState);
+}
+
 export function useNavigator() {
   const [history, setHistory] = useState<NavigatorHistory>(() => createNavigatorHistory(readNavigatorState()));
   const state = currentNavigatorState(history);
@@ -107,15 +116,13 @@ export function useNavigator() {
   }, [applyHistory]);
 
   useEffect(() => {
-    syncBrowserURL(stateRef.current, "replace");
     const syncFromBrowser = () => {
       const browserState = readNavigatorState();
-      setHistory((current) =>
-        navigatorStatesEqual(currentNavigatorState(current), browserState)
-          ? current
-          : replaceNavigatorState(current, browserState),
-      );
+      setHistory((current) => reconcileNavigatorHistory(current, browserState));
+      return browserState;
     };
+    const browserState = syncFromBrowser();
+    syncBrowserURL(browserState, "replace");
     window.addEventListener("popstate", syncFromBrowser);
     return () => window.removeEventListener("popstate", syncFromBrowser);
   }, []);

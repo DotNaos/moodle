@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   readMoodleAppKey,
   readStudyPipelineApiAuth,
+  shouldUseServiceApiKeyForRead,
   studyPipelineApiAuthHeaders,
 } from "@/lib/study-pipeline-api-auth";
 
@@ -36,5 +37,23 @@ describe("study pipeline API auth", () => {
 
     expect(headers.get("X-Moodle-App-Key")).toBe("moodle_key");
     expect(headers.has("X-Clerk-User-Id")).toBe(false);
+  });
+
+  test("keeps signed-in pipeline reads on the user's Moodle session", () => {
+    expect(shouldUseServiceApiKeyForRead({
+      apiKey: "service_key",
+      isReadOnlyPath: true,
+      method: "GET",
+      userId: "user_123",
+    })).toBe(false);
+  });
+
+  test("allows anonymous read-only access through the configured service key", () => {
+    expect(shouldUseServiceApiKeyForRead({
+      apiKey: "service_key",
+      isReadOnlyPath: true,
+      method: "GET",
+      userId: null,
+    })).toBe(true);
   });
 });
