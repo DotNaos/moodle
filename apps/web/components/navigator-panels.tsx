@@ -535,7 +535,7 @@ export function CalendarEventDetailPanel({
                 </p>
                 {onOpenCourse ? (
                   <button
-                    className="rounded-full bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    className="rounded-full bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-control-hover"
                     onClick={() => onOpenCourse(event.courseName ?? "")}
                     type="button"
                   >

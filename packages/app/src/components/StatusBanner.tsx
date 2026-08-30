@@ -1,4 +1,4 @@
-import { Card } from 'heroui-native';
+import { Card } from '@dotnaos/ui/native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
@@ -33,8 +33,6 @@ export function StatusBanner(
                     styles.floatingBannerContainerWithBottomNav,
             ]}>
             <Card
-                variant="tertiary"
-                animation="disable-all"
                 style={[
                     styles.floatingBannerCard,
                     isError && styles.floatingBannerCardError,

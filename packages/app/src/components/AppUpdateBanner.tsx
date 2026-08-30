@@ -1,4 +1,4 @@
-import { Card } from 'heroui-native';
+import { Card } from '@dotnaos/ui/native';
 import { Pressable, Text, View } from 'react-native';
 
 import { Link2, X } from '../icons';
@@ -21,10 +21,7 @@ export function AppUpdateBanner(props: AppUpdateBannerProps) {
                 props.withBottomNav &&
                     styles.floatingBannerContainerWithBottomNav,
             ]}>
-            <Card
-                variant="tertiary"
-                animation="disable-all"
-                style={styles.floatingBannerCard}>
+            <Card style={styles.floatingBannerCard}>
                 <View style={styles.statusBanner}>
                     <View style={styles.statusBannerHeaderRow}>
                         <View style={styles.statusBannerTitleRow}>

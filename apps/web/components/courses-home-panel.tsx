@@ -126,7 +126,7 @@ function CourseFilters({
       <Select value={selectedCategory} onValueChange={onCategoryChange}>
         <SelectTrigger
           aria-label="Semester filter"
-          className="h-11 w-full rounded-full border-0 bg-secondary px-4 text-sm shadow-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-[10.5rem] sm:shrink-0"
+          className="h-11 w-full rounded-full border-0 bg-secondary px-4 text-sm shadow-none transition-colors hover:bg-control-hover focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-[10.5rem] sm:shrink-0"
         >
           <SelectValue placeholder="Alle Semester" />
         </SelectTrigger>

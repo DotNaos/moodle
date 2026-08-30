@@ -1,6 +1,6 @@
 "use client";
 
-import { FileIcon } from "@dotnaos/react-ui/web";
+import { Icon } from "@dotnaos/ui/base";
 import { CheckSquare, Download, FileArchive, Filter, Globe, Layers, Printer } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -609,7 +609,9 @@ function MaterialTypeFilterSelect({
         </SelectItem>
         <SelectItem className="rounded-2xl px-3 py-2.5" value="pdf">
           <div className="flex items-center gap-2">
-            <FileIcon filename="example.pdf" size={16} />
+            <span aria-hidden="true">
+              <Icon.File filename="example.pdf" size={16} />
+            </span>
             <span>PDFs</span>
           </div>
         </SelectItem>
