@@ -18,6 +18,7 @@ When editing, adding, or refactoring UI components and layouts, you MUST consult
 
 ## UI Component Usage
 
-- **HeroUI Native**: We use `heroui-native` components wrapped in our shared `packages/app/src/components/ui.tsx`.
-- **Standard Library**: Prefer using our predefined wrappers `<TextField>`, `<PrimaryButton>`, `<SecondaryButton>`, from `ui.tsx` instead of adding your own raw `TextInput` or `Pressable` primitives.
+- **DotNaos Web**: The Study Space web app uses the pinned `@dotnaos/ui`, `@dotnaos/ui-base`, and `@dotnaos/design` line. Import public web primitives from `@dotnaos/ui/base`, use `@dotnaos/design` tokens/utilities, and consult `apps/web/components/ui/README.md` before adding or changing a compatibility wrapper.
+- **DotNaos Native**: Prefer supported primitives from `@dotnaos/ui/native`. `heroui-native` remains an explicit compatibility dependency for the provider, Tabs, and shared button behavior that the current DotNaos native API cannot preserve; the shared `TextField` retains React Native `TextInput` until DotNaos exposes a behavior-preserving native input.
+- **Standard Library**: On native, prefer the predefined `<TextField>`, `<PrimaryButton>`, and `<SecondaryButton>` wrappers from `packages/app/src/components/ui.tsx` instead of adding raw `TextInput` or `Pressable` primitives. On web, prefer the wrappers in `apps/web/components/ui` and direct DotNaos components only where their public API preserves the required behavior and accessibility.
 - **Styling**: Shared styling lives in `packages/app/src/styles.ts` using typical RN `StyleSheet.create`. Always pull from `styles.ts` when introducing new elements instead of raw hex values or arbitrary numbers.

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileIcon } from "@dotnaos/react-ui/web";
+import { Icon } from "@dotnaos/ui/base";
 import { CheckCircle2, ChevronRight, ExternalLink, FileArchive, FileText, Globe, ImageIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
@@ -680,5 +680,9 @@ export function MaterialFileIcon({
   if (isZip) {
     return <FileArchive aria-hidden className={className} size={size} />;
   }
-  return <FileIcon aria-hidden className={className} filename={filename} size={size} />;
+  return (
+    <span aria-hidden="true" className="contents">
+      <Icon.File className={className} filename={filename} size={size} />
+    </span>
+  );
 }

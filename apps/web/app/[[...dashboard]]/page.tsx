@@ -953,7 +953,7 @@ export default function Home() {
         : activeDocument.kind === "chat-session"
           ? (
             <ChatPage
-              key={`chat:${activeDocument.sessionId ?? "new"}:${newChatVersion}`}
+              key={`chat:${newChatVersion}`}
               courses={courses}
               loadMaterials={ensureCourseMaterials}
               materials={materials}

@@ -874,7 +874,7 @@ function ActionRow({
             Bestätigen
           </button>
           <button
-            className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-control-hover"
             type="button"
             onClick={() => onCancel?.(requestId)}
           >
@@ -1104,7 +1104,7 @@ function ChatComposer({
   const stopButton = running ? (
     <button
       aria-label="Antwort stoppen"
-      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground"
       type="button"
       onClick={onStop}
     >
@@ -1145,6 +1145,7 @@ function ChatComposer({
             <ComposerAddMenu options={addOptions} />
             <textarea
               ref={textareaRef}
+              aria-label="Chat message"
               className="min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base leading-6 outline-none placeholder:text-muted-foreground/45"
               placeholder={`Ask about ${selectedCourse ? courseTitle(selectedCourse) : "anything"}`}
               rows={1}
@@ -1169,6 +1170,7 @@ function ChatComposer({
             ) : null}
             <textarea
               ref={textareaRef}
+              aria-label="Chat message"
               className="min-h-[4.75rem] w-full resize-none bg-transparent text-base leading-relaxed outline-none"
               rows={1}
               value={prompt}

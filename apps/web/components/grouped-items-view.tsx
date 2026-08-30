@@ -101,7 +101,7 @@ export function GroupedSectionHeader({ action, label, sticky = true }: { action?
     <div
       className={cn(
         "flex items-center gap-2 px-2 py-2.5 text-sm font-semibold text-foreground",
-        sticky && "sticky top-0 z-20 bg-background px-3 shadow-[0_1px_0_0_hsl(var(--border))]",
+        sticky && "sticky top-0 z-20 bg-background px-3 shadow-[0_1px_0_0_var(--color-border)]",
       )}
     >
       {action}

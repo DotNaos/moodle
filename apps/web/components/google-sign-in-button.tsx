@@ -51,7 +51,7 @@ export function GoogleSignInButton({ className, redirectUrl }: GoogleSignInButto
   return (
     <div className={cn("space-y-2", className)}>
       <Button
-        className="h-14 w-full rounded-full border border-[#dadce0] bg-white px-5 text-base font-medium text-[#202124] shadow-none transition-colors hover:bg-[#f8fafd] hover:text-[#202124] focus-visible:ring-[#1a73e8] dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-accent"
+        className="h-14 w-full rounded-full border-0 bg-white px-5 text-base font-medium text-[#202124] shadow-none transition-colors hover:bg-[#f8fafd] hover:text-[#202124] focus-visible:ring-[#1a73e8] dark:bg-background dark:text-foreground dark:hover:bg-control-hover"
         disabled={!clerk.loaded || isLoading}
         size="lg"
         type="button"

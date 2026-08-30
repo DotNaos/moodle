@@ -81,9 +81,12 @@ export const formAndOverlayStyles = StyleSheet.create({
     ...({
         boxShadow: "0px 10px 40px -10px rgba(0,0,0,0.6)",
     } as object),
+    borderCurve: "continuous",
     borderRadius: 22,
     borderWidth: 0,
     backgroundColor: "rgba(16,23,34,0.98)",
+    overflow: "hidden",
+    padding: 16,
   },
   floatingBannerCardError: {
     backgroundColor: "rgba(35,17,24,0.98)",

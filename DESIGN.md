@@ -6,6 +6,7 @@ A record of the foundational design decisions, UI rules, and component styles to
 
 - **Minimal & High Contrast:** Emphasize critical user paths by removing unnecessary borders and layout containers. Use pronounced contrast and negative space.
 - **Cross-platform Compatibility:** Our unified UI targets both Expo React Native and Web.
+- **Token Ownership:** Web color, spacing, typography, and motion values come from `@dotnaos/design`. Native code should use the shared palette/styles or DotNaos native tokens instead of introducing one-off values.
 
 ## 2. Shapes & Layouts
 
@@ -20,6 +21,8 @@ A record of the foundational design decisions, UI rules, and component styles to
 
 ## 4. Components
 
-- **Inputs (`TextField`):** Internally leverages `<HeroInput>` from `heroui-native`, combined with the `styles.input` configuration to ensure the field inherits the pill-shaped, borderless aesthetic with its `rgba(255,255,255,0.06)` background.
-- **Buttons (`AppButton` wrappers):** Primary, Secondary, and Ghost versions abstract away manual styling. They default to strict pill shapes. They use the HeroUI `variant="primary"|"secondary"|"ghost"` props with `feedbackVariant="scale"`.
+- **Web UI:** Use the pinned DotNaos line through `@dotnaos/ui/base` and the compatibility wrappers in `apps/web/components/ui`. Neutral hover/focus surfaces use `control`, `control-hover`, and `control-active`; reserve `accent` for selected or primary actions. Do not restore a shadcn generator layer or duplicate the design token palette in app CSS.
+- **Native UI:** Use supported `@dotnaos/ui/native` primitives first. The shared wrappers may retain HeroUI for provider, Tabs, and button capabilities that do not yet have behavior-preserving DotNaos equivalents; `TextField` retains React Native `TextInput` until DotNaos exposes a compatible native input.
+- **Inputs (`TextField`):** Native fields use the shared wrapper and `styles.input`; web fields use the DotNaos-backed compatibility wrapper. Both must retain the pill-shaped, borderless treatment.
+- **Buttons (`AppButton` wrappers):** Primary, Secondary, and Ghost versions abstract away manual styling and default to strict pill shapes. Platform compatibility wrappers may preserve the existing public call-site API while their rendered surface and tokens come from DotNaos.
 - **Dividers:** Use visual dividers (e.g. `--- or ---` with 1px low opacity lines) instead of bounding boxes to separate disparate elements vertically.

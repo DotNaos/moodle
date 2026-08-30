@@ -10,6 +10,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@dotnaos/ui": "0.0.18",
         "@expo/metro-runtime": "~6.1.2",
         "@gorhom/bottom-sheet": "^5.2.10",
         "@moodle-clients/app": "workspace:*",

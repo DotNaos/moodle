@@ -4,7 +4,11 @@ import { cn } from "@/lib/utils";
 // visual treatment is now the Codex-style visor text animation.
 function ThinkingDots({ className, label = "Thinking" }: { className?: string; label?: string }) {
   return (
-    <span aria-label={label} className={cn("thinking-visor inline-block text-sm font-medium", className)} role="status">
+    <span
+      aria-label={label}
+      className={cn("thinking-visor inline-block text-sm font-medium", className)}
+      role="status"
+    >
       {label}
     </span>
   );
